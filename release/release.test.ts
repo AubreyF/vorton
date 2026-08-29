@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,6 +94,30 @@ afterEach(() => {
 });
 
 describe("immutable release contracts", () => {
+  it("pins workflow dependencies and verifies exact image provenance", () => {
+    const buildWorkflow = readFileSync(
+      join(process.cwd(), ".github/workflows/build-release-images.yml"),
+      "utf8",
+    );
+    const releaseWorkflow = readFileSync(
+      join(process.cwd(), ".github/workflows/release.yml"),
+      "utf8",
+    );
+    const actions = [
+      ...`${buildWorkflow}\n${releaseWorkflow}`.matchAll(/uses:\s+([^\s#]+)/g),
+    ].map((match) => match[1]!);
+
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(action).toMatch(/@[a-f0-9]{40}$/);
+    }
+    expect(releaseWorkflow).toContain("--signer-workflow");
+    expect(releaseWorkflow).toContain("--source-digest");
+    expect(releaseWorkflow).toContain(
+      '--predicate-type "https://spdx.dev/Document/v2.3"',
+    );
+  });
+
   it("accepts only explicit digest-pinned GHCR image inputs", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     expect(
