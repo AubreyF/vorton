@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9-]*$/);
 const sha256Digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+const immutableGhcrReference = z
+  .string()
+  .regex(
+    /^ghcr\.io\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$/,
+  );
 const relativePath = z
   .string()
   .min(1)
@@ -59,7 +64,6 @@ export const releaseManifestSchema = z
     sourceCommit: z.string().regex(/^[a-f0-9]{40}$/),
     createdAt: z.string().datetime(),
     cliVersion: z.string().min(1),
-    sdkVersion: z.string().min(1),
     contracts: z.object({
       host: z.number().int().positive(),
       module: z.number().int().positive(),
@@ -69,7 +73,7 @@ export const releaseManifestSchema = z
     images: z.record(
       identifier,
       z.object({
-        reference: z.string().min(1),
+        reference: immutableGhcrReference,
         digest: sha256Digest,
       }),
     ),
@@ -82,6 +86,20 @@ export const releaseManifestSchema = z
     ),
   })
   .superRefine((manifest, context) => {
+    const releasedImageNames = Object.keys(manifest.images).sort();
+    if (
+      manifest.status === "released" &&
+      (releasedImageNames.length !== 2 ||
+        releasedImageNames[0] !== "control-plane" ||
+        releasedImageNames[1] !== "worker")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["images"],
+        message:
+          "released manifests must contain exactly control-plane and worker images",
+      });
+    }
     for (const [name, image] of Object.entries(manifest.images)) {
       if (!image.reference.endsWith(`@${image.digest}`)) {
         context.addIssue({

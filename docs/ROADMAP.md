@@ -38,7 +38,7 @@ Target machine time: one integration conversation, about 120 to 240 minutes plus
 - [ ] Run security, RLS, migration, worker-protocol, and acceptance verification.
 - [ ] Create the private FreedOS installation repository.
 - [ ] Deploy the FreedOS control plane and first worker path on Fly with isolated Supabase and Hindsight resources.
-- [ ] Publish the first immutable AubOS release.
+- [ ] Publish the first immutable AubOS release. Preparation, GHCR build, SBOM, attestation, manifest validation, and tag publication tooling are ready. Runtime images and publication remain pending.
 - [ ] Upgrade FreedOS to the next release and prove configuration, application, and database recovery boundaries.
 
 Milestone: AubOS has a reproducible release and FreedOS is live for owner testing.

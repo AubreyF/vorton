@@ -49,7 +49,6 @@ describe("installation contracts", () => {
       sourceCommit: "b".repeat(40),
       createdAt: "2026-08-28T00:00:00.000Z",
       cliVersion: "0.1.0",
-      sdkVersion: "0.1.0",
       contracts: { host: 1, module: 1, worker: 1 },
       coreMigrationHead: "0001_kernel",
       images: {
@@ -62,6 +61,23 @@ describe("installation contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("requires both first-party immutable images in a released manifest", () => {
+    const result = releaseManifestSchema.safeParse({
+      schemaVersion: 1,
+      status: "released",
+      version: "0.1.0",
+      sourceCommit: "b".repeat(40),
+      createdAt: "2026-08-28T00:00:00.000Z",
+      cliVersion: "0.1.0",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260828000300_executive",
+      images: {},
+      managedFiles: [],
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("records immutable image identities in installation locks", () => {

@@ -14,9 +14,11 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run typecheck && npm run test",
+    "check": "npm run typecheck && npm run test && npm run release:test",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
+    "release:prepare": "tsx release/prepare-release.ts",
+    "release:test": "vitest run release/*.test.ts",
     "release:validate": "tsx release/validate-manifest.ts",
     "runtime:validate-env": "tsx deploy/fly/runtime/validate-environment.ts",
     "test": "npm run test --workspaces --if-present",
