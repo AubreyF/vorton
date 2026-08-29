@@ -262,6 +262,9 @@ function organizationScaffold(
     "tools/README.md": render("tools/README.md.tpl"),
     "supabase/migrations/organization/.gitkeep": "",
     "tests/acceptance/README.md": render("tests/acceptance/README.md.tpl"),
+    "tests/acceptance/validate-installation.rb": render(
+      "scripts/validate-installation.rb.tpl",
+    ),
     "deploy/fly.toml": render("deploy/fly.toml.tpl"),
     ".github/workflows/aubos-installation.yml": render(
       "github/aubos-installation.yml.tpl",

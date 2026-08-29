@@ -1,7 +1,7 @@
 {
   "apiVersion": "aubos.dev/host/v1",
-  "healthPath": "/api/health",
+  "healthPath": "/healthz",
   "observedDeploymentTable": "aubos_observed_deployments",
-  "readinessPath": "/api/ready",
+  "readinessPath": "/readyz",
   "workLeaseProtocol": 1
 }

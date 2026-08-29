@@ -213,7 +213,7 @@ describe("synthetic organization installation acceptance", () => {
     );
     expect(
       readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
-    ).toContain('"readinessPath": "/api/ready"');
+    ).toContain('"readinessPath": "/readyz"');
     expect(snapshotOrganizationOwned(root)).toEqual(organizationBefore);
 
     expect(rollbackPlan({ root, planHash: upgraded.hash })).toEqual({

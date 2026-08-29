@@ -12,5 +12,6 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: npx @aubos/cli validate
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate installation contract
+        run: ruby tests/acceptance/validate-installation.rb

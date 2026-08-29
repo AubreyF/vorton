@@ -94,6 +94,8 @@ The installation templates create an organizational installation with Fly deploy
 
 The Tools catalog starts empty. Moonbase Triage appears only as an uninstalled synthetic example. Factory starts in read-only mode and leaves repository execution authority in the existing external system. The scaffold contains no people, account IDs, endpoints, secret values, personal tools, or private data.
 
+The scaffold also creates `tests/acceptance/validate-installation.rb` and a pinned GitHub Actions workflow. The validator uses only Ruby's standard library. It checks release identity, digest-pinned images, managed-file hashes, memory authority, read-only Factory mode, and the blank installed Tools catalog without downloading an unpublished CLI or a moving package version.
+
 The root operator can create the private repository, copy any organization-owned starter files, and then run the explicit init commands above with a real released manifest. The CLI preserves existing organization-owned files byte for byte and fills only missing scaffold paths.
 
 ## Reproducible fixture proof

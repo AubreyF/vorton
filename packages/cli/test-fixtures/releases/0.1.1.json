@@ -25,7 +25,7 @@
     {
       "path": "host/aubos-runtime.json",
       "template": "templates/releases/0.1.1/host/aubos-runtime.json",
-      "digest": "sha256:e438db4f5cee2239b7c27e1c56ce8c4ab4acc72d3915152ef671e08c19f17f44"
+      "digest": "sha256:4443589d8e7337be21aa5b0d498e5647feba4502f4e4ecbe2ddaf7c7c95ee620"
     }
   ]
 }
