@@ -17,7 +17,7 @@
     "managedFiles"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "enum": [1, 2] },
     "status": { "enum": ["candidate", "released"] },
     "version": { "type": "string", "minLength": 1 },
     "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
@@ -72,13 +72,44 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "status": { "const": "released" } } },
+      "if": {
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "status": { "const": "released" }
+        },
+        "required": ["schemaVersion", "status"]
+      },
       "then": {
         "properties": {
           "images": {
             "required": ["control-plane", "worker"],
             "minProperties": 2,
             "maxProperties": 2,
+            "additionalProperties": {
+              "properties": {
+                "reference": {
+                  "pattern": "^ghcr\\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": { "const": 2 },
+          "status": { "const": "released" }
+        },
+        "required": ["schemaVersion", "status"]
+      },
+      "then": {
+        "properties": {
+          "images": {
+            "required": ["control-plane", "web", "worker"],
+            "minProperties": 3,
+            "maxProperties": 3,
             "additionalProperties": {
               "properties": {
                 "reference": {

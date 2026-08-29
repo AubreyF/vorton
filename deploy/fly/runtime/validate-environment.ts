@@ -28,6 +28,11 @@ export function validateRuntimeEnvironment(env: NodeJS.ProcessEnv): void {
       "AubOS authority and Hindsight derived memory must use different databases and credentials",
     );
   }
+  if (required(env, "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET").length < 32) {
+    throw new Error(
+      "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
+    );
+  }
   if (
     required(env, "HINDSIGHT_API_TENANT_EXTENSION") !==
     "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension"

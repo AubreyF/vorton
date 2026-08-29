@@ -14,22 +14,33 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run typecheck && npm run test && npm run release:test",
+    "bootstrap:apply": "tsx deploy/bootstrap/provision.ts --apply",
+    "bootstrap:plan": "tsx deploy/bootstrap/provision.ts --plan",
+    "bootstrap:test": "vitest run deploy/bootstrap/*.test.ts",
+    "bootstrap:typecheck": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck deploy/bootstrap/provision.ts deploy/bootstrap/provision.test.ts",
+    "check": "npm run typecheck && npm run bootstrap:typecheck && npm run test && npm run bootstrap:test && npm run runtime:test && npm run release:test",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "release:prepare": "tsx release/prepare-release.ts",
     "release:test": "vitest run release/*.test.ts",
     "release:validate": "tsx release/validate-manifest.ts",
+    "runtime:test": "vitest run deploy/fly/runtime/*.test.ts",
     "runtime:validate-env": "tsx deploy/fly/runtime/validate-environment.ts",
+    "test:postgres-authority": "tsx scripts/postgres-authority-test.ts",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.5",
+    "esbuild": "0.28.2",
     "prettier": "^3.5.3",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.63.1"

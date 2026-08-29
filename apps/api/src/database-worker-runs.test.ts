@@ -32,7 +32,8 @@ function database(
   return {
     query,
     value: {
-      asAdministrator: async (
+      asWorker: async (
+        _context: { installationId: string; workerId: string },
         operation: (transaction: { query: typeof query }) => Promise<unknown>,
       ) => operation({ query }),
     } as unknown as Database,

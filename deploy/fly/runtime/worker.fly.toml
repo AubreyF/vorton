@@ -2,7 +2,7 @@ app = "replace-with-aubos-worker-app"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "deploy/docker/worker.Dockerfile"
+  image = "replace-with-worker-release-image-by-digest"
 
 [env]
   PORT = "8080"

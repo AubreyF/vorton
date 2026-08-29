@@ -12,6 +12,7 @@ import { createApiServer } from "./server.js";
 
 const env = readApiEnvironment();
 const database = new Database({
+  contextSigningSecret: env.databaseContextSigningSecret,
   connectionString: env.databaseUrl,
   ssl: env.databaseSsl ? { rejectUnauthorized: true } : undefined,
   max: 10,

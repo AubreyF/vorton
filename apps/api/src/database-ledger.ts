@@ -1,4 +1,9 @@
-import type { SqlExecutor, Database } from "@aubos/database";
+import type {
+  Database,
+  DatabaseContext,
+  PersonContext,
+  SqlExecutor,
+} from "@aubos/database";
 import type {
   AppendExecutiveRecord,
   ExecutiveLedger,
@@ -45,8 +50,11 @@ const recordColumns = `id, installation_id, work_id, kind, summary, payload,
 export class DatabaseExecutiveLedger implements ExecutiveLedger {
   constructor(private readonly database: Database) {}
 
-  append(record: AppendExecutiveRecord): Promise<ExecutiveRecord> {
-    return this.database.asAdministrator(async (transaction) => {
+  append(
+    record: AppendExecutiveRecord,
+    context?: DatabaseContext,
+  ): Promise<ExecutiveRecord> {
+    return this.#withContext(context, async (transaction) => {
       const sourceUri =
         typeof record.payload.sourceUri === "string"
           ? record.payload.sourceUri
@@ -80,8 +88,11 @@ export class DatabaseExecutiveLedger implements ExecutiveLedger {
     });
   }
 
-  getRecord(id: string): Promise<ExecutiveRecord | null> {
-    return this.database.asAdministrator(async (transaction) => {
+  getRecord(
+    id: string,
+    context?: DatabaseContext,
+  ): Promise<ExecutiveRecord | null> {
+    return this.#withContext(context, async (transaction) => {
       const result = await transaction.query<RecordRow>(
         `select ${recordColumns} from public.records where id = $1`,
         [id],
@@ -93,11 +104,27 @@ export class DatabaseExecutiveLedger implements ExecutiveLedger {
   createWork(
     input: WorkInput,
     authority: ExecutionAuthority,
+    context?: PersonContext,
   ): Promise<ExecutiveWork> {
-    return this.database.asAdministrator(async (transaction) => {
+    if (!context) {
+      throw new Error("A verified person context is required to create Work");
+    }
+    return this.database.asPerson(context, async (transaction) => {
       const id = await insertWork(transaction, input);
       return { id, input, authority };
     });
+  }
+
+  #withContext<T>(
+    context: DatabaseContext | undefined,
+    work: (transaction: SqlExecutor) => Promise<T>,
+  ): Promise<T> {
+    if (!context) {
+      throw new Error("A verified person or scoped worker context is required");
+    }
+    return "authUserId" in context
+      ? this.database.asPerson(context, work)
+      : this.database.asWorker(context, work);
   }
 }
 
@@ -113,8 +140,9 @@ async function insertWork(
 ): Promise<string> {
   const result = await transaction.query<{ id: string }>(
     `insert into public.work
-      (installation_id, title, requested_outcome, acceptance_criteria, parent_work_id, priority)
-     values ($1, $2, $3, $4::jsonb, $5, $6)
+      (installation_id, title, requested_outcome, acceptance_criteria,
+       parent_work_id, priority, requested_by_person_id)
+     values ($1, $2, $3, $4::jsonb, $5, $6, public.current_person_id($1))
      returning id`,
     [
       input.installationId,

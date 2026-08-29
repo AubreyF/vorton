@@ -19,6 +19,7 @@ import {
   planUpgrade,
   rollbackPlan,
 } from "./index.js";
+import { CLI_VERSION } from "./version.js";
 
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -46,6 +47,15 @@ afterEach(() => {
 });
 
 describe("installation distribution", () => {
+  it("binds the running CLI constant to its package version", () => {
+    const packageVersion = (
+      JSON.parse(
+        readFileSync(join(repositoryRoot, "packages/cli/package.json"), "utf8"),
+      ) as { version: string }
+    ).version;
+    expect(CLI_VERSION).toBe(packageVersion);
+  });
+
   it("refuses candidate manifests outside the explicit fixture path", () => {
     const root = syntheticRoot();
 
@@ -164,7 +174,7 @@ describe("installation distribution", () => {
 
     const rolledBack = rollbackPlan({ root, planHash: upgraded.hash });
     expect(rolledBack.restored.sort()).toEqual(
-      ["aubos.lock.json", "host/aubos-runtime.json"].sort(),
+      ["aubos.lock.json", "aubos.yaml", "host/aubos-runtime.json"].sort(),
     );
     expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
       originalHost,

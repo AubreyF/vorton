@@ -63,7 +63,7 @@ export type InstallationManifest = z.infer<typeof installationManifestSchema>;
 
 export const releaseManifestSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
     status: z.enum(["candidate", "released"]),
     version: z.string().min(1),
     sourceCommit: z.string().regex(/^[a-f0-9]{40}$/),
@@ -94,17 +94,23 @@ export const releaseManifestSchema = z
   })
   .superRefine((manifest, context) => {
     const releasedImageNames = Object.keys(manifest.images).sort();
+    const requiredReleasedImageNames =
+      manifest.schemaVersion === 1
+        ? ["control-plane", "worker"]
+        : ["control-plane", "web", "worker"];
     if (
       manifest.status === "released" &&
-      (releasedImageNames.length !== 2 ||
-        releasedImageNames[0] !== "control-plane" ||
-        releasedImageNames[1] !== "worker")
+      (releasedImageNames.length !== requiredReleasedImageNames.length ||
+        releasedImageNames.some(
+          (name, index) => name !== requiredReleasedImageNames[index],
+        ))
     ) {
       context.addIssue({
         code: "custom",
         path: ["images"],
-        message:
-          "released manifests must contain exactly control-plane and worker images",
+        message: `released schema v${manifest.schemaVersion} manifests must contain exactly ${requiredReleasedImageNames.join(
+          ", ",
+        )} images`,
       });
     }
     for (const [name, image] of Object.entries(manifest.images)) {

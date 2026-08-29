@@ -138,7 +138,7 @@ if (
 }
 
 const manifest: ReleaseManifest = releaseManifestSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: "released",
   version,
   sourceCommit,

@@ -5,6 +5,7 @@ import { validateRuntimeEnvironment } from "../../../deploy/fly/runtime/validate
 const valid = {
   AUBOS_DATABASE_URL:
     "postgresql://authority:synthetic@authority.example/aubos",
+  AUBOS_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
   HINDSIGHT_API_DATABASE_URL:
     "postgresql://memory:synthetic@memory.example/hindsight",
   HINDSIGHT_API_TENANT_EXTENSION:

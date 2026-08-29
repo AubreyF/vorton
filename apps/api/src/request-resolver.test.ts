@@ -16,6 +16,10 @@ const input = {
   evidenceRecordIds: ["4b3f8274-5fb5-4e7e-bbc5-603a54cc4ad8"],
   background: false,
 };
+const requester = {
+  installationId: input.installationId,
+  authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+};
 
 class FakeDatabase {
   results: Array<Array<Record<string, unknown>>> = [];
@@ -30,6 +34,20 @@ class FakeDatabase {
         return { rows, rowCount: rows.length };
       },
     });
+  }
+
+  asPerson<T>(
+    _context: { installationId: string; authUserId: string },
+    work: (transaction: SqlExecutor) => Promise<T>,
+  ): Promise<T> {
+    return this.asAdministrator(work);
+  }
+
+  asPersonAcrossInstallations<T>(
+    _authUserId: string,
+    work: (transaction: SqlExecutor) => Promise<T>,
+  ): Promise<T> {
+    return this.asAdministrator(work);
   }
 }
 
@@ -108,7 +126,7 @@ describe("database executive request resolver", () => {
         "explicit-model",
         new InMemoryHindsightAdapter(),
       );
-      await expect(resolver.resolveProposal(input)).rejects.toThrow(
+      await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
         "missing or inapplicable",
       );
       expect(database.statements[0]).toContain("worker_role_assignments");
@@ -139,7 +157,7 @@ describe("database executive request resolver", () => {
       "explicit-model",
       new InMemoryHindsightAdapter(),
     );
-    await expect(resolver.resolveProposal(input)).rejects.toThrow(
+    await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
       "evidence records are missing",
     );
   });
@@ -193,7 +211,9 @@ describe("database executive request resolver", () => {
       "explicit-model",
       memory,
     );
-    await expect(resolver.resolveProposal(input)).resolves.toMatchObject({
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({
       role: { skillMarkdown: "Database-owned role", version: 2 },
       evidence: [
         { summary: "Database-owned evidence", classification: "synthetic" },
@@ -246,7 +266,9 @@ describe("database executive request resolver", () => {
       },
       warning,
     );
-    await expect(resolver.resolveProposal(input)).resolves.toMatchObject({
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({
       evidence: [{ summary: "Database-owned evidence" }],
       derivedContext: [],
     });

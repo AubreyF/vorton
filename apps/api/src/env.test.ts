@@ -4,6 +4,7 @@ import { readApiEnvironment } from "./env.js";
 
 const base = {
   AUBOS_DATABASE_URL: "postgresql://synthetic:synthetic@localhost:5432/aubos",
+  AUBOS_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
   AUBOS_SUPABASE_PROJECT_REF: "abcdefghijklmnopqrst",
   AUBOS_SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co",
   AUBOS_SUPABASE_JWT_ISSUER: "https://abcdefghijklmnopqrst.supabase.co/auth/v1",

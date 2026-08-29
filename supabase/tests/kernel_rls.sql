@@ -1,14 +1,52 @@
 begin;
 
+insert into aubos_private.runtime_context_keys (role_name, secret)
+values (session_user, convert_to('synthetic-test-context-secret-32-chars', 'UTF8'))
+on conflict (role_name) do update set secret = excluded.secret;
+
+create function pg_temp.set_aubos_context(
+  context_kind text,
+  installation text,
+  subject text,
+  credential text default ''
+) returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, extensions
+as $$
+declare
+  payload text;
+begin
+  perform set_config('aubos.context_kind', context_kind, true);
+  perform set_config('aubos.installation_id', installation, true);
+  perform set_config('aubos.subject_id', subject, true);
+  perform set_config('aubos.credential_id', credential, true);
+  payload := txid_current()::text || '|' || context_kind || '|' ||
+    installation || '|' || subject || '|' || credential;
+  perform set_config(
+    'aubos.context_signature',
+    encode(
+      extensions.hmac(
+        convert_to(payload, 'UTF8'),
+        convert_to('synthetic-test-context-secret-32-chars', 'UTF8'),
+        'sha256'
+      ),
+      'hex'
+    ),
+    true
+  );
+end
+$$;
+
 insert into auth.users (id, email)
 values
   ('0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5', 'owner@synthetic.invalid'),
   ('1be8ac6f-bafd-480d-99a7-cb94258a9a1a', 'member@synthetic.invalid');
 
-insert into public.installations (id, slug, display_name)
+insert into public.installations (id, slug, display_name, realm)
 values
-  ('7fae0c60-6682-41ec-b231-26bbaf7fde8e', 'moonbase-lab', 'Moonbase Lab'),
-  ('36bb264a-668f-45a6-8da0-6e5cad3fc026', 'other-lab', 'Other Lab');
+  ('7fae0c60-6682-41ec-b231-26bbaf7fde8e', 'moonbase-lab', 'Moonbase Lab', 'organizational'),
+  ('36bb264a-668f-45a6-8da0-6e5cad3fc026', 'other-lab', 'Other Lab', 'organizational');
 
 select public.provision_person(
   '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
@@ -37,6 +75,20 @@ insert into public.workers (
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5","role":"authenticated","installation_id":"7fae0c60-6682-41ec-b231-26bbaf7fde8e"}';
+
+do $$
+begin
+  if (select count(*) from public.installations) <> 0 then
+    raise exception 'Runtime role accepted an unsigned person context';
+  end if;
+end
+$$;
+
+select pg_temp.set_aubos_context(
+  'person',
+  '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
+  '0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5'
+);
 
 do $$
 begin
@@ -126,6 +178,11 @@ insert into public.work (
 
 set local request.jwt.claims =
   '{"sub":"1be8ac6f-bafd-480d-99a7-cb94258a9a1a","role":"authenticated","installation_id":"7fae0c60-6682-41ec-b231-26bbaf7fde8e"}';
+select pg_temp.set_aubos_context(
+  'person',
+  '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
+  '1be8ac6f-bafd-480d-99a7-cb94258a9a1a'
+);
 
 do $$
 begin
@@ -149,6 +206,11 @@ where id = 'eaf3cb24-b4eb-438a-819f-f27a819ee71d';
 
 set local request.jwt.claims =
   '{"sub":"0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5","role":"authenticated","installation_id":"7fae0c60-6682-41ec-b231-26bbaf7fde8e"}';
+select pg_temp.set_aubos_context(
+  'person',
+  '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
+  '0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5'
+);
 
 update public.work
 set state = 'ready'
@@ -161,9 +223,23 @@ set state = 'leased',
 where id = 'b6040202-b8e5-4513-a05f-47c11aa40573';
 
 reset role;
-select set_config('aubos.worker_id', 'b5611dc4-07e4-4388-a7d0-ddf7bb452499', true);
-select set_config('aubos.installation_id', '7fae0c60-6682-41ec-b231-26bbaf7fde8e', true);
-select set_config('aubos.credential_id', 'fbc4ac66-4a32-4a34-b810-88f4330205aa', true);
+set local role aubos_worker;
+
+do $$
+begin
+  if (select count(*) from public.records) <> 0 then
+    raise exception 'Runtime role accepted an unsigned worker context';
+  end if;
+end
+$$;
+
+reset role;
+select pg_temp.set_aubos_context(
+  'worker',
+  '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
+  'b5611dc4-07e4-4388-a7d0-ddf7bb452499',
+  'fbc4ac66-4a32-4a34-b810-88f4330205aa'
+);
 set local role aubos_worker;
 
 do $$

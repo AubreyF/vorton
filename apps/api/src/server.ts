@@ -214,9 +214,16 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           requiredAuthority: "member",
           operation: "review",
         });
+        const requester = {
+          installationId: proposalInput.installationId,
+          authUserId: identity.authUserId,
+        };
         const proposalRequest =
-          await dependencies.requestResolver.resolveProposal(proposalInput);
-        const result = await workflow.startProposal(proposalRequest);
+          await dependencies.requestResolver.resolveProposal(
+            proposalInput,
+            requester,
+          );
+        const result = await workflow.startProposal(proposalRequest, requester);
         await dependencies.workerRuns.record(proposalRequest, result.job);
         send(result.proposal ? 201 : 202, result);
         return;
@@ -304,11 +311,15 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           operation: "approval",
         });
         const approvalRecordId = requiredText(body, "approvalRecordId");
-        const authority = await dependencies.requestResolver.resolveAuthority({
-          installationId,
-          approvalRecordId,
-          capabilityGrantId: requiredText(body, "capabilityGrantId"),
-        });
+        const requester = { installationId, authUserId: identity.authUserId };
+        const authority = await dependencies.requestResolver.resolveAuthority(
+          {
+            installationId,
+            approvalRecordId,
+            capabilityGrantId: requiredText(body, "capabilityGrantId"),
+          },
+          requester,
+        );
         const result = await workflow.createExecutionWork({
           approvalRecordId,
           authority,
@@ -319,6 +330,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
             : [],
           priority:
             typeof body.priority === "number" ? body.priority : undefined,
+          requester,
         });
         send(201, result);
         return;
