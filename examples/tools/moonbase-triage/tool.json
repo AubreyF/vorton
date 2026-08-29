@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "moonbase-triage",
+  "name": "Moonbase Triage",
+  "version": "0.1.0",
+  "description": "Sort synthetic moonbase incidents with deterministic offline rules.",
+  "installation": "uninstalled",
+  "network": "deny-all",
+  "dataAccess": ["bundled-synthetic-fixtures"],
+  "capabilities": ["preview"]
+}

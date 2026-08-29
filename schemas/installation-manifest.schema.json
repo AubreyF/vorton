@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aubos.dev/schemas/installation-v1alpha1.json",
+  "title": "AubOS installation desired state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "aubos.dev/v1alpha1" },
+    "kind": { "const": "Installation" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "modules", "deployment", "secrets"],
+      "properties": {
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["channel", "version"],
+          "properties": {
+            "channel": { "enum": ["pinned", "stable", "canary"] },
+            "version": { "type": "string", "minLength": 1 }
+          }
+        },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "region"],
+          "properties": {
+            "provider": { "const": "fly" },
+            "region": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          }
+        }
+      }
+    }
+  }
+}
