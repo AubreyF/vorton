@@ -33,7 +33,11 @@ function syntheticRoot(): string {
 }
 
 function manifest(version: string): string {
-  return join(repositoryRoot, "release", "manifests", `${version}.json`);
+  return join(
+    repositoryRoot,
+    "packages/cli/test-fixtures/releases",
+    `${version}.json`,
+  );
 }
 
 afterEach(() => {
@@ -42,6 +46,19 @@ afterEach(() => {
 });
 
 describe("installation distribution", () => {
+  it("refuses candidate manifests outside the explicit fixture path", () => {
+    const root = syntheticRoot();
+
+    expect(() =>
+      planInit({
+        root,
+        organization: "Release Guard",
+        releaseManifestPath: manifest("0.1.0"),
+        releaseRoot: repositoryRoot,
+      }),
+    ).toThrow(/is candidate, not released/);
+  });
+
   it("produces a stable exact hash and applies idempotently without release inputs", () => {
     const root = syntheticRoot();
     const first = planInit({
@@ -49,12 +66,14 @@ describe("installation distribution", () => {
       organization: "Moonbase Laboratory",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     const second = planInit({
       root,
       organization: "Moonbase Laboratory",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
 
     expect(second.hash).toBe(first.hash);
@@ -82,6 +101,7 @@ describe("installation distribution", () => {
       organization: "Collision Test",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     mkdirSync(join(root, "host"), { recursive: true });
     writeFileSync(join(root, "host/aubos-runtime.json"), "organization data\n");
@@ -102,6 +122,7 @@ describe("installation distribution", () => {
       organization: "Rollback Observatory",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     applyPlan({ root, planHash: initialized.hash });
     const originalHost = readFileSync(
@@ -120,8 +141,9 @@ describe("installation distribution", () => {
 
     const upgraded = planUpgrade({
       root,
-      releaseManifestPath: manifest("0.2.0"),
+      releaseManifestPath: manifest("0.1.1"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     applyPlan({ root, planHash: upgraded.hash });
     expect(
@@ -152,6 +174,7 @@ describe("installation distribution", () => {
         organization: "Ownership Guard",
         releaseManifestPath: manifest("0.1.0"),
         releaseRoot: repositoryRoot,
+        allowCandidate: true,
       }),
     ).toThrow(/Initial adoption collision/);
     expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
@@ -166,6 +189,7 @@ describe("installation distribution", () => {
       organization: "Postimage Guard",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     applyPlan({ root, planHash: initialized.hash });
     writeFileSync(join(root, "host/aubos-runtime.json"), "manual change\n");
@@ -185,6 +209,7 @@ describe("installation distribution", () => {
       organization: "Hash Guard",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
+      allowCandidate: true,
     });
     const stored = JSON.parse(readFileSync(planned.path, "utf8")) as {
       installation: { displayName: string };

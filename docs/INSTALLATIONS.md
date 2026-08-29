@@ -42,11 +42,16 @@ The CLI rejects path traversal and symbolic-link escapes. A plan cannot expand u
 ## Initial adoption
 
 ```bash
-aubos init plan --organization Freed
+aubos init plan \
+  --organization FreedOS \
+  --manifest /absolute/path/to/aubos-release-manifest.json \
+  --artifact-root /absolute/path/to/unpacked-release
 aubos init apply --plan sha256:<plan>
 ```
 
-Planning is read-only. It lists every path, ownership class, artifact digest, required cloud resource, migration, secret reference, and enabled module. Apply verifies the plan hash and file preimages. It refuses collisions. Creating cloud resources, repositories, or deployments requires a separate explicit operation.
+The CLI has no implicit release channel or bundled manifest fallback. Planning requires an explicit manifest file and the exact unpacked artifact root named by its managed template paths. A real installation must use a manifest marked `released` with registry-backed OCI digests. Test fixtures use `registry.invalid` and never authorize deployment.
+
+Planning lists every path, ownership class, artifact digest, required cloud resource, migration, secret reference, and enabled module. Apply verifies the plan hash and every file preimage. It refuses collisions. Creating a repository, cloud resource, database, secret, or deployment requires a separate explicit operation.
 
 Planning writes only the content-addressed local plan under `.aubos/plans/`. Repeating a plan against the same installation and release produces the same `sha256:` hash. The plan embeds the validated release manifest and exact postimages. Apply reads only that local plan. It performs no fetch, registry lookup, cloud mutation, migration, or deployment.
 
@@ -55,7 +60,9 @@ Apply preflights every action before changing installation files. Its content-ad
 ## Updates
 
 ```bash
-aubos upgrade plan --to v0.2.0
+aubos upgrade plan \
+  --manifest /absolute/path/to/next-aubos-release-manifest.json \
+  --artifact-root /absolute/path/to/unpacked-next-release
 aubos upgrade apply --plan sha256:<plan>
 ```
 
@@ -80,3 +87,30 @@ Organizations that modify AubOS core become distributors. They maintain a separa
 `release/manifests/<version>.json` binds a release version to a source commit, CLI and SDK versions, protocol contracts, migration head, managed templates, and digest-pinned OCI references. Checked-in Wave 1 manifests are candidates, not published releases. A release uses a dedicated manifest commit because a file cannot contain the hash of its own commit. The release workflow refuses a tag until its manifest is explicitly marked `released` and its source commit equals the tagged manifest commit's first parent.
 
 Fly configuration remains organization-owned. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
+
+## FreedOS scaffold
+
+The installation templates create an organizational installation with Fly deployment intent and environment-variable references for Supabase, Postgres, and Hindsight. Postgres remains authoritative for decisions, approvals, Policy, Work, receipts, and outcomes. Hindsight stores derived memory and grants no authority.
+
+The Tools catalog starts empty. Moonbase Triage appears only as an uninstalled synthetic example. Factory starts in read-only mode and leaves repository execution authority in the existing external system. The scaffold contains no people, account IDs, endpoints, secret values, personal tools, or private data.
+
+The root operator can create the private repository, copy any organization-owned starter files, and then run the explicit init commands above with a real released manifest. The CLI preserves existing organization-owned files byte for byte and fills only missing scaffold paths.
+
+## Reproducible fixture proof
+
+The checked-in acceptance fixture uses synthetic manifests and `registry.invalid` image references. It proves the mechanics without claiming that an AubOS release or container image exists.
+
+```bash
+cd packages/cli
+npm run proof:installation -- --output /tmp/aubos-freedos-installation-proof
+```
+
+The command creates `/tmp/aubos-freedos-installation-proof/freedos` and `/tmp/aubos-freedos-installation-proof/proof.json`. It adopts fixture release `0.1.0`, applies fixture release `0.1.1`, verifies the managed host change, compares organization-owned file digests, and rolls back only `host/**` and `aubos.lock.json`. It refuses to overwrite an existing output directory.
+
+Run the acceptance suite from the CLI package:
+
+```bash
+npm test -- installation.acceptance.test.ts
+```
+
+The suite covers fresh adoption, retry after an interrupted atomic write, idempotent apply, tampered preimage refusal, exact upgrade, narrow rollback, rollback refusal after postimage drift, and scans for common personal-data and secret patterns.

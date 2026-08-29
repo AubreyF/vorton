@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
+    "proof:installation": "tsx src/generate-installation-proof.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

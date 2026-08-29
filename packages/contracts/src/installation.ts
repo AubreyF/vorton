@@ -19,6 +19,7 @@ export const installationManifestSchema = z.object({
     name: identifier,
   }),
   spec: z.object({
+    realm: z.enum(["personal", "organizational"]),
     release: z.object({
       channel: z.enum(["pinned", "stable", "canary"]),
       version: z.string().min(1),
@@ -27,6 +28,22 @@ export const installationManifestSchema = z.object({
     deployment: z.object({
       provider: z.literal("fly"),
       region: identifier,
+    }),
+    authority: z.object({
+      canonicalRecords: z.literal("supabase-postgres"),
+      derivedMemory: z.literal("hindsight"),
+    }),
+    factory: z.object({
+      mode: z.literal("read-only"),
+    }),
+    tools: z.object({
+      installed: z.array(identifier),
+      examples: z.array(
+        z.object({
+          name: z.string().min(1),
+          installed: z.literal(false),
+        }),
+      ),
     }),
     secrets: z.record(identifier, z.string().regex(/^[A-Z][A-Z0-9_]*$/)),
   }),

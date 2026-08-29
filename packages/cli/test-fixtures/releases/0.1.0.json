@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "version": "0.1.0",
+  "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "createdAt": "2026-08-28T00:00:00.000Z",
+  "cliVersion": "0.1.0",
+  "sdkVersion": "0.1.0",
+  "contracts": {
+    "host": 1,
+    "module": 1,
+    "worker": 1
+  },
+  "coreMigrationHead": "fixture_0001_kernel",
+  "images": {
+    "control-plane": {
+      "reference": "registry.invalid/aubos-fixture/control-plane@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "worker": {
+      "reference": "registry.invalid/aubos-fixture/worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "managedFiles": [
+    {
+      "path": "host/aubos-runtime.json",
+      "template": "templates/releases/0.1.0/host/aubos-runtime.json",
+      "digest": "sha256:6a2aab672dc8540d18c8b84e66c40cf25e68db2149c648c163ee871f42469572"
+    }
+  ]
+}

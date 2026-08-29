@@ -1,12 +1,12 @@
 apiVersion: aubos.dev/v1alpha1
 kind: Installation
 metadata:
-  name: {{INSTALLATION_NAME}}
+  name: freedos
 spec:
   realm: organizational
   release:
     channel: pinned
-    version: {{RELEASE_VERSION}}
+    version: 0.1.0
   modules:
     - admin
     - tasks
