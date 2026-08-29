@@ -1,0 +1,55 @@
+name: Release candidate verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact manifest version to verify
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run format:check
+      - name: Resolve release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "value=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify candidate manifest
+        if: github.event_name == 'workflow_dispatch'
+        run: npx tsx release/validate-manifest.ts --version "${{ steps.version.outputs.value }}"
+      - name: Verify immutable tagged release
+        if: github.event_name == 'push'
+        run: |
+          source_commit=$(git rev-parse "$GITHUB_SHA^")
+          npx tsx release/validate-manifest.ts --version "${{ steps.version.outputs.value }}" --released --source-commit "$source_commit"
+      - name: Assemble release contract artifact
+        run: tar -czf "aubos-${{ steps.version.outputs.value }}-contracts.tgz" release schemas deploy templates
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aubos-${{ steps.version.outputs.value }}-contracts
+          path: aubos-${{ steps.version.outputs.value }}-contracts.tgz
+          if-no-files-found: error

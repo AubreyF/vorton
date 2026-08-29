@@ -16,12 +16,14 @@
     "check": "npm run typecheck && npm run test",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
+    "release:validate": "tsx release/validate-manifest.ts",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "prettier": "^3.5.3",
+    "tsx": "^4.20.5",
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"
   }

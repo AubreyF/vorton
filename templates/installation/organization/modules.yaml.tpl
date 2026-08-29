@@ -1,0 +1,4 @@
+modules:
+  - admin
+  - tasks
+  - tools

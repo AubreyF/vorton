@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aubos.dev/schemas/fly-deployment-v1.json",
+  "title": "AubOS Fly deployment contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "installation",
+    "region",
+    "image",
+    "secrets",
+    "database"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "installation": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "region": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "image": { "type": "string", "pattern": "@sha256:[a-f0-9]{64}$" },
+    "secrets": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+      "uniqueItems": true
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["migrationHead", "backupRequired", "migrationMode"],
+      "properties": {
+        "migrationHead": { "type": "string", "minLength": 1 },
+        "backupRequired": { "const": true },
+        "migrationMode": { "const": "expand-contract" }
+      }
+    }
+  }
+}

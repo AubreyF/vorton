@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aubos.dev/schemas/distribution-plan-v1.json",
+  "title": "AubOS local distribution plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operation",
+    "installation",
+    "fromVersion",
+    "release",
+    "releaseManifestDigest",
+    "actions",
+    "planHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "operation": { "enum": ["init", "upgrade"] },
+    "installation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "displayName"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "fromVersion": { "type": ["string", "null"] },
+    "release": { "type": "object" },
+    "releaseManifestDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "planHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "ownership",
+          "operation",
+          "preimage",
+          "postimage",
+          "preimageContent",
+          "content"
+        ],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "ownership": { "enum": ["aubos", "organization"] },
+          "operation": { "enum": ["create", "update", "delete"] },
+          "preimage": { "type": ["string", "null"] },
+          "postimage": { "type": ["string", "null"] },
+          "preimageContent": { "type": ["string", "null"] },
+          "content": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
