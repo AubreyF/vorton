@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  recordActorSchema,
+  recordInputSchema,
   installationManifestSchema,
   workerAdvertisementSchema,
 } from "./index.js";
@@ -39,5 +41,32 @@ describe("installation contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("requires exactly one attributable record actor", () => {
+    expect(
+      recordActorSchema.safeParse({
+        personId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+      }).success,
+    ).toBe(true);
+    expect(recordActorSchema.safeParse({}).success).toBe(false);
+    expect(
+      recordActorSchema.safeParse({
+        personId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+        workerId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a synthetic append-only record payload", () => {
+    expect(
+      recordInputSchema.safeParse({
+        installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        kind: "evidence",
+        summary: "Synthetic worker completed an offline check.",
+        payload: { fixture: true },
+        classification: "synthetic",
+      }).success,
+    ).toBe(true);
   });
 });
