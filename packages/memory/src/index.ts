@@ -1,4 +1,8 @@
-import type { InstallationRealm, SourceCitation } from "@aubos/contracts";
+import type {
+  DataClassification,
+  InstallationRealm,
+  SourceCitation,
+} from "@aubos/contracts";
 
 export type HindsightBank = {
   id: string;
@@ -6,9 +10,23 @@ export type HindsightBank = {
   realm: InstallationRealm;
 };
 
+/** One deterministic Hindsight routing identity per installation and realm. */
+export function installationHindsightBank(
+  installationId: string,
+  realm: InstallationRealm,
+): HindsightBank {
+  if (!installationId.trim()) throw new Error("Installation ID is required");
+  return {
+    id: `${realm}:${installationId}:default`,
+    installationId,
+    realm,
+  };
+}
+
 export type HindsightMemory = {
   id: string;
   text: string;
+  classification: DataClassification;
   citations: SourceCitation[];
   sourceRevisionIds: string[];
   invalidatedAt: string | null;

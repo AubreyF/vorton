@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Database, SqlExecutor } from "@aubos/database";
-import { InMemoryHindsightAdapter } from "@aubos/memory";
+import { InMemoryHindsightAdapter, type HindsightAdapter } from "@aubos/memory";
 
 import {
   DatabaseExecutiveRequestResolver,
@@ -20,6 +20,7 @@ const requester = {
   installationId: input.installationId,
   authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
 };
+const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
 
 class FakeDatabase {
   results: Array<Array<Record<string, unknown>>> = [];
@@ -162,17 +163,18 @@ describe("database executive request resolver", () => {
     );
   });
 
-  it("constructs the job only from database-owned role and evidence content", async () => {
+  it("recalls memory retained in the canonical installation bank", async () => {
     const database = new FakeDatabase();
     const memory = new InMemoryHindsightAdapter();
     const bank = {
-      id: `organizational:${input.installationId}:executive`,
+      id: `organizational:${input.installationId}:default`,
       installationId: input.installationId,
       realm: "organizational" as const,
     };
     await memory.retain(bank, {
       id: "derived-1",
       text: "Assess synthetic evidence using derived context that remains untrusted",
+      classification: "synthetic",
       citations: [
         {
           sourceRevisionId: input.evidenceRecordIds[0]!,
@@ -204,6 +206,15 @@ describe("database executive request resolver", () => {
           classification: "synthetic",
         },
       ],
+      [
+        {
+          source_revision_id: input.evidenceRecordIds[0],
+          classification: "synthetic",
+          source_uri: "urn:aubos:synthetic",
+          revision_hash: "c".repeat(64),
+          locator: "fixture:1",
+        },
+      ],
     ];
     const resolver = new DatabaseExecutiveRequestResolver(
       database as unknown as Database,
@@ -223,8 +234,103 @@ describe("database executive request resolver", () => {
           text: "Assess synthetic evidence using derived context that remains untrusted",
           trust: "untrusted",
           derived: true,
+          classification: "synthetic",
         },
       ],
+    });
+    expect(database.statements[2]).toContain("public.memory_candidates");
+    expect(database.statements[2]).toContain(
+      "candidate.admission_state = 'admitted'",
+    );
+    expect(database.statements[2]).toContain(
+      "revision.admission_state = 'admitted'",
+    );
+    expect(database.statements[2]).toContain(
+      "successor.supersedes_revision_id",
+    );
+  });
+
+  it("replaces a downgraded recalled classification with Postgres authority", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          work_id: input.workId,
+          worker_id: input.workerId,
+          role_id: input.roleId,
+          role_name: "Reviewer",
+          role_version: 2,
+          skill_markdown: "Database-owned role",
+          content_sha256: "b".repeat(64),
+        },
+      ],
+      [
+        {
+          id: input.evidenceRecordIds[0],
+          summary: "Database-owned evidence",
+          source_uri: null,
+          classification: "synthetic",
+        },
+      ],
+      [
+        {
+          source_revision_id: input.evidenceRecordIds[0],
+          classification: "public",
+          source_uri: "urn:aubos:synthetic",
+          revision_hash: "c".repeat(64),
+          locator: "fixture:1",
+        },
+        {
+          source_revision_id: secondSourceRevisionId,
+          classification: "restricted",
+          source_uri: "urn:aubos:restricted",
+          revision_hash: "d".repeat(64),
+          locator: "fixture:2",
+        },
+      ],
+    ];
+    const memory = {
+      ensureBank: async () => undefined,
+      retain: async () => undefined,
+      retrieve: async () => [
+        {
+          id: "derived-without-classification",
+          text: "Malformed derived context",
+          classification: "public",
+          citations: [
+            {
+              sourceRevisionId: input.evidenceRecordIds[0]!,
+              sourceUri: "urn:aubos:synthetic",
+              revisionHash: "c".repeat(64),
+              locator: "fixture:1",
+            },
+            {
+              sourceRevisionId: secondSourceRevisionId,
+              sourceUri: "urn:aubos:restricted",
+              revisionHash: "d".repeat(64),
+              locator: "fixture:2",
+            },
+          ],
+          sourceRevisionIds: [
+            input.evidenceRecordIds[0]!,
+            secondSourceRevisionId,
+          ],
+          invalidatedAt: null,
+        },
+      ],
+      invalidateSource: async () => undefined,
+    } as unknown as HindsightAdapter;
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+      memory,
+    );
+
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({
+      derivedContext: [{ classification: "restricted" }],
     });
   });
 

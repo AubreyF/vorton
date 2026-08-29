@@ -1,6 +1,6 @@
 {
   "name": "@aubos/release-bootstrap-runtime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Dependency-locked runtime for an extracted AubOS release bootstrap.",
   "engines": {
@@ -9,7 +9,8 @@
   "scripts": {
     "aubos": "node bin/aubos.cjs",
     "bootstrap:apply": "tsx deploy/bootstrap/provision.ts --apply",
-    "bootstrap:plan": "tsx deploy/bootstrap/provision.ts --plan"
+    "bootstrap:plan": "tsx deploy/bootstrap/provision.ts --plan",
+    "runtime:hindsight-canary": "node bin/hindsight-canary.cjs"
   },
   "dependencies": {
     "pg": "8.23.0",

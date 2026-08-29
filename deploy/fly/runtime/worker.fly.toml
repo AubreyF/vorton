@@ -6,21 +6,23 @@ primary_region = "sjc"
 
 [env]
   PORT = "8080"
-  AUBOS_WORKER_PROVIDER = "openai-responses"
-  AUBOS_OPENAI_MODEL = "replace-with-explicit-model"
-  AUBOS_OPENAI_STORE_RESPONSES = "false"
-  AUBOS_OPENAI_CLASSIFICATION_CEILING = "internal"
+  AUBOS_WORKER_PROVIDER = "codex-subscription"
+  AUBOS_CODEX_MODEL = "replace-with-explicit-codex-model"
+  AUBOS_CODEX_REASONING_EFFORT = "high"
+  AUBOS_CODEX_EXECUTION_TIMEOUT_MS = "900000"
+  AUBOS_CODEX_HOME = "/data/codex"
+  AUBOS_CODEX_WORKDIR = "/var/empty/aubos-worker"
+  AUBOS_CODEX_CLASSIFICATION_CEILING = "internal"
 
-[[services]]
-  internal_port = 8080
-  protocol = "tcp"
-  auto_start_machines = true
-  auto_stop_machines = "stop"
-  min_machines_running = 1
+[[mounts]]
+  source = "replace_with_codex_auth"
+  destination = "/data"
 
-  [[services.http_checks]]
-    interval = "15s"
-    timeout = "3s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/healthz"
+[checks.health]
+  type = "http"
+  port = 8080
+  interval = "15s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "get"
+  path = "/healthz"

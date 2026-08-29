@@ -8,7 +8,7 @@ import {
 } from "@aubos/contracts";
 
 import {
-  assertEvidenceWithinCeiling,
+  assertRequestWithinCeiling,
   type ExecutiveWorkerProvider,
 } from "./provider.js";
 
@@ -31,10 +31,7 @@ export class FakeExecutiveWorkerAdapter implements ExecutiveWorkerProvider {
 
   submit(rawRequest: ExecutiveWorkerJobRequest): Promise<ExecutiveWorkerJob> {
     const request = executiveWorkerJobRequestSchema.parse(rawRequest);
-    assertEvidenceWithinCeiling(
-      request.evidence,
-      this.dataClassificationCeiling,
-    );
+    assertRequestWithinCeiling(request, this.dataClassificationCeiling);
     this.#sequence += 1;
     const firstEvidence = request.evidence[0];
     const recommendation =

@@ -72,11 +72,11 @@ function manifest(sourceCommit: string, digest = `sha256:${"a".repeat(64)}`) {
     coreMigrationHead: "20260828000300_executive",
     images: {
       "control-plane": {
-        reference: `ghcr.io/aubreyf/aubos-control-plane@${digest}`,
+        reference: `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
         digest,
       },
       worker: {
-        reference: `ghcr.io/aubreyf/aubos-worker@${digest}`,
+        reference: `ghcr.io/moonbase-labs/aubos-worker@${digest}`,
         digest,
       },
     },
@@ -100,7 +100,7 @@ function schemaV2Manifest(
     images: {
       ...manifest(sourceCommit, digest).images,
       web: {
-        reference: `ghcr.io/aubreyf/aubos-web@${digest}`,
+        reference: `ghcr.io/moonbase-labs/aubos-web@${digest}`,
         digest,
       },
     },
@@ -123,6 +123,10 @@ describe("immutable release contracts", () => {
     );
     const ciWorkflow = readFileSync(
       join(process.cwd(), ".github/workflows/ci.yml"),
+      "utf8",
+    );
+    const releasePreflight = readFileSync(
+      join(process.cwd(), "release/preflight-release.ts"),
       "utf8",
     );
     const manifestJsonSchema = JSON.parse(
@@ -188,14 +192,16 @@ describe("immutable release contracts", () => {
     );
     expect(postgresAuthorityGate).toBeGreaterThan(-1);
     expect(postgresAuthorityGate).toBeLessThan(
-      releaseWorkflow.indexOf("name: Create GitHub Release from tag"),
+      releaseWorkflow.indexOf(
+        "name: Publish or recover the exact GitHub Release",
+      ),
     );
     expect(releaseWorkflow).toContain(
       'git show-ref --verify "refs/tags/$TAG_NAME"',
     );
-    expect(releaseWorkflow).toContain(".Image.Config.Labels");
-    expect(releaseWorkflow).toContain("{{json .Provenance}}");
-    expect(releaseWorkflow).toContain("{{json .SBOM}}");
+    expect(releasePreflight).toContain(".Image.Config.Labels");
+    expect(releasePreflight).toContain("{{json .Provenance}}");
+    expect(releasePreflight).toContain("{{json .SBOM}}");
     expect(releaseWorkflow).toContain("stage-contract-archive.ts");
     expect(releaseWorkflow).toContain("--sort=name --mtime='@0'");
     expect(releaseWorkflow).toContain("--owner=0 --group=0 --numeric-owner");
@@ -243,16 +249,16 @@ describe("immutable release contracts", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     expect(
       parseImageArgument(
-        `control-plane=ghcr.io/aubreyf/aubos-control-plane@${digest}`,
+        `control-plane=ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
       ),
     ).toEqual({
       name: "control-plane",
-      reference: `ghcr.io/aubreyf/aubos-control-plane@${digest}`,
+      reference: `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
       digest,
     });
     expect(() =>
       parseImageArgument(
-        "control-plane=ghcr.io/aubreyf/aubos-control-plane:latest",
+        "control-plane=ghcr.io/moonbase-labs/aubos-control-plane:latest",
       ),
     ).toThrow(/pinned by sha256/);
   });
@@ -289,31 +295,46 @@ describe("immutable release contracts", () => {
       ),
     ).toContain("aubos_private.runtime_context_keys");
 
+    const canary = join(extracted, "bin/hindsight-canary.cjs");
+    let canaryFailure = "";
+    try {
+      execFileSync("node", [canary], {
+        cwd: extracted,
+        env: { PATH: process.env.PATH },
+        stdio: "pipe",
+      });
+    } catch (error) {
+      canaryFailure = String((error as { stderr?: Buffer }).stderr ?? error);
+    }
+    expect(canaryFailure).toContain(
+      "Hindsight release canary failed: AUBOS_HINDSIGHT_URL is required",
+    );
+
     const cli = join(extracted, "bin/aubos.cjs");
     const installation = join(root, "installation");
     const extractionManifest = join(root, "extraction-release.json");
     mkdirSync(installation);
-    const hostTemplate = "templates/releases/0.2.0/host/aubos-runtime.json";
+    const hostTemplate = "templates/releases/0.3.0/host/aubos-runtime.json";
     const extractionRelease = {
       schemaVersion: 2,
       status: "released",
-      version: "0.2.0",
+      version: "0.3.0",
       sourceCommit: "c".repeat(40),
       createdAt: "2026-08-28T12:00:00.000Z",
-      cliVersion: "0.2.0",
+      cliVersion: "0.3.0",
       contracts: { host: 1, module: 1, worker: 1 },
       coreMigrationHead: "20260828000400_runtime_authority",
       images: {
         "control-plane": {
-          reference: `ghcr.io/aubreyf/aubos-control-plane@sha256:${"3".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/aubos-control-plane@sha256:${"3".repeat(64)}`,
           digest: `sha256:${"3".repeat(64)}`,
         },
         web: {
-          reference: `ghcr.io/aubreyf/aubos-web@sha256:${"4".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/aubos-web@sha256:${"4".repeat(64)}`,
           digest: `sha256:${"4".repeat(64)}`,
         },
         worker: {
-          reference: `ghcr.io/aubreyf/aubos-worker@sha256:${"5".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/aubos-worker@sha256:${"5".repeat(64)}`,
           digest: `sha256:${"5".repeat(64)}`,
         },
       },
@@ -392,7 +413,7 @@ describe("immutable release contracts", () => {
       mismatch = String((error as { stderr?: Buffer }).stderr ?? error);
     }
     expect(mismatch).toContain(
-      "requires AubOS CLI 9.9.9, but the running CLI is 0.2.0",
+      "requires AubOS CLI 9.9.9, but the running CLI is 0.3.0",
     );
 
     execFileSync(
@@ -430,18 +451,18 @@ describe("immutable release contracts", () => {
       sourceCommit: "b".repeat(40),
       version: "0.1.0",
       images: {
-        "control-plane": `ghcr.io/aubreyf/aubos-control-plane@${digest}`,
-        web: `ghcr.io/aubreyf/aubos-web@${digest}`,
-        worker: `ghcr.io/aubreyf/aubos-worker@${digest}`,
+        "control-plane": `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
+        web: `ghcr.io/moonbase-labs/aubos-web@${digest}`,
+        worker: `ghcr.io/moonbase-labs/aubos-worker@${digest}`,
       },
     });
     expect(
       Object.keys(
-        parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "AubreyF"),
+        parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "moonbase-labs"),
       ).sort(),
     ).toEqual(["control-plane", "web", "worker"]);
     expect(() =>
-      parseImageReceipt(receipt, "c".repeat(40), "0.1.0", "AubreyF"),
+      parseImageReceipt(receipt, "c".repeat(40), "0.1.0", "moonbase-labs"),
     ).toThrow(/source commit/);
   });
 
@@ -458,8 +479,8 @@ describe("immutable release contracts", () => {
     });
 
     expect(() =>
-      parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "AubreyF"),
-    ).toThrow(/ghcr\.io\/aubreyf\/aubos-control-plane/);
+      parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "moonbase-labs"),
+    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
   });
 
   it("derives the current migration head from the exact source commit", () => {
@@ -483,7 +504,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
         releaseCommit,
       }).version,
     ).toBe("0.1.0");
@@ -502,7 +523,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
       }).schemaVersion,
     ).toBe(2);
 
@@ -517,7 +538,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
       }),
     ).toThrow(/control-plane, web, worker/);
   });
@@ -540,7 +561,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
         releaseCommit,
       }),
     ).toThrow(/migration head mismatch/i);
@@ -555,7 +576,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
       }),
     ).toThrow(/template digest mismatch/i);
   });
@@ -575,7 +596,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
         releaseCommit,
       }),
     ).toThrow(/may change only/);
@@ -598,8 +619,8 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
-        expectedRepositoryOwner: "AubreyF",
+        expectedRepositoryOwner: "moonbase-labs",
       }),
-    ).toThrow(/ghcr\.io\/aubreyf\/aubos-control-plane/);
+    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
   });
 });

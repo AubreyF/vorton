@@ -10,7 +10,7 @@ import {
 } from "@aubos/contracts";
 
 import {
-  assertEvidenceWithinCeiling,
+  assertRequestWithinCeiling,
   type ExecutiveWorkerProvider,
 } from "./provider.js";
 import { executiveRecommendationJsonSchema } from "./schema.js";
@@ -110,10 +110,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
     rawRequest: ExecutiveWorkerJobRequest,
   ): Promise<ExecutiveWorkerJob> {
     const request = executiveWorkerJobRequestSchema.parse(rawRequest);
-    assertEvidenceWithinCeiling(
-      request.evidence,
-      this.dataClassificationCeiling,
-    );
+    assertRequestWithinCeiling(request, this.dataClassificationCeiling);
     if (request.background && !this.#store) {
       throw new Error(
         "Background OpenAI jobs require explicit response storage; privacy default is store:false",

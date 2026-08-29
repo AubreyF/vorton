@@ -6,12 +6,18 @@ import {
 export interface WorkerEnvironment {
   port: number;
   sharedSecret: string;
-  provider: "openai-responses";
+  provider: "openai-responses" | "codex-subscription";
   model: string;
-  openAiApiKey: string;
-  openAiBaseUrl: string;
+  openAiApiKey?: string;
+  openAiBaseUrl?: string;
   storeResponses: boolean;
   classificationCeiling: DataClassification;
+  codexHome?: string;
+  codexPath?: string;
+  codexWorkdir?: string;
+  codexAuthJson?: string;
+  codexExecutionTimeoutMs?: number;
+  codexReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   release: string;
 }
 
@@ -33,6 +39,25 @@ function exactBoolean(
   throw new Error(`${name} must be exactly true or false`);
 }
 
+function boundedInteger(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = required(env, name);
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  const value = Number(raw);
+  if (value < minimum || value > maximum) {
+    throw new Error(
+      `${name} must be from ${String(minimum)} through ${String(maximum)}`,
+    );
+  }
+  return value;
+}
+
 export function readWorkerEnvironment(
   env: NodeJS.ProcessEnv = process.env,
 ): WorkerEnvironment {
@@ -46,28 +71,81 @@ export function readWorkerEnvironment(
       "AUBOS_WORKER_SHARED_SECRET must contain at least 32 characters",
     );
   const provider = required(env, "AUBOS_WORKER_PROVIDER");
-  if (provider !== "openai-responses") {
+  if (provider !== "openai-responses" && provider !== "codex-subscription") {
     throw new Error(
-      "AUBOS_WORKER_PROVIDER must be explicitly set to openai-responses",
+      "AUBOS_WORKER_PROVIDER must be explicitly set to openai-responses or codex-subscription",
     );
   }
-  const baseUrl = new URL(
-    env.AUBOS_OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-  );
-  if (baseUrl.protocol !== "https:")
-    throw new Error("AUBOS_OPENAI_BASE_URL must use https");
-  return {
+  const common = {
     port,
     sharedSecret: secret,
     provider,
-    model: required(env, "AUBOS_OPENAI_MODEL"),
-    openAiApiKey: required(env, "AUBOS_OPENAI_API_KEY"),
-    openAiBaseUrl: baseUrl.toString().replace(/\/$/, ""),
-    storeResponses: exactBoolean(env, "AUBOS_OPENAI_STORE_RESPONSES", false),
-    classificationCeiling: dataClassificationSchema.parse(
-      env.AUBOS_OPENAI_CLASSIFICATION_CEILING ?? "internal",
-    ),
     release:
       env.FLY_IMAGE_REF?.trim() || env.AUBOS_RELEASE?.trim() || "development",
+  };
+  if (provider === "openai-responses") {
+    const baseUrl = new URL(
+      env.AUBOS_OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+    );
+    if (baseUrl.protocol !== "https:")
+      throw new Error("AUBOS_OPENAI_BASE_URL must use https");
+    return {
+      ...common,
+      provider,
+      model: required(env, "AUBOS_OPENAI_MODEL"),
+      openAiApiKey: required(env, "AUBOS_OPENAI_API_KEY"),
+      openAiBaseUrl: baseUrl.toString().replace(/\/$/, ""),
+      storeResponses: exactBoolean(env, "AUBOS_OPENAI_STORE_RESPONSES", false),
+      classificationCeiling: dataClassificationSchema.parse(
+        env.AUBOS_OPENAI_CLASSIFICATION_CEILING ?? "internal",
+      ),
+    };
+  }
+
+  const codexHome = required(env, "AUBOS_CODEX_HOME");
+  if (!codexHome.startsWith("/")) {
+    throw new Error("AUBOS_CODEX_HOME must be an absolute path");
+  }
+  const codexWorkdir = required(env, "AUBOS_CODEX_WORKDIR");
+  if (!codexWorkdir.startsWith("/")) {
+    throw new Error("AUBOS_CODEX_WORKDIR must be an absolute path");
+  }
+  const reasoningEffort = required(env, "AUBOS_CODEX_REASONING_EFFORT");
+  if (
+    !["low", "medium", "high", "xhigh", "max", "ultra"].includes(
+      reasoningEffort,
+    )
+  ) {
+    throw new Error(
+      "AUBOS_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
+    );
+  }
+  for (const name of ["AUBOS_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
+    if (env[name]?.trim()) {
+      throw new Error(
+        `A Codex subscription worker must not receive API billing secret ${name}`,
+      );
+    }
+  }
+  return {
+    ...common,
+    provider,
+    model: required(env, "AUBOS_CODEX_MODEL"),
+    storeResponses: false,
+    classificationCeiling: dataClassificationSchema.parse(
+      env.AUBOS_CODEX_CLASSIFICATION_CEILING ?? "internal",
+    ),
+    codexHome,
+    codexPath: env.AUBOS_CODEX_PATH?.trim() || "codex",
+    codexWorkdir,
+    codexAuthJson: env.AUBOS_CODEX_AUTH_JSON,
+    codexExecutionTimeoutMs: boundedInteger(
+      env,
+      "AUBOS_CODEX_EXECUTION_TIMEOUT_MS",
+      60_000,
+      1_800_000,
+    ),
+    codexReasoningEffort: reasoningEffort as
+      "low" | "medium" | "high" | "xhigh" | "max" | "ultra",
   };
 }

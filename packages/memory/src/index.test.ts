@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryHindsightAdapter, type HindsightBank } from "./index.js";
+import {
+  InMemoryHindsightAdapter,
+  installationHindsightBank,
+  type HindsightBank,
+} from "./index.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
 const personal: HindsightBank = {
@@ -10,6 +14,16 @@ const personal: HindsightBank = {
 };
 
 describe("Hindsight adapter isolation", () => {
+  it("derives one canonical default bank for an installation realm", () => {
+    expect(installationHindsightBank(installationId, "organizational")).toEqual(
+      {
+        id: `organizational:${installationId}:default`,
+        installationId,
+        realm: "organizational",
+      },
+    );
+  });
+
   it("does not allow a bank identity to cross realms", async () => {
     const adapter = new InMemoryHindsightAdapter();
     await expect(
@@ -28,6 +42,7 @@ describe("Hindsight adapter isolation", () => {
     await adapter.retain(other, {
       id: "other-memory",
       text: "Synthetic lunar planning note",
+      classification: "synthetic",
       citations: [],
       sourceRevisionIds: ["other-source"],
       invalidatedAt: null,
@@ -40,6 +55,7 @@ describe("Hindsight adapter isolation", () => {
     await adapter.retain(personal, {
       id: "memory-1",
       text: "Synthetic lunar planning note",
+      classification: "synthetic",
       citations: [],
       sourceRevisionIds: ["source-1"],
       invalidatedAt: null,

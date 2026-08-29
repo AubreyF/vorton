@@ -32,6 +32,7 @@ const worker = new RemoteExecutiveWorkerAdapter({
   provider: env.workerProvider,
   model: env.workerModel,
   dataClassificationCeiling: env.workerClassificationCeiling,
+  requestTimeoutMs: env.workerRequestTimeoutMs,
 });
 // Server-only construction. Derived memory never participates in authority checks.
 const hindsight = new HttpHindsightAdapter({

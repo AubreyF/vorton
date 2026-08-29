@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryHindsightAdapter } from "@aubos/memory";
+import { InMemoryHindsightAdapter, type HindsightAdapter } from "@aubos/memory";
 import { ContextGateway } from "./index.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
@@ -65,6 +65,7 @@ describe("Context Gateway", () => {
       text: "Lunar apples",
       trust: "untrusted",
       derived: true,
+      classification: "synthetic",
       citations: [{ sourceRevisionId: firstId }],
     });
     expect(result.receipt).toMatchObject({
@@ -72,6 +73,69 @@ describe("Context Gateway", () => {
       resultIds: [`source:${firstId}`],
       sourceRevisionIds: [firstId],
     });
+  });
+
+  it("uses the most restrictive active source classification for consolidation", async () => {
+    const gateway = new ContextGateway(new InMemoryHindsightAdapter(), clock);
+    await gateway.admit({
+      ...source(firstId),
+      sourceObjectId: "public-conversation",
+      text: "Public lunar telemetry",
+      classification: "public",
+    });
+    await gateway.admit({
+      ...source(secondId),
+      sourceObjectId: "restricted-conversation",
+      text: "Restricted lunar telemetry",
+      classification: "restricted",
+    });
+    await gateway.consolidate({
+      installationId,
+      installationRealm: "personal",
+      derivedMemoryId: "classified-reflection",
+      text: "Combined lunar classification",
+      sourceRevisionIds: [firstId, secondId],
+    });
+
+    await expect(
+      gateway.retrieve({
+        installationId,
+        installationRealm: "personal",
+        query: "Combined",
+      }),
+    ).resolves.toMatchObject({
+      context: [{ classification: "restricted" }],
+    });
+  });
+
+  it("drops derived memory without its canonical classification", async () => {
+    const memory = {
+      ensureBank: async () => undefined,
+      retain: async () => undefined,
+      retrieve: async () => [
+        {
+          id: "malformed-memory",
+          text: "Lunar malformed memory",
+          citations: source().citations,
+          sourceRevisionIds: [firstId],
+          invalidatedAt: null,
+        },
+      ],
+      invalidateSource: async () => undefined,
+    };
+    const gateway = new ContextGateway(
+      memory as unknown as HindsightAdapter,
+      clock,
+    );
+    await gateway.admit(source());
+
+    await expect(
+      gateway.retrieve({
+        installationId,
+        installationRealm: "personal",
+        query: "Lunar",
+      }),
+    ).resolves.toMatchObject({ context: [] });
   });
 
   it("propagates supersession and deletion through consolidation lineage", async () => {

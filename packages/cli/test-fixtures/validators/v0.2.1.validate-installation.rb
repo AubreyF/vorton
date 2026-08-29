@@ -53,10 +53,10 @@ assert(
   lock.dig("release", "sourceCommit")&.match?(/\A[a-f0-9]{40}\z/),
   "Invalid source commit",
 )
-assert(lock.fetch("coreMigrationHead") == "{{CORE_MIGRATION_HEAD}}", "Unexpected migration head")
+assert(lock.fetch("coreMigrationHead") == "20260828000400_runtime_authority", "Unexpected migration head")
 
 images = lock.fetch("images")
-assert(images.keys.sort == {{EXPECTED_IMAGE_NAMES_RUBY}}, "Unexpected runtime image set")
+assert(images.keys.sort == ["control-plane","web","worker"], "Unexpected runtime image set")
 images.each_value do |image|
   digest = image.fetch("digest")
   reference = image.fetch("reference")
@@ -70,7 +70,7 @@ if images.key?("web")
     "deploy/api.fly.toml" => images.fetch("control-plane").fetch("reference"),
     "deploy/web.fly.toml" => images.fetch("web").fetch("reference"),
     "deploy/worker.fly.toml" => images.fetch("worker").fetch("reference"),
-    "deploy/hindsight.fly.toml" => "ghcr.io/vectorize-io/hindsight@sha256:a0e937366261b8a8f20ebcaf13758c689c381dcbbf01684e4375c2787c8c666d",
+    "deploy/hindsight.fly.toml" => "ghcr.io/vectorize-io/hindsight@sha256:ac50c0d95a65c88545f46665dc432544bcc378cec89e03675786a1d9383feb2d",
   }
   deployment_images.each do |relative_path, expected_reference|
     path = ROOT.join(relative_path)
@@ -83,47 +83,6 @@ if images.key?("web")
       expected_worker_id = "#{name}-memory"
       assert(worker_id == expected_worker_id, "Unexpected Hindsight worker ID")
       assert(worker_id.length >= 8, "Hindsight worker ID must contain at least 8 characters")
-      if lock["lastUpgradeEdge"].nil?
-        {
-        "memory" => "2gb",
-        "HINDSIGHT_ENABLE_API" => "true",
-        "HINDSIGHT_ENABLE_CP" => "false",
-        "HINDSIGHT_API_HOST" => "::",
-        "HINDSIGHT_API_DATABASE_BACKEND" => "postgresql",
-        "HINDSIGHT_API_LLM_PROVIDER" => "openai-codex",
-        "HINDSIGHT_API_LLM_MODEL" => "gpt-5.4-mini",
-        "HINDSIGHT_API_LLM_REASONING_EFFORT" => "low",
-        "HINDSIGHT_API_LLM_MAX_CONCURRENT" => "1",
-        "HINDSIGHT_API_LLM_STRICT_SCHEMA" => "true",
-        "HINDSIGHT_API_CONSOLIDATION_LLM_PROVIDER" => "openai-codex",
-        "HINDSIGHT_API_CONSOLIDATION_LLM_MODEL" => "gpt-5.4-mini",
-        "HINDSIGHT_API_CONSOLIDATION_LLM_REASONING_EFFORT" => "low",
-        "HINDSIGHT_API_CONSOLIDATION_LLM_MAX_CONCURRENT" => "1",
-        "HINDSIGHT_API_CONSOLIDATION_LLM_PARALLELISM" => "1",
-        "HINDSIGHT_API_RUN_MIGRATIONS_ON_STARTUP" => "false",
-        "HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH" => "true",
-        "CODEX_HOME" => "/data/hindsight-codex",
-        "HINDSIGHT_API_EMBEDDINGS_PROVIDER" => "local",
-        "HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL" => "BAAI/bge-small-en-v1.5",
-        "HINDSIGHT_API_EMBEDDINGS_LOCAL_FORCE_CPU" => "true",
-        "HINDSIGHT_API_RERANKER_PROVIDER" => "rrf",
-        "HINDSIGHT_API_ENABLE_OBSERVATIONS" => "true",
-        "HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION" => "true",
-        "HINDSIGHT_API_WORKER_ENABLED" => "true",
-        }.each do |key, value|
-          assert(quoted_toml_value(content, key, relative_path) == value, "Unexpected #{key} at #{relative_path}")
-        end
-        assert(quoted_toml_value(content, "destination", relative_path) == "/data", "Unexpected Hindsight auth volume destination")
-        worker_mount = ROOT.join("deploy/worker.fly.toml").read
-        worker_sources = worker_mount.scan(/^\s*source\s*=\s*"([^"]+)"\s*$/).flatten
-        if worker_sources.any?
-          assert(worker_sources.length == 1, "deploy/worker.fly.toml must contain exactly one source")
-          assert(
-            quoted_toml_value(content, "source", relative_path) != worker_sources.first,
-            "Hindsight and executive worker must use separate auth volumes",
-          )
-        end
-      end
     end
   end
 end

@@ -26,7 +26,7 @@ Milestone: a local AubOS control plane can authenticate a synthetic owner, creat
 Target machine time: three parallel conversations, about 120 to 240 minutes each.
 
 - [x] Executive roles, recommendations, approvals, decisions, dispatch, and outcome review.
-- [x] Context Gateway, Hindsight adapter, memory consolidation contracts, Meet and Omi polling adapters, transcript provenance, and deletion propagation.
+- [x] Context Gateway, Hindsight adapter, native observation consolidation profile, Meet and Omi polling adapters, transcript provenance, and deletion propagation.
 - [x] Factory dashboard and read-only connector to the existing Freed Linux pilot.
 
 Milestone: FreedOS can run in the cloud as an executive copilot, preserve governed memory, and show current Factory work without becoming the Factory pilot's authority.
@@ -42,6 +42,33 @@ Target machine time: one integration conversation, about 120 to 240 minutes plus
 - [ ] Upgrade FreedOS to the next release and prove configuration, application, and database recovery boundaries.
 
 Milestone: AubOS has a reproducible release and FreedOS is live for owner testing.
+
+## MVP memory decision: native Hindsight consolidation
+
+The MVP uses Hindsight's native `openai-codex` provider through its own isolated ChatGPT Pro authentication cache. Hindsight owns fact extraction, observations, and automatic consolidation. Local embeddings and reciprocal-rank fusion remain inside the Hindsight boundary. The executive worker uses a different authentication cache, so neither service can impersonate or corrupt the other.
+
+This path deliberately excludes an AubOS-owned consolidation scheduler, promotion queue, and write protocol. Hindsight output remains derived and untrusted. It cannot create organizational authority, and AubOS accepts a cited observation only when it can rehydrate every active source revision and exact citation from Postgres.
+
+## Post-MVP: AubOS-owned memory consolidation cathedral
+
+The full cathedral is the future form of Option Three. AubOS will own a generic consolidation runtime, scheduler, write protocol, review system, and promotion system. That larger system is deliberately deferred until the private MVP produces real operating evidence.
+
+- [ ] Govern consolidation scheduling, retries, cancellation, concurrency, budgets, and owner controls.
+- [ ] Admit only active, cited, same-realm source material through explicit source review and quarantine rules.
+- [ ] Run staged extraction, reflection, synthesis, and consolidation with durable intermediate evidence.
+- [ ] Detect contradictions, preserve competing interpretations, and prevent newer summaries from silently erasing disagreement.
+- [ ] Route candidate memories through a review and promotion queue before they can become trusted organizational knowledge.
+- [ ] Preserve exact source and parent lineage, idempotent identities, append-only history, and supersession or deletion invalidation.
+- [ ] Maintain temporal, entity, episode, decision, causal, contradiction, semantic, and lexical indexes without pretending any index is authority.
+- [ ] Govern salience, rehearsal, decay, compaction, retention, legal hold, and selective forgetting as explicit, replayable policy.
+- [ ] Offer optional memory-temple views that organize cited material spatially or narratively while preserving the same source and security boundaries.
+- [ ] Give operators a consolidation studio for inspecting source packets, intermediate stages, contradictions, lineage graphs, model receipts, and proposed promotions.
+- [ ] Instrument quality, latency, cost, failure, drift, and invalidation behavior with replayable evaluations.
+- [ ] Keep consolidation portable across Hindsight, Codex, other frontier providers, and future local workers.
+- [ ] Enforce role and classification policy at source selection, model execution, retrieval, review, and promotion boundaries.
+- [ ] Support personal and organizational memory profiles through one protocol while keeping every realm, credential, bank, database, and object store isolated.
+
+Milestone: AubOS can operate a provider-portable consolidation system whose outputs remain attributable, reviewable, reversible, and subordinate to organizational authority.
 
 ## Later
 

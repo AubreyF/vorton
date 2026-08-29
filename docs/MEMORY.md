@@ -25,7 +25,13 @@ The gateway is a narrow broker, not a second organizational ledger.
 
 ### Hindsight
 
-Hindsight provides episodic and semantic retrieval, consolidation, and reflection. Its output is derived memory. It may suggest a connection or candidate learning. It cannot create an approval, decision, Policy, capability grant, or Work assignment.
+Hindsight provides the derived-memory engine. The MVP retains source chunks, builds local semantic indexes with the pinned `BAAI/bge-small-en-v1.5` model, and combines semantic and keyword retrieval with reciprocal-rank fusion. Hindsight's native `openai-codex` provider performs fact extraction, observations, and automatic consolidation with strict structured output. Global and consolidation model settings are explicit and serialized. Retain and reflect cannot override the provider, model, or backend.
+
+The AubOS adapter accepts a native observation only when Hindsight returns every supporting fact and each fact is active, document-bound, scoped to the installation realm, and backed by matching AubOS citations and source revision IDs. Missing, truncated, mismatched, or invalidated lineage drops that observation while preserving valid raw facts as fallback. Hindsight reflect text lacks this complete citation envelope, so it remains advisory narrative and cannot become cited evidence. No Hindsight output can create an approval, decision, Policy, capability grant, or Work assignment.
+
+Hindsight classification metadata is transport-only and untrusted. Provider egress rehydrates active admitted source revisions and exact citation tuples from person-scoped Postgres, derives the most restrictive classification, and only then applies the worker ceiling.
+
+Hindsight uses a dedicated persistent `CODEX_HOME`. Its rotating `auth.json` must never be shared with the executive worker or another Hindsight Machine. Model credentials are seeded into that private volume, not stored as Fly secrets or application configuration. Local embeddings and RRF do not receive provider credentials. Hindsight's `openai-codex` provider is its upstream subscription integration and calls the ChatGPT backend directly. It is not an OpenAI-supported Hindsight API, so a real retain, consolidation, and cited-observation canary remains mandatory.
 
 ### Authoritative Records
 
@@ -33,7 +39,7 @@ Decisions, approvals, Policies, Work, receipts, and outcomes remain canonical Po
 
 ## Consolidation
 
-Memory consolidation is explicit and attributable:
+The target governed consolidation path is explicit and attributable:
 
 ```text
 source revision
@@ -44,15 +50,15 @@ source revision
   -> reviewed promotion or rejection
 ```
 
-A derived memory retains links to every source revision used to produce it. Superseded sources remain historically traceable. Deleted sources are removed from active retrieval, and their derived memories are invalidated or rebuilt.
+AubOS surfaces a derived observation only when it can reconstruct links to every source revision used to produce it. Superseded sources remain historically traceable. Deleted sources are removed from active retrieval, and Hindsight invalidates or rebuilds affected observations from their remaining sources.
 
-The first release implements source citations, admission state, Hindsight bank isolation, retrieval receipts, consolidation lineage, and deletion propagation. Memory temples, spatial indexing, and richer personal mnemonic structures remain compatible future modules rather than kernel requirements.
+The MVP implements source citations, admission state, Hindsight bank isolation, retrieval receipts, deletion propagation, native observation consolidation, and fail-closed observation hydration. Derived observations remain untrusted context. Promotion into an authoritative Record always requires the typed AubOS authority path. The governed scheduling, review, contradiction, promotion, evaluation, and portability system in the roadmap remains future work. Memory temples, spatial indexing, and richer personal mnemonic structures remain compatible future modules rather than kernel requirements.
 
 ## Security boundary
 
 Personal and organizational installations never share a Hindsight bank, database, object-storage bucket, credential, or default retrieval route. Mixed material is quarantined until a person classifies it.
 
-The schema includes role and classification metadata for future memory-policy enforcement. The first release does not claim that role-based memory boundaries are enforced.
+The schema includes role and classification metadata for future memory-policy enforcement. The MVP does not claim that role-based memory boundaries are enforced.
 
 ## Installation realm migration
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { dataClassificationSchema } from "./kernel.js";
+import { dataClassificationSchema, type DataClassification } from "./kernel.js";
 
 export const installationRealmSchema = z.enum(["personal", "organizational"]);
 export const sourceBoundarySchema = z.enum([
@@ -56,8 +56,43 @@ export const retrievedContextSchema = z.object({
   text: z.string(),
   trust: z.literal("untrusted"),
   derived: z.literal(true),
+  classification: dataClassificationSchema,
   citations: z.array(sourceCitationSchema).min(1),
 });
+
+const classificationRank: Record<
+  Exclude<DataClassification, "synthetic">,
+  number
+> = {
+  public: 0,
+  internal: 1,
+  confidential: 2,
+  restricted: 3,
+};
+
+/**
+ * Derives the classification for material supported by multiple sources.
+ * Synthetic remains synthetic only when every source is synthetic. Any real
+ * source wins, and the most restrictive real source determines the result.
+ */
+export function deriveDataClassification(
+  classifications: readonly DataClassification[],
+): DataClassification {
+  if (classifications.length === 0) {
+    throw new Error(
+      "Derived classification requires at least one supporting source",
+    );
+  }
+  const realClassifications = classifications.filter(
+    (classification) => classification !== "synthetic",
+  );
+  if (realClassifications.length === 0) return "synthetic";
+  return realClassifications.reduce((mostRestrictive, classification) =>
+    classificationRank[classification] > classificationRank[mostRestrictive]
+      ? classification
+      : mostRestrictive,
+  );
+}
 
 export const retrievalReceiptSchema = z.object({
   id: z.string().uuid(),

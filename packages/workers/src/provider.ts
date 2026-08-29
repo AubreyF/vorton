@@ -26,11 +26,15 @@ const classificationRank: Record<
   restricted: 3,
 };
 
-export function assertEvidenceWithinCeiling(
-  evidence: ExecutiveWorkerJobRequest["evidence"],
+export function assertRequestWithinCeiling(
+  request: Pick<ExecutiveWorkerJobRequest, "evidence" | "derivedContext">,
   ceiling: DataClassification,
 ): void {
-  const exceeds = evidence.some((item) => {
+  const classifiedItems = [
+    ...request.evidence,
+    ...(request.derivedContext ?? []),
+  ];
+  const exceeds = classifiedItems.some((item) => {
     if (item.classification === "synthetic") return false;
     if (ceiling === "synthetic") return true;
     return (
@@ -39,7 +43,7 @@ export function assertEvidenceWithinCeiling(
   });
   if (exceeds) {
     throw new Error(
-      "Evidence classification exceeds the worker provider ceiling",
+      "Evidence or derived context classification exceeds the worker provider ceiling",
     );
   }
 }

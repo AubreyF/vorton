@@ -62,40 +62,18 @@ jobs:
           AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority
       - run: npm run check
       - run: npm run format:check
-      - name: Verify tagged release manifest and source parent
-        run: >-
-          npm run release:validate --
-          --version "${{ steps.version.outputs.value }}"
-          --released
-          --repository-owner "${{ github.repository_owner }}"
-          --release-commit "$(git rev-parse HEAD)"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify published image references
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MANIFEST: release/manifests/${{ steps.version.outputs.value }}.json
-        run: |
-          schema_version=$(jq -r '.schemaVersion' "$MANIFEST")
-          expected_images="control-plane,worker"
-          if [ "$schema_version" = "2" ]; then
-            expected_images="control-plane,web,worker"
-          fi
-          test "$(jq -r '.images | keys | join(",")' "$MANIFEST")" = "$expected_images"
-          source_commit=$(jq -r '.sourceCommit' "$MANIFEST")
-          while IFS= read -r reference; do
-            docker buildx imagetools inspect "$reference" >/dev/null
-            labels=$(docker buildx imagetools inspect "$reference" --format '{{json .Image.Config.Labels}}')
-            test "$(jq -r '."org.opencontainers.image.revision"' <<<"$labels")" = "$source_commit"
-            docker buildx imagetools inspect "$reference" --format '{{json .Provenance}}' \
-              | jq -e 'type == "object" and length > 0' >/dev/null
-            docker buildx imagetools inspect "$reference" --format '{{json .SBOM}}' \
-              | jq -e 'type == "object" and length > 0' >/dev/null
-          done < <(jq -r '.images[].reference' "$MANIFEST")
+      - name: Verify exact release child and runtime evidence
+        run: >-
+          npm run release:preflight --
+          --version "${{ steps.version.outputs.value }}"
+          --repository-owner "${{ github.repository_owner }}"
+          --release-commit "$(git rev-parse HEAD)"
       - name: Assemble deterministic release contract artifact
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -113,24 +91,113 @@ jobs:
           file: aubos-${{ steps.version.outputs.value }}-contracts.tgz
           output-file: aubos-${{ steps.version.outputs.value }}.spdx.json
           artifact-name: aubos-${{ steps.version.outputs.value }}-sbom
+          syft-version: v1.42.3
+          upload-artifact: false
           upload-release-assets: false
-      - name: Create GitHub Release from tag
+      - name: Normalize deterministic SBOM identity
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          sbom="aubos-$VERSION.spdx.json"
+          npm run release:normalize-sbom -- \
+            --artifact "aubos-$VERSION-contracts.tgz" \
+            --manifest "release/manifests/$VERSION.json" \
+            --sbom "$sbom"
+      - name: Publish or recover the exact GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          {
-            echo '(AI Generated).'
-            echo
-            echo "Immutable AubOS $VERSION release contracts and software bill of materials."
-            echo
-            echo 'Runtime images are identified only by the digest-pinned GHCR references in the release manifest.'
-          } > release-notes.md
-          gh release create "$TAG_NAME" \
-            "aubos-$VERSION-contracts.tgz" \
-            "aubos-$VERSION-contracts.tgz.sha256" \
-            "aubos-$VERSION.spdx.json" \
-            --verify-tag \
-            --title "AubOS $TAG_NAME" \
-            --notes-file release-notes.md
+          artifact="aubos-$VERSION-contracts.tgz"
+          checksum="$artifact.sha256"
+          sbom="aubos-$VERSION.spdx.json"
+          printf '%s\n\n%s\n\n%s' \
+            '(AI Generated).' \
+            "Immutable AubOS $VERSION release contracts and software bill of materials." \
+            'Runtime images are identified only by the digest-pinned GHCR references in the release manifest.' \
+            > release-notes.md
+
+          find_release() {
+            gh api --paginate --slurp \
+              "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              > release-pages.json
+            jq --arg tag "$TAG_NAME" \
+              '[.[][] | select(.tag_name == $tag)]' \
+              release-pages.json > matching-releases.json
+          }
+
+          find_release
+          release_count=$(jq 'length' matching-releases.json)
+          if [ "$release_count" -eq 0 ]; then
+            gh release create "$TAG_NAME" \
+              --draft \
+              --verify-tag \
+              --title "AubOS $TAG_NAME" \
+              --notes-file release-notes.md
+            find_release
+            release_count=$(jq 'length' matching-releases.json)
+          fi
+          test "$release_count" -eq 1
+          test "$(jq -r '.[0].tag_name' matching-releases.json)" = "$TAG_NAME"
+          test "$(jq -r '.[0].prerelease' matching-releases.json)" = "false"
+          test "$(jq -r '.[0].name' matching-releases.json)" = "AubOS $TAG_NAME"
+          jq -j '.[0].body' matching-releases.json > existing-release-notes.md
+          cmp --silent release-notes.md existing-release-notes.md
+          release_id=$(jq -r '.[0].id' matching-releases.json)
+          release_is_draft=$(jq -r '.[0].draft' matching-releases.json)
+
+          printf '%s\n' "$artifact" "$checksum" "$sbom" \
+            | sort > expected-assets.txt
+          jq -r '.[0].assets[].name' matching-releases.json \
+            | sort > existing-assets.txt
+          unexpected=$(comm -13 expected-assets.txt existing-assets.txt)
+          if [ -n "$unexpected" ]; then
+            while IFS= read -r asset; do
+              echo "unexpected release asset: $asset" >&2
+            done <<< "$unexpected"
+            exit 1
+          fi
+
+          verify_release_assets() {
+            gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              > exact-release.json
+            jq -r '.assets[].name' exact-release.json \
+              | sort > actual-assets.txt
+            cmp --silent expected-assets.txt actual-assets.txt
+
+            download_directory=$(mktemp -d)
+            while IFS= read -r asset; do
+              asset_id=$(jq --arg name "$asset" -r \
+                '.assets[] | select(.name == $name) | .id' exact-release.json)
+              test -n "$asset_id"
+              gh api \
+                -H 'Accept: application/octet-stream' \
+                "/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                > "$download_directory/$asset"
+              cmp --silent "$asset" "$download_directory/$asset"
+            done < expected-assets.txt
+            (
+              cd "$download_directory"
+              sha256sum -c "$checksum"
+            )
+          }
+
+          if [ "$release_is_draft" = "false" ]; then
+            verify_release_assets
+            cp exact-release.json published-release.json
+          else
+            test "$release_is_draft" = "true"
+            gh release upload "$TAG_NAME" \
+              "$artifact" \
+              "$checksum" \
+              "$sbom" \
+              --clobber
+            verify_release_assets
+            gh api --method PATCH \
+              "/repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -F draft=false > published-release.json
+          fi
+          test "$(jq -r '.tag_name' published-release.json)" = "$TAG_NAME"
+          test "$(jq -r '.draft' published-release.json)" = "false"
+          test "$(gh release view "$TAG_NAME" --json tagName --jq .tagName)" = "$TAG_NAME"

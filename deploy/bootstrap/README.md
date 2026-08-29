@@ -12,9 +12,10 @@ Plan without supplying database credentials:
 
 ```sh
 AUBOS_BOOTSTRAP_AUTH_USER_ID=<supabase-auth-user-uuid> \
-AUBOS_WORKER_PROVIDER=openai-responses \
-AUBOS_WORKER_MODEL=<explicit-model> \
-AUBOS_OPENAI_MODEL=<same-explicit-model> \
+AUBOS_WORKER_PROVIDER=codex-subscription \
+AUBOS_WORKER_MODEL=<explicit-codex-model> \
+AUBOS_CODEX_MODEL=<same-explicit-codex-model> \
+AUBOS_CODEX_REASONING_EFFORT=high \
 npm run bootstrap:plan
 ```
 
@@ -22,9 +23,10 @@ Apply after migrations through `20260828000400_runtime_authority`:
 
 ```sh
 AUBOS_BOOTSTRAP_AUTH_USER_ID=<supabase-auth-user-uuid> \
-AUBOS_WORKER_PROVIDER=openai-responses \
-AUBOS_WORKER_MODEL=<explicit-model> \
-AUBOS_OPENAI_MODEL=<same-explicit-model> \
+AUBOS_WORKER_PROVIDER=codex-subscription \
+AUBOS_WORKER_MODEL=<explicit-codex-model> \
+AUBOS_CODEX_MODEL=<same-explicit-codex-model> \
+AUBOS_CODEX_REASONING_EFFORT=high \
 AUBOS_BOOTSTRAP_DATABASE_URL=<migration-or-bootstrap-postgres-url> \
 AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD=<random-32-plus-character-secret> \
 AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET=<different-random-32-plus-character-secret> \

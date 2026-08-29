@@ -15,6 +15,7 @@ const base = {
   AUBOS_WORKER_SHARED_SECRET: "s".repeat(32),
   AUBOS_WORKER_PROVIDER: "openai-responses",
   AUBOS_WORKER_MODEL: "explicit-synthetic-model",
+  AUBOS_WORKER_REQUEST_TIMEOUT_MS: "930000",
   AUBOS_ALLOWED_ORIGIN: "https://control.aubos.example",
   AUBOS_HINDSIGHT_URL: "http://aubos-hindsight.internal:8888",
   AUBOS_HINDSIGHT_API_KEY: "synthetic-hindsight-key",
@@ -51,6 +52,67 @@ describe("API environment", () => {
     expect(() =>
       readApiEnvironment({ ...base, AUBOS_WORKER_MODEL: "" }),
     ).toThrow("AUBOS_WORKER_MODEL is required");
+  });
+
+  it("rejects provider billing credentials at the API boundary", () => {
+    for (const name of ["AUBOS_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
+      expect(() =>
+        readApiEnvironment({
+          ...base,
+          AUBOS_WORKER_PROVIDER: "codex-subscription",
+          [name]: "must-not-be-present",
+        }),
+      ).toThrow(`must not receive provider billing secret ${name}`);
+    }
+  });
+
+  it("rejects an unsupported worker provider", () => {
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        AUBOS_WORKER_PROVIDER: "synthetic-provider",
+      }),
+    ).toThrow(
+      "AUBOS_WORKER_PROVIDER must be openai-responses or codex-subscription",
+    );
+  });
+
+  it("requires a bounded worker request timeout", () => {
+    expect(readApiEnvironment(base).workerRequestTimeoutMs).toBe(930000);
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "59000",
+      }),
+    ).toThrow("must be from 60000 through 1860000");
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "not-a-number",
+      }),
+    ).toThrow("must be an integer");
+  });
+
+  it("requires private Fly service URLs for worker and memory credentials", () => {
+    expect(readApiEnvironment(base)).toMatchObject({
+      workerUrl: "http://aubos-worker.internal:8080",
+      hindsightUrl: "http://aubos-hindsight.internal:8888",
+    });
+    for (const [name, value] of [
+      ["AUBOS_WORKER_URL", "https://worker.example.test:8080"],
+      ["AUBOS_WORKER_URL", "http://aubos-worker.internal:8888"],
+      ["AUBOS_WORKER_URL", "http://aubos-worker.internal:8080/proxy"],
+      ["AUBOS_HINDSIGHT_URL", "http://memory.example.test:8888"],
+      ["AUBOS_HINDSIGHT_URL", "http://aubos-hindsight.internal:8080"],
+      [
+        "AUBOS_HINDSIGHT_URL",
+        "http://credential@aubos-hindsight.internal:8888",
+      ],
+    ] as const) {
+      expect(() => readApiEnvironment({ ...base, [name]: value })).toThrow(
+        `http://<fly-app>.internal:${name === "AUBOS_WORKER_URL" ? "8080" : "8888"}`,
+      );
+    }
   });
 
   it("rejects JWT configuration for a different Supabase project", () => {
