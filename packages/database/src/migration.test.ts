@@ -6,6 +6,14 @@ const migrationUrl = new URL(
   "../../../supabase/migrations/20260828000100_kernel.sql",
   import.meta.url,
 );
+const memoryMigrationUrl = new URL(
+  "../../../supabase/migrations/20260828000200_memory_conversations.sql",
+  import.meta.url,
+);
+const memorySqlTestUrl = new URL(
+  "../../../supabase/tests/memory_conversations.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -45,5 +53,60 @@ describe("kernel migration contract", () => {
     const sql = await readFile(migrationUrl, "utf8");
     expect(sql).not.toContain("raw_user_meta_data");
     expect(sql).toContain("revoke all on function public.provision_person");
+  });
+});
+
+describe("memory and conversations migration contract", () => {
+  it("isolates banks and source rows by installation realm", async () => {
+    const sql = await readFile(memoryMigrationUrl, "utf8");
+    expect(sql).toContain("add column realm public.installation_realm,");
+    expect(sql).toContain(
+      "installations_realm_assigned check (realm is not null) not valid",
+    );
+    expect(sql).not.toContain("default 'organizational'");
+    expect(sql).toContain("foreign key (installation_id, installation_realm)");
+    expect(sql).toContain("unique (external_bank_id)");
+    expect(sql).toContain("unique (database_locator)");
+    expect(sql).toContain("unique (object_bucket_locator)");
+    expect(sql).toContain("transcript_revisions_quarantine_crossing");
+  });
+
+  it("keeps canonical revisions immutable and memory non-authoritative", async () => {
+    const sql = await readFile(memoryMigrationUrl, "utf8");
+    expect(sql).toContain(
+      "Canonical transcript revisions and utterances are immutable",
+    );
+    expect(sql).toContain("Untrusted derived context only");
+    expect(sql).not.toContain("raw_audio");
+    expect(sql).not.toContain("raw_video");
+  });
+
+  it("enables RLS for every Wave 2 table", async () => {
+    const sql = await readFile(memoryMigrationUrl, "utf8");
+    for (const table of [
+      "source_connections",
+      "transcript_revisions",
+      "transcript_utterances",
+      "source_citations",
+      "memory_banks",
+      "memory_candidates",
+      "derived_memories",
+      "consolidation_lineage",
+      "retrieval_receipts",
+      "retrieval_receipt_results",
+    ]) {
+      expect(sql).toContain(
+        `alter table public.${table} enable row level security;`,
+      );
+    }
+  });
+
+  it("ships a synthetic SQL integration test for quarantine and propagation", async () => {
+    const sql = await readFile(memorySqlTestUrl, "utf8");
+    expect(sql).toContain("Supersession did not invalidate derived memory");
+    expect(sql).toContain("Mixed source bypassed quarantine");
+    expect(sql).toContain("Canonical transcript revision accepted mutation");
+    expect(sql).toContain("New installation omitted an explicit realm");
+    expect(sql).toContain("Unknown installation accepted a source connection");
   });
 });

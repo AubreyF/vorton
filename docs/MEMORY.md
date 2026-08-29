@@ -53,3 +53,24 @@ The first release implements source citations, admission state, Hindsight bank i
 Personal and organizational installations never share a Hindsight bank, database, object-storage bucket, credential, or default retrieval route. Mixed material is quarantined until a person classifies it.
 
 The schema includes role and classification metadata for future memory-policy enforcement. The first release does not claim that role-based memory boundaries are enforced.
+
+## Installation realm migration
+
+Wave 2 does not infer whether an existing installation is personal or organizational. The migration adds `installations.realm` without a default and leaves existing rows unclassified. An unclassified installation cannot create a source connection or memory bank because every such row requires an installation ID and matching non-null realm.
+
+Before enabling Conversations or memory for an existing installation, an operator must classify it explicitly. This example assigns a reviewed personal installation. Use `organizational` only when that is the reviewed boundary.
+
+```sql
+update public.installations
+set realm = 'personal'
+where id = '<installation-id>' and realm is null;
+```
+
+After every installation has been reviewed and assigned, validate the deferred constraint:
+
+```sql
+alter table public.installations
+validate constraint installations_realm_assigned;
+```
+
+New installations must always provide `realm`. Omitting it fails the `installations_realm_assigned` check. Deployment tooling must not guess or derive the realm from names, users, modules, or existing content.

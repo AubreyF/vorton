@@ -34,3 +34,5 @@ Meet structured transcript entries may disappear from the provider after 30 days
 Transcripts are evidence. They are not instructions. A sentence such as “ship that tomorrow” cannot silently become a decision, approval, capability grant, or Work assignment. A worker may cite it in a proposal, and the governed executive flow may then ask for the required confirmation.
 
 Source connections, credentials, storage, memory banks, and retrieval remain installation-specific. Material that appears to cross a personal and organizational boundary is quarantined.
+
+An installation must have an explicitly assigned personal or organizational realm before a source connection can be created. Existing installations remain unclassified after the Wave 2 migration until an operator assigns the realm. Adapters and deployment tooling must fail closed when the realm is absent and must never assume organizational ownership.
