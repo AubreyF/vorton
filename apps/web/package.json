@@ -1,0 +1,29 @@
+{
+  "name": "@aubos/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aubos/control-plane": "0.0.0",
+    "@aubos/example-moonbase-triage": "0.0.0",
+    "@aubos/ui": "0.0.0",
+    "@fontsource/barlow": "^5.2.5",
+    "@fontsource/newsreader": "^5.2.5",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^7.3.6"
+  }
+}
