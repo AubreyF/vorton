@@ -8,6 +8,34 @@ import { releaseManifestSchema, type ReleaseManifest } from "@aubos/contracts";
 const imageReferencePattern =
   /^ghcr\.io\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$/;
 
+function releaseImageRepositories(
+  repositoryOwner: string,
+): Record<string, string> {
+  const owner = repositoryOwner.toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(owner)) {
+    throw new Error(`Invalid GitHub repository owner: ${repositoryOwner}`);
+  }
+  return {
+    "control-plane": `ghcr.io/${owner}/aubos-control-plane`,
+    worker: `ghcr.io/${owner}/aubos-worker`,
+  };
+}
+
+function requireReleaseImageRepositories(
+  images: Record<string, { reference: string; digest: string }>,
+  repositoryOwner: string,
+): void {
+  const repositories = releaseImageRepositories(repositoryOwner);
+  for (const [name, expectedRepository] of Object.entries(repositories)) {
+    const image = images[name];
+    if (!image || image.reference !== `${expectedRepository}@${image.digest}`) {
+      throw new Error(
+        `Image ${name} must use repository ${expectedRepository} at its declared digest`,
+      );
+    }
+  }
+}
+
 export function sha256(content: string | Buffer): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
@@ -94,6 +122,7 @@ export function parseImageReceipt(
   content: string,
   expectedSourceCommit: string,
   expectedVersion: string,
+  repositoryOwner: string,
 ): Record<string, { reference: string; digest: string }> {
   const receipt = JSON.parse(content) as {
     sourceCommit?: unknown;
@@ -126,7 +155,7 @@ export function parseImageReceipt(
       `Image receipt must contain exactly control-plane and worker`,
     );
   }
-  return Object.fromEntries(
+  const images = Object.fromEntries(
     imageEntries.map(([name, reference]) => {
       if (typeof reference !== "string") {
         throw new Error(`Image receipt reference must be a string: ${name}`);
@@ -135,12 +164,15 @@ export function parseImageReceipt(
       return [name, { reference: image.reference, digest: image.digest }];
     }),
   );
+  requireReleaseImageRepositories(images, repositoryOwner);
+  return images;
 }
 
 export function validateReleaseManifest(options: {
   repositoryRoot: string;
   manifestPath: string;
   expectedSourceCommit?: string;
+  expectedRepositoryOwner?: string;
   releaseCommit?: string;
 }): ReleaseManifest {
   const manifestBytes = readFileSync(options.manifestPath);
@@ -200,6 +232,19 @@ export function validateReleaseManifest(options: {
     const parsed = parseImageArgument(`${name}=${image.reference}`);
     if (parsed.digest !== image.digest) {
       throw new Error(`Image digest mismatch: ${name}`);
+    }
+  }
+  if (manifest.status === "released") {
+    if (options.releaseCommit && !options.expectedRepositoryOwner) {
+      throw new Error(
+        `Released manifest validation requires a repository owner`,
+      );
+    }
+    if (options.expectedRepositoryOwner) {
+      requireReleaseImageRepositories(
+        manifest.images,
+        options.expectedRepositoryOwner,
+      );
     }
   }
 

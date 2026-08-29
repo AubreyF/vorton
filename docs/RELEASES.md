@@ -43,7 +43,7 @@ jq . "$artifact_dir/image-digests.json"
 
 ## Prepare the manifest commit
 
-Return to the exact clean source checkout. The preparation command refuses a source other than `HEAD`, a dirty worktree, mutable image tags, non-GHCR image references, duplicate image names, missing templates, invalid protocol versions, and a CLI version that differs from `packages/cli/package.json`. It derives the current migration head and managed-file digests from the source commit's Git tree.
+Return to the exact clean source checkout. The preparation command refuses a source other than `HEAD`, a dirty worktree, mutable image tags, image repositories outside the selected GitHub owner's canonical `aubos-control-plane` and `aubos-worker` packages, duplicate image names, missing templates, invalid protocol versions, and a CLI version that differs from `packages/cli/package.json`. It derives the current migration head and managed-file digests from the source commit's Git tree.
 
 Prepare the first release by replacing the old candidate:
 
@@ -51,6 +51,7 @@ Prepare the first release by replacing the old candidate:
 source_commit=$(git rev-parse HEAD)
 image_file="$artifact_dir/image-digests.json"
 created_at=$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')
+repository_owner=$(gh repo view --json owner --jq '.owner.login')
 npm run release:prepare -- \
   --version 0.1.0 \
   --created-at "$created_at" \
@@ -58,6 +59,7 @@ npm run release:prepare -- \
   --host-contract 1 \
   --module-contract 1 \
   --worker-contract 1 \
+  --repository-owner "$repository_owner" \
   --image-receipt "$image_file" \
   --managed-file host/aubos-runtime.json=templates/releases/0.1.0/host/aubos-runtime.json \
   --replace-candidate
@@ -66,6 +68,7 @@ git commit -m "chore: prepare AubOS 0.1.0 release"
 npm run release:validate -- \
   --version 0.1.0 \
   --released \
+  --repository-owner "$repository_owner" \
   --release-commit "$(git rev-parse HEAD)"
 ```
 
@@ -86,6 +89,7 @@ For `v0.1.1`, first commit the real managed host-contract change and its new tem
 
 ```bash
 created_at=$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')
+repository_owner=$(gh repo view --json owner --jq '.owner.login')
 npm run release:prepare -- \
   --version 0.1.1 \
   --created-at "$created_at" \
@@ -93,6 +97,7 @@ npm run release:prepare -- \
   --host-contract <actual-host-contract-version> \
   --module-contract 1 \
   --worker-contract 1 \
+  --repository-owner "$repository_owner" \
   --image-receipt "$image_file" \
   --managed-file host/aubos-runtime.json=templates/releases/0.1.1/host/aubos-runtime.json
 ```

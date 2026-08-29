@@ -77,13 +77,15 @@ export const releaseManifestSchema = z
         digest: sha256Digest,
       }),
     ),
-    managedFiles: z.array(
-      z.object({
-        path: relativePath,
-        template: relativePath,
-        digest: sha256Digest,
-      }),
-    ),
+    managedFiles: z
+      .array(
+        z.object({
+          path: relativePath,
+          template: relativePath,
+          digest: sha256Digest,
+        }),
+      )
+      .min(1),
   })
   .superRefine((manifest, context) => {
     const releasedImageNames = Object.keys(manifest.images).sort();

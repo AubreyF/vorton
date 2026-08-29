@@ -13,6 +13,10 @@ function option(name: string): string | undefined {
 }
 
 const version = option("--version");
+const repositoryOwner = option("--repository-owner");
+if (args.includes("--released") && !repositoryOwner) {
+  throw new Error(`--repository-owner is required with --released`);
+}
 const manifestsDirectory = join(repositoryRoot, "release", "manifests");
 const paths = version
   ? [join(manifestsDirectory, `${version}.json`)]
@@ -28,6 +32,7 @@ for (const path of paths) {
     repositoryRoot,
     manifestPath: path,
     expectedSourceCommit: option("--source-commit"),
+    expectedRepositoryOwner: repositoryOwner,
     releaseCommit: option("--release-commit"),
   });
   if (args.includes("--released") && manifest.status !== "released") {

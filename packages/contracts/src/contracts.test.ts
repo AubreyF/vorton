@@ -57,7 +57,13 @@ describe("installation contracts", () => {
           digest,
         },
       },
-      managedFiles: [],
+      managedFiles: [
+        {
+          path: "host/runtime.json",
+          template: "templates/releases/0.1.0/host/runtime.json",
+          digest,
+        },
+      ],
     });
 
     expect(result.success).toBe(true);
@@ -74,6 +80,39 @@ describe("installation contracts", () => {
       contracts: { host: 1, module: 1, worker: 1 },
       coreMigrationHead: "20260828000300_executive",
       images: {},
+      managedFiles: [
+        {
+          path: "host/runtime.json",
+          template: "templates/releases/0.1.0/host/runtime.json",
+          digest: `sha256:${"c".repeat(64)}`,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires at least one managed file in every release manifest", () => {
+    const digest = `sha256:${"c".repeat(64)}`;
+    const result = releaseManifestSchema.safeParse({
+      schemaVersion: 1,
+      status: "released",
+      version: "0.1.0",
+      sourceCommit: "b".repeat(40),
+      createdAt: "2026-08-28T00:00:00.000Z",
+      cliVersion: "0.1.0",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260828000300_executive",
+      images: {
+        "control-plane": {
+          reference: `ghcr.io/example/aubos-control-plane@${digest}`,
+          digest,
+        },
+        worker: {
+          reference: `ghcr.io/example/aubos-worker@${digest}`,
+          digest,
+        },
+      },
       managedFiles: [],
     });
 

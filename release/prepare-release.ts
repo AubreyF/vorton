@@ -25,6 +25,7 @@ const valueOptions = new Set([
   "--module-contract",
   "--worker-contract",
   "--image-receipt",
+  "--repository-owner",
   "--managed-file",
 ]);
 for (let index = 0; index < args.length; index += 2) {
@@ -117,6 +118,7 @@ const images = parseImageReceipt(
   readFileSync(imageReceiptPath, "utf8"),
   sourceCommit,
   version,
+  required("--repository-owner"),
 );
 
 const managedFiles = values("--managed-file").map((value) => {
@@ -171,5 +173,9 @@ if (existsSync(output)) {
 writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, {
   flag: existsSync(output) ? "w" : "wx",
 });
-validateReleaseManifest({ repositoryRoot, manifestPath: output });
+validateReleaseManifest({
+  repositoryRoot,
+  manifestPath: output,
+  expectedRepositoryOwner: required("--repository-owner"),
+});
 process.stdout.write(`${output}\n`);

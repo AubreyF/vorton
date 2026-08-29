@@ -107,6 +107,12 @@ describe("immutable release contracts", () => {
       join(process.cwd(), ".github/workflows/ci.yml"),
       "utf8",
     );
+    const manifestJsonSchema = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "release/release-manifest.schema.json"),
+        "utf8",
+      ),
+    ) as { properties: { managedFiles: { minItems?: number } } };
     const actions = [
       ...`${buildWorkflow}\n${releaseWorkflow}\n${ciWorkflow}`.matchAll(
         /uses:\s+([^\s#]+)/g,
@@ -123,8 +129,12 @@ describe("immutable release contracts", () => {
     expect(releaseWorkflow).toContain(".Image.config.Labels");
     expect(releaseWorkflow).toContain("{{json .Provenance}}");
     expect(releaseWorkflow).toContain("{{json .SBOM}}");
+    expect(releaseWorkflow).toContain(
+      '--repository-owner "${{ github.repository_owner }}"',
+    );
     expect(buildWorkflow).not.toContain("actions/attest@");
     expect(releaseWorkflow).not.toContain("actions/attest@");
+    expect(manifestJsonSchema.properties.managedFiles.minItems).toBe(1);
   });
 
   it("accepts only explicit digest-pinned GHCR image inputs", () => {
@@ -156,11 +166,29 @@ describe("immutable release contracts", () => {
       },
     });
     expect(
-      Object.keys(parseImageReceipt(receipt, "b".repeat(40), "0.1.0")).sort(),
+      Object.keys(
+        parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "AubreyF"),
+      ).sort(),
     ).toEqual(["control-plane", "worker"]);
-    expect(() => parseImageReceipt(receipt, "c".repeat(40), "0.1.0")).toThrow(
-      /source commit/,
-    );
+    expect(() =>
+      parseImageReceipt(receipt, "c".repeat(40), "0.1.0", "AubreyF"),
+    ).toThrow(/source commit/);
+  });
+
+  it("rejects image receipts from third-party GHCR repositories", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const receipt = JSON.stringify({
+      sourceCommit: "b".repeat(40),
+      version: "0.1.0",
+      images: {
+        "control-plane": `ghcr.io/attacker/not-control@${digest}`,
+        worker: `ghcr.io/attacker/not-worker@${digest}`,
+      },
+    });
+
+    expect(() =>
+      parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "AubreyF"),
+    ).toThrow(/ghcr\.io\/aubreyf\/aubos-control-plane/);
   });
 
   it("derives the current migration head from the exact source commit", () => {
@@ -184,6 +212,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
+        expectedRepositoryOwner: "AubreyF",
         releaseCommit,
       }).version,
     ).toBe("0.1.0");
@@ -207,6 +236,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
+        expectedRepositoryOwner: "AubreyF",
         releaseCommit,
       }),
     ).toThrow(/migration head mismatch/i);
@@ -221,6 +251,7 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
+        expectedRepositoryOwner: "AubreyF",
       }),
     ).toThrow(/template digest mismatch/i);
   });
@@ -240,8 +271,31 @@ describe("immutable release contracts", () => {
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
+        expectedRepositoryOwner: "AubreyF",
         releaseCommit,
       }),
     ).toThrow(/may change only/);
+  });
+
+  it("rejects released manifests that point image roles at third-party repositories", () => {
+    const { repository, sourceCommit } = fixture();
+    const invalid = manifest(sourceCommit);
+    const digest = invalid.images["control-plane"].digest;
+    invalid.images["control-plane"].reference =
+      `ghcr.io/attacker/not-control@${digest}`;
+    const manifestPath = join(repository, "release/manifests/0.1.0.json");
+    write(
+      repository,
+      "release/manifests/0.1.0.json",
+      `${JSON.stringify(invalid, null, 2)}\n`,
+    );
+
+    expect(() =>
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "AubreyF",
+      }),
+    ).toThrow(/ghcr\.io\/aubreyf\/aubos-control-plane/);
   });
 });
