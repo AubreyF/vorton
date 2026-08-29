@@ -116,7 +116,45 @@ function inspector(sourceCommit: string): OciInspector {
           "org.opencontainers.image.revision": sourceCommit,
         });
       }
-      return JSON.stringify({ evidence: "present" });
+      if (
+        template ===
+          "{{with .Provenance.SLSA.builder}}{{json .}}{{else}}null{{end}}" ||
+        template ===
+          "{{with .Provenance.SLSA.buildType}}{{json .}}{{else}}null{{end}}"
+      ) {
+        return "null";
+      }
+      if (
+        template ===
+        "{{with .Provenance.SLSA.runDetails}}{{with .builder}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}"
+      ) {
+        return JSON.stringify({ id: "synthetic-builder" });
+      }
+      if (
+        template ===
+        "{{with .Provenance.SLSA.buildDefinition}}{{with .buildType}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}"
+      ) {
+        return JSON.stringify(
+          "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+        );
+      }
+      if (template === "{{.SBOM.SPDX.spdxVersion}}") {
+        return "SPDX-2.3";
+      }
+      if (template === "{{.SBOM.SPDX.SPDXID}}") {
+        return "SPDXRef-DOCUMENT";
+      }
+      if (template === "{{.SBOM.SPDX.dataLicense}}") {
+        return "CC0-1.0";
+      }
+      if (template === "{{json .SBOM.SPDX.creationInfo}}") {
+        return JSON.stringify({
+          created: "2026-08-29T12:00:00Z",
+          creators: ["Tool: synthetic-syft"],
+        });
+      }
+      if (template === "{{len .SBOM.SPDX.packages}}") return "1";
+      throw new Error(`Unexpected unbounded evidence template: ${template}`);
     },
     raw() {
       return JSON.stringify({
@@ -311,19 +349,41 @@ describe("release preflight", () => {
     expect(result.hindsightReference).toBe(
       `ghcr.io/vectorize-io/hindsight@sha256:${"9".repeat(64)}`,
     );
+
+    const legacyInspector = inspector(sourceCommit);
+    legacyInspector.format = (reference, template) => {
+      if (template.includes("SLSA.builder")) {
+        return JSON.stringify({ id: "" });
+      }
+      if (template.includes("SLSA.buildType")) {
+        return JSON.stringify("https://mobyproject.org/buildkit@v1");
+      }
+      if (
+        template.includes("SLSA.runDetails") ||
+        template.includes("SLSA.buildDefinition")
+      ) {
+        return "null";
+      }
+      return inspector(sourceCommit).format(reference, template);
+    };
+    expect(
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: legacyInspector,
+      }).manifest.sourceCommit,
+    ).toBe(sourceCommit);
   });
 
   it("fails closed on missing image evidence and Hindsight architectures", () => {
     const { repository, releaseCommit, sourceCommit } = releaseFixture();
     const missingProvenance = inspector(sourceCommit);
-    missingProvenance.format = (_reference, template) =>
-      template.includes("Labels")
-        ? JSON.stringify({
-            "org.opencontainers.image.revision": sourceCommit,
-          })
-        : template.includes("Provenance")
-          ? "{}"
-          : JSON.stringify({ evidence: "present" });
+    missingProvenance.format = (reference, template) =>
+      template.includes("Provenance")
+        ? "null"
+        : inspector(sourceCommit).format(reference, template);
     expect(() =>
       runReleasePreflight({
         repositoryRoot: repository,
@@ -332,7 +392,102 @@ describe("release preflight", () => {
         version: "1.2.3",
         inspector: missingProvenance,
       }),
-    ).toThrow(/provenance must be a nonempty object/);
+    ).toThrow(/exactly one complete recognized BuildKit SLSA/);
+
+    const malformedProvenance = inspector(sourceCommit);
+    malformedProvenance.format = (reference, template) =>
+      template.includes("runDetails")
+        ? JSON.stringify({ unexpected: true })
+        : inspector(sourceCommit).format(reference, template);
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: malformedProvenance,
+      }),
+    ).toThrow(/SLSA v1 builder must contain a string id/);
+
+    const malformedBuildType = inspector(sourceCommit);
+    malformedBuildType.format = (reference, template) =>
+      template.includes("buildDefinition")
+        ? JSON.stringify("synthetic-build-type")
+        : inspector(sourceCommit).format(reference, template);
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: malformedBuildType,
+      }),
+    ).toThrow(/exactly one complete recognized BuildKit SLSA/);
+
+    const mixedProvenance = inspector(sourceCommit);
+    mixedProvenance.format = (reference, template) => {
+      if (template.includes("SLSA.builder")) {
+        return JSON.stringify({ id: "synthetic-legacy-builder" });
+      }
+      if (template.includes("SLSA.buildType")) {
+        return JSON.stringify("https://mobyproject.org/buildkit@v1");
+      }
+      return inspector(sourceCommit).format(reference, template);
+    };
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: mixedProvenance,
+      }),
+    ).toThrow(/exactly one complete recognized BuildKit SLSA/);
+
+    const malformedSpdx = inspector(sourceCommit);
+    malformedSpdx.format = (reference, template) =>
+      template === "{{.SBOM.SPDX.spdxVersion}}"
+        ? "SPDX-2.2"
+        : inspector(sourceCommit).format(reference, template);
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: malformedSpdx,
+      }),
+    ).toThrow(/SBOM must use SPDX-2.3/);
+
+    const malformedCreationInfo = inspector(sourceCommit);
+    malformedCreationInfo.format = (reference, template) =>
+      template === "{{json .SBOM.SPDX.creationInfo}}"
+        ? JSON.stringify({ unexpected: true })
+        : inspector(sourceCommit).format(reference, template);
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: malformedCreationInfo,
+      }),
+    ).toThrow(/creation info must contain a UTC created timestamp/);
+
+    const missingSbomPackages = inspector(sourceCommit);
+    missingSbomPackages.format = (reference, template) =>
+      template === "{{len .SBOM.SPDX.packages}}"
+        ? "0"
+        : inspector(sourceCommit).format(reference, template);
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: repository,
+        releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: missingSbomPackages,
+      }),
+    ).toThrow(/SBOM package count must be a positive integer/);
 
     expect(() =>
       requireHindsightPlatforms(

@@ -200,8 +200,29 @@ describe("immutable release contracts", () => {
       'git show-ref --verify "refs/tags/$TAG_NAME"',
     );
     expect(releasePreflight).toContain(".Image.Config.Labels");
-    expect(releasePreflight).toContain("{{json .Provenance}}");
-    expect(releasePreflight).toContain("{{json .SBOM}}");
+    expect(releasePreflight).toContain(
+      "{{with .Provenance.SLSA.builder}}{{json .}}{{else}}null{{end}}",
+    );
+    expect(releasePreflight).toContain(
+      "{{with .Provenance.SLSA.buildType}}{{json .}}{{else}}null{{end}}",
+    );
+    expect(releasePreflight).toContain(
+      "{{with .Provenance.SLSA.runDetails}}{{with .builder}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}",
+    );
+    expect(releasePreflight).toContain(
+      "{{with .Provenance.SLSA.buildDefinition}}{{with .buildType}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}",
+    );
+    expect(releasePreflight).toContain("https://mobyproject.org/buildkit@v1");
+    expect(releasePreflight).toContain(
+      "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+    );
+    expect(releasePreflight).toContain("{{.SBOM.SPDX.spdxVersion}}");
+    expect(releasePreflight).toContain("{{.SBOM.SPDX.SPDXID}}");
+    expect(releasePreflight).toContain("{{.SBOM.SPDX.dataLicense}}");
+    expect(releasePreflight).toContain("{{json .SBOM.SPDX.creationInfo}}");
+    expect(releasePreflight).toContain("{{len .SBOM.SPDX.packages}}");
+    expect(releasePreflight).not.toContain('"{{json .Provenance}}"');
+    expect(releasePreflight).not.toContain('"{{json .SBOM}}"');
     expect(releaseWorkflow).toContain("stage-contract-archive.ts");
     expect(releaseWorkflow).toContain("--sort=name --mtime='@0'");
     expect(releaseWorkflow).toContain("--owner=0 --group=0 --numeric-owner");
