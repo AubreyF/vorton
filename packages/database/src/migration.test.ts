@@ -59,6 +59,11 @@ describe("kernel migration contract", () => {
 describe("memory and conversations migration contract", () => {
   it("isolates banks and source rows by installation realm", async () => {
     const sql = await readFile(memoryMigrationUrl, "utf8");
+    expect(sql).toContain("add column realm public.installation_realm,");
+    expect(sql).toContain(
+      "installations_realm_assigned check (realm is not null) not valid",
+    );
+    expect(sql).not.toContain("default 'organizational'");
     expect(sql).toContain("foreign key (installation_id, installation_realm)");
     expect(sql).toContain("unique (external_bank_id)");
     expect(sql).toContain("unique (database_locator)");
@@ -101,5 +106,7 @@ describe("memory and conversations migration contract", () => {
     expect(sql).toContain("Supersession did not invalidate derived memory");
     expect(sql).toContain("Mixed source bypassed quarantine");
     expect(sql).toContain("Canonical transcript revision accepted mutation");
+    expect(sql).toContain("New installation omitted an explicit realm");
+    expect(sql).toContain("Unknown installation accepted a source connection");
   });
 });

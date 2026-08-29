@@ -7,8 +7,12 @@ create type public.transcript_provider as enum ('google-meet', 'omi');
 create type public.source_completeness as enum ('complete', 'partial', 'unavailable');
 
 alter table public.installations
-  add column realm public.installation_realm not null default 'organizational',
+  add column realm public.installation_realm,
+  add constraint installations_realm_assigned check (realm is not null) not valid,
   add unique (id, realm);
+
+comment on column public.installations.realm is
+  'Explicit personal or organizational boundary. Existing null values are unclassified and cannot own source connections or memory banks. Backfill each installation deliberately, then validate installations_realm_assigned.';
 
 create table public.source_connections (
   id uuid primary key default gen_random_uuid(),

@@ -1,5 +1,64 @@
 begin;
 
+do $$
+begin
+  begin
+    insert into public.installations (id, slug, display_name)
+    values (
+      '55555555-5555-4555-a555-555555555555',
+      'missing-realm', 'Missing Realm'
+    );
+    raise exception 'New installation omitted an explicit realm';
+  exception
+    when check_violation then null;
+  end;
+end
+$$;
+
+-- Simulate an installation that existed before this migration. The real upgrade
+-- receives the same null realm because the migration has no default or backfill.
+alter table public.installations drop constraint installations_realm_assigned;
+insert into public.installations (id, slug, display_name)
+values (
+  '44444444-4444-4444-a444-444444444444',
+  'preexisting-unknown', 'Preexisting Unknown'
+);
+alter table public.installations
+  add constraint installations_realm_assigned check (realm is not null) not valid;
+
+do $$
+begin
+  begin
+    insert into public.source_connections (
+      installation_id, installation_realm, provider, external_account_id,
+      credential_reference, poll_overlap_seconds, requests_per_minute,
+      page_size, max_pages_per_poll, backoff_base_seconds,
+      backoff_max_seconds, watermark
+    ) values (
+      '44444444-4444-4444-a444-444444444444', 'organizational', 'omi',
+      'unknown-account', 'secret://synthetic-only', 300, 30, 25, 4, 1, 60,
+      '2026-08-28T11:00:00Z'
+    );
+    raise exception 'Unknown installation accepted a source connection';
+  exception
+    when foreign_key_violation then null;
+  end;
+end
+$$;
+
+update public.installations
+set realm = 'personal'
+where id = '44444444-4444-4444-a444-444444444444';
+
+insert into public.memory_banks (
+  installation_id, installation_realm, adapter, external_bank_id,
+  database_locator, object_bucket_locator
+) values (
+  '44444444-4444-4444-a444-444444444444', 'personal', 'hindsight',
+  'backfilled-personal-bank', 'database://backfilled-personal',
+  'bucket://backfilled-personal'
+);
+
 insert into public.installations (id, slug, display_name, realm)
 values
   ('7fae0c60-6682-41ec-b231-26bbaf7fde8e', 'synthetic-org', 'Synthetic Org', 'organizational'),
