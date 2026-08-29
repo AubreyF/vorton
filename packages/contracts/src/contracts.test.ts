@@ -20,9 +20,19 @@ describe("installation contracts", () => {
       kind: "Installation",
       metadata: { name: "moonbase-lab" },
       spec: {
+        realm: "organizational",
         release: { channel: "pinned", version: "0.1.0" },
         modules: ["tasks", "tools"],
         deployment: { provider: "fly", region: "sea" },
+        authority: {
+          canonicalRecords: "supabase-postgres",
+          derivedMemory: "hindsight",
+        },
+        factory: { mode: "read-only" },
+        tools: {
+          installed: [],
+          examples: [{ name: "Moonbase Triage", installed: false }],
+        },
         secrets: { "database-url": "AUBOS_DATABASE_URL" },
       },
     });

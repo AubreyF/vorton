@@ -1,0 +1,6 @@
+apiVersion: aubos.dev/v1alpha1
+kind: OrganizationIdentity
+metadata:
+  name: freedos
+spec:
+  displayName: "FreedOS"

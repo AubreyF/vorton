@@ -196,6 +196,17 @@ function loadRelease(path: string): ReleaseManifest {
   return releaseManifestSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
+function requireReleasedManifest(
+  release: ReleaseManifest,
+  allowCandidate: boolean | undefined,
+): void {
+  if (release.status !== "released" && !allowCandidate) {
+    throw new Error(
+      `Release manifest ${release.version} is ${release.status}, not released`,
+    );
+  }
+}
+
 function releaseDigest(release: ReleaseManifest): string {
   return sha256(canonicalJson(release));
 }
@@ -241,13 +252,16 @@ function organizationScaffold(
     "aubos.yaml": render("aubos.yaml.tpl"),
     "organization/identity.yaml": render("organization/identity.yaml.tpl"),
     "organization/modules.yaml": render("organization/modules.yaml.tpl"),
+    "organization/memory.yaml": render("organization/memory.yaml.tpl"),
+    "organization/policies/authority.yaml": render(
+      "organization/policies/authority.yaml.tpl",
+    ),
     "organization/branding/.gitkeep": "",
-    "organization/policies/.gitkeep": "",
-    "organization/roles/.gitkeep": "",
+    "organization/roles/README.md": render("organization/roles/README.md.tpl"),
     "modules/custom/.gitkeep": "",
-    "tools/.gitkeep": "",
+    "tools/README.md": render("tools/README.md.tpl"),
     "supabase/migrations/organization/.gitkeep": "",
-    "tests/acceptance/.gitkeep": "",
+    "tests/acceptance/README.md": render("tests/acceptance/README.md.tpl"),
     "deploy/fly.toml": render("deploy/fly.toml.tpl"),
     ".github/workflows/aubos-installation.yml": render(
       "github/aubos-installation.yml.tpl",
@@ -309,9 +323,27 @@ export function planInit(options: {
   organization: string;
   releaseManifestPath: string;
   releaseRoot: string;
+  allowCandidate?: boolean;
 }): PlannedResult {
   const release = loadRelease(options.releaseManifestPath);
+  requireReleasedManifest(release, options.allowCandidate);
   const name = slugifyOrganization(options.organization);
+  const existingManifestPath = safeTarget(options.root, "aubos.yaml");
+  if (existsSync(existingManifestPath)) {
+    const existingManifest = installationManifestSchema.parse(
+      parseYaml(readFileSync(existingManifestPath, "utf8")),
+    );
+    if (existingManifest.metadata.name !== name) {
+      throw new Error(
+        `Existing aubos.yaml names ${existingManifest.metadata.name}, not ${name}`,
+      );
+    }
+    if (existingManifest.spec.release.version !== release.version) {
+      throw new Error(
+        `Existing aubos.yaml pins ${existingManifest.spec.release.version}, not ${release.version}`,
+      );
+    }
+  }
   for (const path of [
     "aubos.lock.json",
     ...release.managedFiles.map((file) => file.path),
@@ -357,6 +389,7 @@ export function planUpgrade(options: {
   root: string;
   releaseManifestPath: string;
   releaseRoot: string;
+  allowCandidate?: boolean;
 }): PlannedResult {
   const manifestPath = safeTarget(options.root, "aubos.yaml");
   const lockPath = safeTarget(options.root, "aubos.lock.json");
@@ -374,6 +407,7 @@ export function planUpgrade(options: {
     JSON.parse(readFileSync(lockPath, "utf8")),
   );
   const release = loadRelease(options.releaseManifestPath);
+  requireReleasedManifest(release, options.allowCandidate);
   const managed = managedActions(options.root, options.releaseRoot, release);
 
   for (const [path, expected] of Object.entries(previous.managedFiles)) {
@@ -513,6 +547,36 @@ function loadOrCreateJournal(
   return { journal, existed: false };
 }
 
+function verifyJournalMatchesPlan(
+  journal: Journal,
+  plan: DistributionPlan,
+  planHash: string,
+): void {
+  if (journal.planHash !== planHash) {
+    throw new Error("Journal plan hash mismatch");
+  }
+  if (journal.actions.length !== plan.actions.length) {
+    throw new Error("Journal actions do not match the plan");
+  }
+  for (const [index, journalAction] of journal.actions.entries()) {
+    const { state: _state, ...actionWithoutState } = journalAction;
+    if (
+      canonicalJson(actionWithoutState) !== canonicalJson(plan.actions[index])
+    ) {
+      throw new Error(
+        `Journal action does not match the plan at ${journalAction.path}`,
+      );
+    }
+  }
+  let sawPending = false;
+  for (const entry of journal.actions) {
+    if (entry.state === "pending") sawPending = true;
+    if (sawPending && entry.state === "applied") {
+      throw new Error("Journal applied states must form a completed prefix");
+    }
+  }
+}
+
 export function applyPlan(options: {
   root: string;
   planHash: string;
@@ -528,6 +592,7 @@ export function applyPlan(options: {
   }
   const loaded = loadOrCreateJournal(options.root, plan, options.planHash);
   const journal = loaded.journal;
+  verifyJournalMatchesPlan(journal, plan, options.planHash);
   const receiptPath = journalPath(options.root, options.planHash);
 
   if (journal.status === "rolled-back") {
@@ -584,8 +649,14 @@ export function rollbackPlan(options: {
   root: string;
   planHash: string;
 }): RollbackResult {
+  const storedPlanPath = safeTarget(
+    options.root,
+    `.aubos/plans/${options.planHash}.json`,
+  );
+  const plan = verifyStoredPlan(storedPlanPath, options.planHash);
   const path = journalPath(options.root, options.planHash);
   const journal = journalSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  verifyJournalMatchesPlan(journal, plan, options.planHash);
   if (journal.status === "rolled-back") {
     return { status: "already-rolled-back", restored: [] };
   }
