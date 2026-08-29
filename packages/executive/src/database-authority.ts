@@ -17,24 +17,29 @@ interface AuthorityRow {
 export class DatabaseExecutiveAuthorityVerifier implements ExecutiveAuthorityVerifier {
   constructor(private readonly database: Database) {}
 
-  async assertOwner(input: {
+  async resolvePerson(input: {
     installationId: string;
-    personId: string;
-    operation: "decision" | "approval";
-  }): Promise<void> {
+    authUserId: string;
+    requiredAuthority: "member" | "owner";
+    operation: "review" | "decision" | "approval";
+  }): Promise<string> {
     const result = await this.database.asAdministrator((transaction) =>
       transaction.query<{ id: string }>(
         `select id
            from public.people
-          where installation_id = $1 and id = $2 and kind = 'owner'`,
-        [input.installationId, input.personId],
+          where installation_id = $1
+            and auth_user_id = $2
+            and ($3 = 'member' or kind = 'owner')`,
+        [input.installationId, input.authUserId, input.requiredAuthority],
       ),
     );
-    if (!result.rows[0]) {
+    const person = result.rows[0];
+    if (!person) {
       throw new Error(
-        `Owner authority is required for executive ${input.operation}`,
+        `${input.requiredAuthority === "owner" ? "Owner" : "Member"} authority is required for executive ${input.operation}`,
       );
     }
+    return person.id;
   }
 
   async assertApplicable(input: ExecutiveAuthorityVerification): Promise<void> {

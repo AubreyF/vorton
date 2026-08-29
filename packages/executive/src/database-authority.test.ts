@@ -43,20 +43,22 @@ describe("database executive authority verifier", () => {
       database as unknown as Database,
     );
     await expect(
-      verifier.assertOwner({
+      verifier.resolvePerson({
         installationId: verification.installationId,
-        personId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+        authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+        requiredAuthority: "owner",
         operation: "approval",
       }),
     ).rejects.toThrow("Owner authority is required");
 
     database.rows = [{ id: "7fb46f09-3894-4c24-933c-77c7a403341c" }];
-    await verifier.assertOwner({
+    await verifier.resolvePerson({
       installationId: verification.installationId,
-      personId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+      authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+      requiredAuthority: "owner",
       operation: "decision",
     });
-    expect(database.statement?.text).toContain("kind = 'owner'");
+    expect(database.statement?.text).toContain("auth_user_id = $2");
   });
 
   it("checks Policy, grant, executor, scope, expiry, and revocation", async () => {

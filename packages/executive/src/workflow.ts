@@ -16,6 +16,7 @@ import {
   type WorkInput,
 } from "@aubos/contracts";
 import type { ExecutiveWorkerProvider } from "@aubos/workers";
+import type { PersonContext } from "@aubos/database";
 
 export type ExecutiveActor =
   { kind: "person"; id: string } | { kind: "worker"; id: string };
@@ -107,11 +108,12 @@ export interface ExecutiveAuthorityVerification {
 
 /** The implementation must verify Policy, grant, revocation, scope, and expiry. */
 export interface ExecutiveAuthorityVerifier {
-  assertOwner(input: {
+  resolvePerson(input: {
     installationId: string;
-    personId: string;
-    operation: "decision" | "approval";
-  }): Promise<void>;
+    authUserId: string;
+    requiredAuthority: "member" | "owner";
+    operation: "review" | "decision" | "approval";
+  }): Promise<string>;
   assertApplicable(input: ExecutiveAuthorityVerification): Promise<void>;
 }
 
@@ -249,7 +251,7 @@ export class ExecutiveWorkflow {
 
   async review(input: {
     proposalRecordId: string;
-    reviewerPersonId: string;
+    reviewer: PersonContext;
     summary: string;
     disposition: "support" | "revise" | "reject";
   }): Promise<ExecutiveRecord> {
@@ -258,6 +260,15 @@ export class ExecutiveWorkflow {
       input.proposalRecordId,
       "proposal",
     );
+    if (input.reviewer.installationId !== proposal.installationId) {
+      throw new Error("Reviewer context cannot cross installations");
+    }
+    const reviewerPersonId = await this.#authorityVerifier.resolvePerson({
+      installationId: proposal.installationId,
+      authUserId: input.reviewer.authUserId,
+      requiredAuthority: "member",
+      operation: "review",
+    });
     return this.#ledger.append({
       installationId: proposal.installationId,
       workId: proposal.workId,
@@ -267,13 +278,13 @@ export class ExecutiveWorkflow {
         proposalRecordId: proposal.id,
         disposition: input.disposition,
       },
-      actor: { kind: "person", id: input.reviewerPersonId },
+      actor: { kind: "person", id: reviewerPersonId },
     });
   }
 
   async decide(input: {
     reviewRecordId: string;
-    decisionMakerPersonId: string;
+    decisionMaker: PersonContext;
     summary: string;
     classification: DecisionClassification;
   }): Promise<ExecutiveRecord> {
@@ -285,9 +296,13 @@ export class ExecutiveWorkflow {
     const classification = decisionClassificationSchema.parse(
       input.classification,
     );
-    await this.#authorityVerifier.assertOwner({
+    if (input.decisionMaker.installationId !== review.installationId) {
+      throw new Error("Decision maker context cannot cross installations");
+    }
+    const decisionMakerPersonId = await this.#authorityVerifier.resolvePerson({
       installationId: review.installationId,
-      personId: input.decisionMakerPersonId,
+      authUserId: input.decisionMaker.authUserId,
+      requiredAuthority: "owner",
       operation: "decision",
     });
     return this.#ledger.append({
@@ -300,13 +315,13 @@ export class ExecutiveWorkflow {
         proposalRecordId: review.payload.proposalRecordId,
         classification,
       },
-      actor: { kind: "person", id: input.decisionMakerPersonId },
+      actor: { kind: "person", id: decisionMakerPersonId },
     });
   }
 
   async approve(input: {
     decisionRecordId: string;
-    approverPersonId: string;
+    approver: PersonContext;
     summary: string;
   }): Promise<ExecutiveRecord> {
     const decision = await requireRecord(
@@ -317,9 +332,13 @@ export class ExecutiveWorkflow {
     if (decision.payload.classification === "prohibited") {
       throw new Error("A prohibited decision cannot be approved");
     }
-    await this.#authorityVerifier.assertOwner({
+    if (input.approver.installationId !== decision.installationId) {
+      throw new Error("Approver context cannot cross installations");
+    }
+    const approverPersonId = await this.#authorityVerifier.resolvePerson({
       installationId: decision.installationId,
-      personId: input.approverPersonId,
+      authUserId: input.approver.authUserId,
+      requiredAuthority: "owner",
       operation: "approval",
     });
     return this.#ledger.append({
@@ -331,7 +350,7 @@ export class ExecutiveWorkflow {
         decisionRecordId: decision.id,
         proposalRecordId: decision.payload.proposalRecordId,
       },
-      actor: { kind: "person", id: input.approverPersonId },
+      actor: { kind: "person", id: approverPersonId },
     });
   }
 

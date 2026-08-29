@@ -6,16 +6,18 @@ import { ExecutiveWorkflow, InMemoryExecutiveLedger } from "./workflow.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
 const ownerId = "7fb46f09-3894-4c24-933c-77c7a403341c";
+const ownerAuthUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const analysisWorkId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const policyId = "d37f356b-6297-4cd1-902d-c2755423a612";
 const grantId = "4156f0af-e62f-4b16-a7bc-97c8301c2e2f";
 
 const authorityVerifier = {
-  assertOwner: async (input: { personId: string }) => {
-    if (input.personId !== ownerId) {
+  resolvePerson: async (input: { authUserId: string }) => {
+    if (input.authUserId !== ownerAuthUserId) {
       throw new Error("Owner authority is required");
     }
+    return ownerId;
   },
   assertApplicable: async (input: {
     authority: { policyId: string; capabilityGrantId: string };
@@ -90,19 +92,19 @@ describe("governed executive workflow", () => {
 
     const review = await workflow.review({
       proposalRecordId: proposal!.id,
-      reviewerPersonId: ownerId,
+      reviewer: { installationId, authUserId: ownerAuthUserId },
       summary: "The bounded check is proportionate.",
       disposition: "support",
     });
     const decision = await workflow.decide({
       reviewRecordId: review.id,
-      decisionMakerPersonId: ownerId,
+      decisionMaker: { installationId, authUserId: ownerAuthUserId },
       summary: "Authorize only the synthetic diagnostic.",
       classification: "owner-required",
     });
     const approval = await workflow.approve({
       decisionRecordId: decision.id,
-      approverPersonId: ownerId,
+      approver: { installationId, authUserId: ownerAuthUserId },
       summary: "Approved for the synthetic fixture only.",
     });
     const work = await workflow.createExecutionWork({
@@ -193,19 +195,19 @@ describe("governed executive workflow", () => {
     });
     const review = await workflow.review({
       proposalRecordId: proposal!.id,
-      reviewerPersonId: ownerId,
+      reviewer: { installationId, authUserId: ownerAuthUserId },
       summary: "Supported",
       disposition: "support",
     });
     const decision = await workflow.decide({
       reviewRecordId: review.id,
-      decisionMakerPersonId: ownerId,
+      decisionMaker: { installationId, authUserId: ownerAuthUserId },
       summary: "Proceed",
       classification: "policy-authorized",
     });
     const approval = await workflow.approve({
       decisionRecordId: decision.id,
-      approverPersonId: ownerId,
+      approver: { installationId, authUserId: ownerAuthUserId },
       summary: "Approved",
     });
 
