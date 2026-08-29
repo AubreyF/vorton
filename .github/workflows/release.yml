@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
   packages: read
-  id-token: write
-  attestations: write
-  artifact-metadata: write
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -57,20 +54,14 @@ jobs:
         run: |
           test "$(jq -r '.images | keys | join(",")' "$MANIFEST")" = "control-plane,worker"
           source_commit=$(jq -r '.sourceCommit' "$MANIFEST")
-          signer_workflow="${GITHUB_SERVER_URL#https://}/$GITHUB_REPOSITORY/.github/workflows/build-release-images.yml"
           while IFS= read -r reference; do
             docker buildx imagetools inspect "$reference" >/dev/null
-            gh attestation verify "oci://$reference" \
-              -R "$GITHUB_REPOSITORY" \
-              --signer-workflow "$signer_workflow" \
-              --source-digest "$source_commit" \
-              --deny-self-hosted-runners >/dev/null
-            gh attestation verify "oci://$reference" \
-              -R "$GITHUB_REPOSITORY" \
-              --signer-workflow "$signer_workflow" \
-              --source-digest "$source_commit" \
-              --predicate-type "https://spdx.dev/Document/v2.3" \
-              --deny-self-hosted-runners >/dev/null
+            labels=$(docker buildx imagetools inspect "$reference" --format '{{json .Image.config.Labels}}')
+            test "$(jq -r '."org.opencontainers.image.revision"' <<<"$labels")" = "$source_commit"
+            docker buildx imagetools inspect "$reference" --format '{{json .Provenance}}' \
+              | jq -e 'type == "object" and length > 0' >/dev/null
+            docker buildx imagetools inspect "$reference" --format '{{json .SBOM}}' \
+              | jq -e 'type == "object" and length > 0' >/dev/null
           done < <(jq -r '.images[].reference' "$MANIFEST")
       - name: Assemble deterministic release contract artifact
         env:
@@ -87,15 +78,6 @@ jobs:
           output-file: aubos-${{ steps.version.outputs.value }}.spdx.json
           artifact-name: aubos-${{ steps.version.outputs.value }}-sbom
           upload-release-assets: false
-      - name: Attest release provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: aubos-${{ steps.version.outputs.value }}-contracts.tgz
-      - name: Attest release SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: aubos-${{ steps.version.outputs.value }}-contracts.tgz
-          sbom-path: aubos-${{ steps.version.outputs.value }}.spdx.json
       - name: Create GitHub Release from tag
         env:
           GH_TOKEN: ${{ github.token }}

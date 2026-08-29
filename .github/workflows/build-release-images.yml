@@ -15,9 +15,6 @@ on:
 permissions:
   contents: read
   packages: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
 
 concurrency:
   group: release-images-${{ inputs.source_commit }}-${{ inputs.version }}
@@ -65,15 +62,13 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.source_commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.version }}
           tags: |
             ${{ steps.images.outputs.control }}:${{ inputs.version }}
             ${{ steps.images.outputs.control }}:source-${{ inputs.source_commit }}
-      - name: Attest control plane provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ steps.images.outputs.control }}
-          subject-digest: ${{ steps.control.outputs.digest }}
-          push-to-registry: true
       - name: Generate control plane SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -81,13 +76,6 @@ jobs:
           output-file: control-plane.spdx.json
           artifact-name: control-plane-sbom
           upload-release-assets: false
-      - name: Attest control plane SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ steps.images.outputs.control }}
-          subject-digest: ${{ steps.control.outputs.digest }}
-          sbom-path: control-plane.spdx.json
-          push-to-registry: true
       - name: Build and publish worker
         id: worker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -97,15 +85,13 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.source_commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.version }}
           tags: |
             ${{ steps.images.outputs.worker }}:${{ inputs.version }}
             ${{ steps.images.outputs.worker }}:source-${{ inputs.source_commit }}
-      - name: Attest worker provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ steps.images.outputs.worker }}
-          subject-digest: ${{ steps.worker.outputs.digest }}
-          push-to-registry: true
       - name: Generate worker SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -113,13 +99,6 @@ jobs:
           output-file: worker.spdx.json
           artifact-name: worker-sbom
           upload-release-assets: false
-      - name: Attest worker SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-name: ${{ steps.images.outputs.worker }}
-          subject-digest: ${{ steps.worker.outputs.digest }}
-          sbom-path: worker.spdx.json
-          push-to-registry: true
       - name: Record externally consumable image digests
         env:
           CONTROL_IMAGE: ${{ steps.images.outputs.control }}

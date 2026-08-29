@@ -94,7 +94,7 @@ afterEach(() => {
 });
 
 describe("immutable release contracts", () => {
-  it("pins workflow dependencies and verifies exact image provenance", () => {
+  it("pins workflow dependencies and verifies private-repository image evidence", () => {
     const buildWorkflow = readFileSync(
       join(process.cwd(), ".github/workflows/build-release-images.yml"),
       "utf8",
@@ -111,11 +111,14 @@ describe("immutable release contracts", () => {
     for (const action of actions) {
       expect(action).toMatch(/@[a-f0-9]{40}$/);
     }
-    expect(releaseWorkflow).toContain("--signer-workflow");
-    expect(releaseWorkflow).toContain("--source-digest");
-    expect(releaseWorkflow).toContain(
-      '--predicate-type "https://spdx.dev/Document/v2.3"',
-    );
+    expect(buildWorkflow).toContain("org.opencontainers.image.revision");
+    expect(buildWorkflow).toContain("provenance: mode=max");
+    expect(buildWorkflow).toContain("sbom: true");
+    expect(releaseWorkflow).toContain(".Image.config.Labels");
+    expect(releaseWorkflow).toContain("{{json .Provenance}}");
+    expect(releaseWorkflow).toContain("{{json .SBOM}}");
+    expect(buildWorkflow).not.toContain("actions/attest@");
+    expect(releaseWorkflow).not.toContain("actions/attest@");
   });
 
   it("accepts only explicit digest-pinned GHCR image inputs", () => {

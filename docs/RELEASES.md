@@ -3,7 +3,7 @@
 An AubOS release has three immutable identities:
 
 1. The source commit contains runtime code, Dockerfiles, migrations, and managed templates.
-2. GHCR stores the `control-plane` and `worker` images built from that source. The image workflow records their registry digests and generates provenance and SBOM attestations.
+2. GHCR stores the `control-plane` and `worker` images built from that source. The image workflow records their registry digests and attaches BuildKit provenance and SBOM attestations to each image index.
 3. A manifest-only child commit records the exact source parent, image references, current migration head, CLI version, protocol versions, and managed-template digests. The release tag points to this child commit.
 
 Hindsight is an upstream installation dependency. AubOS does not build it or include it in the first-party image set.
@@ -26,7 +26,9 @@ gh workflow run build-release-images.yml \
   -f version=0.1.0
 ```
 
-The workflow builds both images from the same checkout, publishes them to GHCR, generates SPDX JSON SBOMs, and creates GitHub provenance and SBOM attestations. Every workflow action is pinned to an exact commit. Its `aubos-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
+The workflow builds both images from the same checkout, publishes them to GHCR, adds the exact source commit as an OCI label, and attaches BuildKit provenance and SBOM metadata to the image index. It also exports SPDX JSON SBOM files. Every workflow action is pinned to an exact commit. Its `aubos-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
+
+GitHub's hosted artifact-attestation service requires GitHub Enterprise Cloud for private repositories. AubOS therefore uses registry-attached BuildKit attestations for its private MVP repository. The digest-pinned image, source label, exported SBOM, deterministic contract archive, and checksum are the release evidence. A later public repository or Enterprise installation may add GitHub or Sigstore signatures without changing the manifest contract.
 
 Download the artifact outside the repository and inspect it:
 
@@ -76,7 +78,7 @@ git tag -a v0.1.0 -m "AubOS v0.1.0"
 git push origin v0.1.0
 ```
 
-The tag workflow revalidates the source parent, migration head, CLI version, managed templates, and manifest-only diff. It asks GHCR to resolve every digest-pinned image, then verifies provenance and SPDX attestations from the designated image-build workflow against the manifest's exact source commit. It creates a deterministic contract archive, generates its SBOM, creates GitHub attestations, and creates the GitHub Release from the tag. Any mismatch stops publication.
+The tag workflow revalidates the source parent, migration head, CLI version, managed templates, and manifest-only diff. It asks GHCR to resolve every digest-pinned image, checks the embedded source-commit label, and requires attached BuildKit provenance and SBOM data. It creates a deterministic contract archive, checksum, and SPDX SBOM, then creates the GitHub Release from the tag. Any mismatch stops publication.
 
 ## Prepare the upgrade-proof release
 
