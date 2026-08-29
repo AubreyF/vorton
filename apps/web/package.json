@@ -13,6 +13,7 @@
   "dependencies": {
     "@aubos/control-plane": "0.0.0",
     "@aubos/example-moonbase-triage": "0.0.0",
+    "@aubos/factory": "0.0.0",
     "@aubos/ui": "0.0.0",
     "@fontsource/barlow": "^5.2.5",
     "@fontsource/newsreader": "^5.2.5",
