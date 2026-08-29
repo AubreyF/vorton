@@ -13,7 +13,7 @@ export function FactoryPage({ snapshot }: { snapshot: FactorySnapshot }) {
       <SectionHeading
         eyebrow="Module / Factory"
         title="Software authority, reconciled."
-        description="Factory is an AubOS module. This pilot observes GitHub and Freed's declared execution machinery without creating a second queue or changing either authority."
+        description="This synthetic Factory view reconciles a repository ticket with declared execution machinery. It does not create a second queue or change either authority."
       />
       <section className="factory-boundary" aria-label="Connector boundary">
         <div>
@@ -28,7 +28,7 @@ export function FactoryPage({ snapshot }: { snapshot: FactorySnapshot }) {
           </div>
           <div>
             <dt>Execution authority</dt>
-            <dd>Freed claim, lease, recovery, and publication</dd>
+            <dd>External claim, lease, recovery, and publication</dd>
           </div>
           <div>
             <dt>Connector authority</dt>
@@ -85,8 +85,9 @@ export function FactoryPage({ snapshot }: { snapshot: FactorySnapshot }) {
                   <div>
                     <strong>Execution authority is unavailable.</strong>
                     <p>
-                      The canonical Freed reader failed closed. Factory reports
-                      the blocker and makes no claim, lease, or recovery change.
+                      The canonical execution reader failed closed. Factory
+                      reports the blocker and makes no claim, lease, or recovery
+                      change.
                     </p>
                   </div>
                 </div>

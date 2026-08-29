@@ -40,7 +40,7 @@ See [Architecture](docs/ARCHITECTURE.md), [installation contract](docs/INSTALLAT
 
 ## Current status
 
-The repository is in bootstrap. The first deliverable is a locally runnable control plane with Supabase-backed identity and Work, one cloud worker path, governed executive recommendations, blank Tools with the Moonbase Triage example available for preview, and read-only visibility into the existing Freed Factory pilot.
+The repository is in bootstrap. The first deliverable is a locally runnable control plane with Supabase-backed identity and Work, one cloud worker path, governed executive recommendations, blank Tools with the Moonbase Triage example available for preview, and a synthetic read-only Factory fixture.
 
 No personal AubOS data or personal tools belong in this repository. Test fixtures must be synthetic.
 

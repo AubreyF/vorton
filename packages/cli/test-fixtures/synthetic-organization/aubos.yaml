@@ -1,7 +1,7 @@
 apiVersion: aubos.dev/v1alpha1
 kind: Installation
 metadata:
-  name: freedos
+  name: moonbase-lab
 spec:
   realm: organizational
   release:

@@ -8,7 +8,7 @@ import {
   type ModuleSummary,
 } from "@aubos/control-plane";
 import {
-  createFreedFactoryFixtureDataSource,
+  createSyntheticFactoryFixtureDataSource,
   type FactorySnapshot,
 } from "@aubos/factory";
 import {
@@ -38,7 +38,7 @@ import { FactoryPage } from "./FactoryPage.js";
 import { useBrowserRuntime } from "./runtime.js";
 
 const source = createSyntheticControlPlaneDataSource();
-const factorySource = createFreedFactoryFixtureDataSource();
+const factorySource = createSyntheticFactoryFixtureDataSource();
 
 function initialPage(): PageId {
   const hash = window.location.hash.slice(1);

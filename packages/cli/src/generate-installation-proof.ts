@@ -36,10 +36,10 @@ if (existsSync(outputRoot)) {
   throw new Error(`Proof output already exists: ${outputRoot}`);
 }
 
-const installationRoot = join(outputRoot, "freedos");
+const installationRoot = join(outputRoot, "moonbase-lab");
 const fixtureRoot = join(
   repositoryRoot,
-  "packages/cli/test-fixtures/freedos-private",
+  "packages/cli/test-fixtures/synthetic-organization",
 );
 const releaseManifest = (version: string): string =>
   join(
@@ -85,7 +85,7 @@ mkdirSync(outputRoot, { recursive: false });
 cpSync(fixtureRoot, installationRoot, { recursive: true });
 const adoption = planInit({
   root: installationRoot,
-  organization: "FreedOS",
+  organization: "Moonbase Lab",
   releaseManifestPath: releaseManifest("0.1.0"),
   releaseRoot: repositoryRoot,
   allowCandidate: true,
@@ -133,7 +133,7 @@ writeFileSync(
     schemaVersion: 1,
     fixtureOnly: true,
     deploymentAuthorized: false,
-    installationRoot: "freedos",
+    installationRoot: "moonbase-lab",
     manifests: {
       adoption: {
         fixture: "0.1.0",

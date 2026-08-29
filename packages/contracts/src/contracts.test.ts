@@ -229,15 +229,15 @@ describe("installation contracts", () => {
     expect(
       factoryReconciliationReceiptSchema.safeParse({
         schemaVersion: 1,
-        installationWorkId: "WORK-FREED-1628",
-        repositoryTicketId: "github:freed-project/freed#1628",
+        installationWorkId: "WORK-MOONBASE-42",
+        repositoryTicketId: "github:moonbase-lab/launch-control#42",
         outcome: "blocked",
-        sourceHead: "031a27aa348dd621aa39e102afc9bc6f7904ab9b",
+        sourceHead: "e8f63827e20c5f0625fe8ef505f3b95c8f310623",
         cursor: {
           provider: "github",
-          repository: "freed-project/freed",
+          repository: "moonbase-lab/launch-control",
           observedAt: "2026-08-29T00:33:00.000Z",
-          ticketRevision: "issue-1628@2026-08-28T20:56:36Z",
+          ticketRevision: "issue-42@2026-08-28T20:56:36Z",
           executionRevision: "authority-generation-conflict",
         },
         authority: {
