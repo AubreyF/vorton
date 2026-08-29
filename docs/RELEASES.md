@@ -83,6 +83,14 @@ git push origin v0.1.0
 
 The tag workflow revalidates the source parent, migration head, CLI version, managed templates, and manifest-only diff. It asks GHCR to resolve every digest-pinned image, checks the embedded source-commit label, and requires attached BuildKit provenance and SBOM data. It creates a deterministic contract archive, checksum, and SPDX SBOM, then creates the GitHub Release from the tag. Any mismatch stops publication.
 
+If publication infrastructure fails after the immutable tag is pushed, fix the workflow on the default branch and replay the existing tag. Never move or recreate the tag:
+
+```bash
+gh workflow run release.yml -f tag=v0.1.0
+```
+
+The replay checks out the existing tag, proves that `HEAD` resolves to that tag's commit, and runs the same release validation before publishing. The workflow implementation may improve after the tag. The released source, manifest, images, and archive inputs remain bound to the original tag.
+
 ## Prepare the upgrade-proof release
 
 For `v0.1.1`, first commit the real managed host-contract change and its new template under `templates/releases/0.1.1/`. That commit becomes the new source commit. Build both images again from that commit, download its digest artifact, and run the same command without `--replace-candidate`:
