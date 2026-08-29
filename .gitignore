@@ -3,10 +3,10 @@ node_modules/
 .next/
 dist/
 coverage/
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
 .aubos/
 *.log
 .DS_Store
-
