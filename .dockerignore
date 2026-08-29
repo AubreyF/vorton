@@ -1,0 +1,11 @@
+.git
+.github
+.planning
+**/node_modules
+**/dist
+**/coverage
+**/.env*
+!.env.example
+*.log
+docs
+release

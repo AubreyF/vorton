@@ -1,0 +1,24 @@
+app = "replace-with-aubos-web-app"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "apps/web/Dockerfile"
+
+  [build.args]
+    VITE_AUBOS_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
+    VITE_AUBOS_SUPABASE_ANON_KEY = "replace-with-public-anon-key"
+    VITE_AUBOS_API_URL = "https://replace-with-aubos-api-app.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = "stop"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/healthz"

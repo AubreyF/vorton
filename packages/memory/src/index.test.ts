@@ -17,6 +17,24 @@ describe("Hindsight adapter isolation", () => {
     ).rejects.toThrow("does not match");
   });
 
+  it("never recalls derived memory across installation banks", async () => {
+    const adapter = new InMemoryHindsightAdapter();
+    const otherInstallationId = "a037f814-3572-4dcb-8a56-f2968c22bdcf";
+    const other: HindsightBank = {
+      id: `personal:${otherInstallationId}:default`,
+      installationId: otherInstallationId,
+      realm: "personal",
+    };
+    await adapter.retain(other, {
+      id: "other-memory",
+      text: "Synthetic lunar planning note",
+      citations: [],
+      sourceRevisionIds: ["other-source"],
+      invalidatedAt: null,
+    });
+    await expect(adapter.retrieve(personal, "lunar")).resolves.toEqual([]);
+  });
+
   it("invalidates every derived memory with deleted lineage", async () => {
     const adapter = new InMemoryHindsightAdapter();
     await adapter.retain(personal, {

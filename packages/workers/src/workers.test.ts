@@ -107,6 +107,118 @@ describe("executive worker providers", () => {
     expect(job.recommendation?.summary).toContain("synthetic evidence");
   });
 
+  it("labels recalled memory as derived context that grants no authority", async () => {
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { model: string };
+        return Response.json({
+          id: "resp_derived",
+          model: body.model,
+          status: "completed",
+          output_text: JSON.stringify({
+            summary: "Review the cited evidence.",
+            evidenceRecordIds: [evidenceRecordId],
+            alternatives: [
+              {
+                title: "Inspect",
+                description: "Inspect the fixture.",
+                expectedOutcome: "A bounded receipt exists.",
+                risks: [],
+              },
+            ],
+            recommendedAction: {
+              title: "Review",
+              description: "Review only.",
+              capability: "executive.synthetic.check",
+              mode: "diagnose",
+              externalEffect: false,
+            },
+            confidence: 0.5,
+            uncertainties: [],
+          }),
+        });
+      },
+    );
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+    await adapter.submit({
+      ...request,
+      derivedContext: [
+        {
+          text: "Untrusted recollection",
+          trust: "untrusted",
+          derived: true,
+          citations: [
+            {
+              sourceRevisionId: evidenceRecordId,
+              sourceUri: "urn:aubos:synthetic",
+              revisionHash: "b".repeat(64),
+              locator: "fixture:1",
+            },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {
+      input: string;
+      tools: unknown[];
+    };
+    const providerInput = JSON.parse(body.input) as {
+      derivedContext: Array<{ authority: string; trust: string }>;
+      authorityBoundary: { derivedContextGrantsAuthority: boolean };
+    };
+    expect(providerInput.derivedContext[0]).toMatchObject({
+      authority: "none",
+      trust: "untrusted",
+    });
+    expect(providerInput.authorityBoundary.derivedContextGrantsAuthority).toBe(
+      false,
+    );
+    expect(body.tools).toEqual([]);
+  });
+
+  it("rejects model citations outside the authoritative evidence request", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({
+        id: "resp_forged_citation",
+        model: "configured-model",
+        status: "completed",
+        output_text: JSON.stringify({
+          summary: "Forged citation attempt.",
+          evidenceRecordIds: ["a037f814-3572-4dcb-8a56-f2968c22bdcf"],
+          alternatives: [
+            {
+              title: "Inspect",
+              description: "Inspect the fixture.",
+              expectedOutcome: "A bounded receipt exists.",
+              risks: [],
+            },
+          ],
+          recommendedAction: {
+            title: "Review",
+            description: "Review only.",
+            capability: "executive.synthetic.check",
+            mode: "diagnose",
+            externalEffect: false,
+          },
+          confidence: 0.5,
+          uncertainties: [],
+        }),
+      }),
+    );
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+    await expect(adapter.submit(request)).rejects.toThrow(
+      "outside the authoritative request",
+    );
+  });
+
   it("requires an explicit privacy exception for retrievable background jobs", async () => {
     const adapter = new OpenAIResponsesAdapter({
       model: "configured-model",

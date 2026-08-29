@@ -1,0 +1,132 @@
+import type { SqlExecutor, Database } from "@aubos/database";
+import type {
+  AppendExecutiveRecord,
+  ExecutiveLedger,
+  ExecutiveRecord,
+  ExecutiveWork,
+} from "@aubos/executive";
+import type { ExecutionAuthority, WorkInput } from "@aubos/contracts";
+
+interface RecordRow {
+  id: string;
+  installation_id: string;
+  work_id: string | null;
+  kind: ExecutiveRecord["kind"];
+  summary: string;
+  payload: Record<string, unknown>;
+  actor_person_id: string | null;
+  actor_worker_id: string | null;
+  supersedes_record_id: string | null;
+}
+
+function recordFromRow(row: RecordRow): ExecutiveRecord {
+  const actor = row.actor_person_id
+    ? ({ kind: "person", id: row.actor_person_id } as const)
+    : row.actor_worker_id
+      ? ({ kind: "worker", id: row.actor_worker_id } as const)
+      : null;
+  if (!actor) throw new Error("Executive record has no actor");
+  return {
+    id: row.id,
+    installationId: row.installation_id,
+    workId: row.work_id,
+    kind: row.kind,
+    summary: row.summary,
+    payload: row.payload,
+    actor,
+    supersedesRecordId: row.supersedes_record_id,
+  };
+}
+
+const recordColumns = `id, installation_id, work_id, kind, summary, payload,
+  actor_person_id, actor_worker_id, supersedes_record_id`;
+
+/** Stores the executive chain in authoritative Postgres tables. */
+export class DatabaseExecutiveLedger implements ExecutiveLedger {
+  constructor(private readonly database: Database) {}
+
+  append(record: AppendExecutiveRecord): Promise<ExecutiveRecord> {
+    return this.database.asAdministrator(async (transaction) => {
+      const sourceUri =
+        typeof record.payload.sourceUri === "string"
+          ? record.payload.sourceUri
+          : null;
+      const classification =
+        typeof record.payload.classification === "string"
+          ? record.payload.classification
+          : "internal";
+      const result = await transaction.query<RecordRow>(
+        `insert into public.records
+          (installation_id, work_id, kind, summary, payload, source_uri,
+           classification, actor_person_id, actor_worker_id, supersedes_record_id)
+         values ($1, $2, $3, $4, $5::jsonb, $6, $7,
+                 case when $8 = 'person' then $9::uuid else null end,
+                 case when $8 = 'worker' then $9::uuid else null end, $10)
+         returning ${recordColumns}`,
+        [
+          record.installationId,
+          record.workId,
+          record.kind,
+          record.summary,
+          JSON.stringify(record.payload),
+          sourceUri,
+          classification,
+          record.actor.kind,
+          record.actor.id,
+          record.supersedesRecordId ?? null,
+        ],
+      );
+      return recordFromSingleRow(result.rows[0]);
+    });
+  }
+
+  getRecord(id: string): Promise<ExecutiveRecord | null> {
+    return this.database.asAdministrator(async (transaction) => {
+      const result = await transaction.query<RecordRow>(
+        `select ${recordColumns} from public.records where id = $1`,
+        [id],
+      );
+      return result.rows[0] ? recordFromRow(result.rows[0]) : null;
+    });
+  }
+
+  createWork(
+    input: WorkInput,
+    authority: ExecutionAuthority,
+  ): Promise<ExecutiveWork> {
+    return this.database.asAdministrator(async (transaction) => {
+      const id = await insertWork(transaction, input);
+      return { id, input, authority };
+    });
+  }
+}
+
+function recordFromSingleRow(row: RecordRow | undefined): ExecutiveRecord {
+  if (!row)
+    throw new Error("Postgres did not return the appended executive record");
+  return recordFromRow(row);
+}
+
+async function insertWork(
+  transaction: SqlExecutor,
+  input: WorkInput,
+): Promise<string> {
+  const result = await transaction.query<{ id: string }>(
+    `insert into public.work
+      (installation_id, title, requested_outcome, acceptance_criteria, parent_work_id, priority)
+     values ($1, $2, $3, $4::jsonb, $5, $6)
+     returning id`,
+    [
+      input.installationId,
+      input.title,
+      input.requestedOutcome,
+      JSON.stringify(input.acceptanceCriteria),
+      input.parentWorkId ?? null,
+      input.priority,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row)
+    throw new Error("Postgres did not return the created Work identity");
+  return row.id;
+}

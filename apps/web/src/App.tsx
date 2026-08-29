@@ -35,6 +35,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { isPageId, kernelNav, moduleNav, type PageId } from "./navigation.js";
 import { FactoryPage } from "./FactoryPage.js";
+import { useBrowserRuntime } from "./runtime.js";
 
 const source = createSyntheticControlPlaneDataSource();
 const factorySource = createFreedFactoryFixtureDataSource();
@@ -45,6 +46,8 @@ function initialPage(): PageId {
 }
 
 export function App() {
+  const runtime = useBrowserRuntime();
+  const installation = runtime.bootstrap.installations[0];
   const [snapshot, setSnapshot] = useState<ControlPlaneSnapshot>();
   const [factorySnapshot, setFactorySnapshot] = useState<FactorySnapshot>();
   const [page, setPage] = useState<PageId>(initialPage);
@@ -94,7 +97,8 @@ export function App() {
         <div className="installation-switcher">
           <span className="installation-switcher__label">Installation</span>
           <button>
-            Moonbase Lab <ChevronDown size={14} />
+            {installation?.displayName ?? "No accessible installation"}{" "}
+            <ChevronDown size={14} />
           </button>
         </div>
         <div className="topbar__search">
@@ -102,13 +106,17 @@ export function App() {
           <span>Search work, records, people</span>
           <kbd>⌘ K</kbd>
         </div>
-        <div className="topbar__person" title="Synthetic installation owner">
-          <span>AN</span>
+        <button
+          className="topbar__person"
+          title="Verified Supabase session"
+          onClick={() => void runtime.signOut()}
+        >
+          <span>{(runtime.session.user.email?.[0] ?? "?").toUpperCase()}</span>
           <div>
-            <strong>Ada North</strong>
-            <small>Owner</small>
+            <strong>{runtime.session.user.email ?? "Verified user"}</strong>
+            <small>Sign out</small>
           </div>
-        </div>
+        </button>
       </header>
 
       <aside className={`rail ${railOpen ? "rail--open" : ""}`}>
@@ -134,8 +142,8 @@ export function App() {
         <div className="rail__foot">
           <StatusDot />
           <span>
-            <strong>Local fixture</strong>
-            <small>No external connections</small>
+            <strong>Cloud runtime</strong>
+            <small>Dashboard panels use preview data</small>
           </span>
         </div>
       </aside>
@@ -151,20 +159,24 @@ export function App() {
       <div className="horizon">
         <div>
           <StatusDot />
-          <strong>Moonbase Lab</strong>
-          <span>Synthetic mode</span>
+          <strong>{installation?.displayName ?? "No installation"}</strong>
+          <span>Connected runtime</span>
         </div>
         <div>
           <span>Authority</span>
-          <strong>Local fixture only</strong>
+          <strong>
+            {installation
+              ? `${installation.personKind} via Supabase`
+              : "No membership"}
+          </strong>
         </div>
         <div>
-          <span>Release</span>
-          <strong>{snapshot.installation.release}</strong>
+          <span>Dashboard data</span>
+          <strong>Synthetic preview</strong>
         </div>
         <div>
-          <span>Region</span>
-          <strong>{snapshot.installation.region}</strong>
+          <span>Compute</span>
+          <strong>Fly runtime</strong>
         </div>
       </div>
 
@@ -659,6 +671,115 @@ function ToolLab({ onClose }: { onClose: () => void }) {
 }
 
 function CommandBridge() {
+  const runtime = useBrowserRuntime();
+  const bindings = runtime.bootstrap.installations.flatMap((installation) =>
+    installation.proposalBindings.map((binding) => ({
+      ...binding,
+      installationId: installation.id,
+      installationName: installation.displayName,
+    })),
+  );
+  const [bindingIndex, setBindingIndex] = useState(0);
+  const [objective, setObjective] = useState("");
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [result, setResult] = useState<string>();
+  const [proposalId, setProposalId] = useState<string>();
+  const [reviewId, setReviewId] = useState<string>();
+  const [decisionId, setDecisionId] = useState<string>();
+  const [approvalId, setApprovalId] = useState<string>();
+  const selected = bindings[bindingIndex];
+
+  useEffect(() => {
+    setSelectedEvidenceIds(selected?.evidence.map((item) => item.id) ?? []);
+  }, [
+    selected?.installationId,
+    selected?.workId,
+    selected?.workerId,
+    selected?.roleId,
+  ]);
+
+  async function submitProposal() {
+    if (!selected) return;
+    try {
+      const payload = await runtime.submitExecutive("proposals", {
+        installationId: selected.installationId,
+        workId: selected.workId,
+        workerId: selected.workerId,
+        roleId: selected.roleId,
+        objective: objective.trim(),
+        evidenceRecordIds: selectedEvidenceIds,
+        background: false,
+      });
+      const proposal = payload as { proposal?: { id?: string } };
+      setProposalId(proposal.proposal?.id);
+      setReviewId(undefined);
+      setDecisionId(undefined);
+      setApprovalId(undefined);
+      setResult(JSON.stringify(payload, null, 2));
+    } catch (error) {
+      setResult(
+        error instanceof Error ? error.message : "Proposal request failed",
+      );
+    }
+  }
+
+  async function runStep(
+    stage: "reviews" | "decisions" | "approvals",
+    body: unknown,
+    remember: (id: string | undefined) => void,
+  ) {
+    try {
+      const payload = await runtime.submitExecutive(stage, body);
+      remember((payload as { id?: string }).id);
+      setResult(JSON.stringify(payload, null, 2));
+    } catch (error) {
+      setResult(
+        error instanceof Error ? error.message : "Governed step failed",
+      );
+    }
+  }
+
+  async function recordReview() {
+    if (!selected || !proposalId) return;
+    await runStep(
+      "reviews",
+      {
+        installationId: selected.installationId,
+        proposalRecordId: proposalId,
+        summary:
+          "Human review supports this recommendation for owner decision.",
+        disposition: "support",
+      },
+      setReviewId,
+    );
+  }
+
+  async function recordDecision() {
+    if (!selected || !reviewId) return;
+    await runStep(
+      "decisions",
+      {
+        installationId: selected.installationId,
+        reviewRecordId: reviewId,
+        summary: "Owner accepts this bounded recommendation.",
+        classification: "owner-required",
+      },
+      setDecisionId,
+    );
+  }
+
+  async function recordApproval() {
+    if (!selected || !decisionId) return;
+    await runStep(
+      "approvals",
+      {
+        installationId: selected.installationId,
+        decisionRecordId: decisionId,
+        summary: "Owner approves promotion through the governed Work boundary.",
+      },
+      setApprovalId,
+    );
+  }
   return (
     <>
       <SectionHeading
@@ -670,21 +791,123 @@ function CommandBridge() {
         <div className="command-bridge__mark">
           <Command />
         </div>
-        <p className="eyebrow">Synthetic session</p>
+        <p className="eyebrow">Authenticated executive copilot</p>
         <h2>What needs attention?</h2>
         <div className="prompt-grid">
-          <button>Summarize open Work</button>
-          <button>Show blocked decisions</button>
-          <button>Inspect worker health</button>
+          <button
+            onClick={() =>
+              setObjective(
+                "Summarize the open Work and recommend the next bounded action.",
+              )
+            }
+          >
+            Summarize open Work
+          </button>
+          <button
+            onClick={() =>
+              setObjective(
+                "Identify blocked decisions and recommend what an owner should review next.",
+              )
+            }
+          >
+            Show blocked decisions
+          </button>
+          <button
+            onClick={() =>
+              setObjective(
+                "Assess the assigned worker and evidence, then recommend any safe follow-up.",
+              )
+            }
+          >
+            Inspect worker health
+          </button>
         </div>
-        <label>
-          <span>Message Command Bridge</span>
-          <textarea placeholder="Ask about this installation…" />
-          <Button>Send</Button>
-        </label>
+        {selected ? (
+          <div className="command-bridge__composer">
+            <span>Message Command Bridge</span>
+            <select
+              value={bindingIndex}
+              onChange={(event) => setBindingIndex(Number(event.target.value))}
+            >
+              {bindings.map((binding, index) => (
+                <option
+                  key={`${binding.workId}:${binding.workerId}:${binding.roleId}`}
+                  value={index}
+                >
+                  {binding.installationName}: {binding.workTitle} /{" "}
+                  {binding.workerName} / {binding.roleName}
+                </option>
+              ))}
+            </select>
+            <textarea
+              value={objective}
+              onChange={(event) => setObjective(event.target.value)}
+              placeholder="Describe the outcome or question in normal language"
+            />
+            <fieldset className="command-bridge__evidence">
+              <legend>Evidence supplied to the recommendation worker</legend>
+              {selected.evidence.map((item) => (
+                <label key={item.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedEvidenceIds.includes(item.id)}
+                    onChange={(event) =>
+                      setSelectedEvidenceIds((current) =>
+                        event.target.checked
+                          ? [...current, item.id]
+                          : current.filter((id) => id !== item.id),
+                      )
+                    }
+                  />
+                  <span>
+                    {item.summary} ({item.classification})
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <Button
+              onClick={() => void submitProposal()}
+              disabled={!objective.trim() || selectedEvidenceIds.length === 0}
+            >
+              Request recommendation
+            </Button>
+          </div>
+        ) : (
+          <EmptyState
+            eyebrow="Executive runtime"
+            title="No eligible executive Work"
+          >
+            This account has no active Work with an assigned role, configured
+            worker, evidence, and recommendation capability.
+          </EmptyState>
+        )}
+        {proposalId && (
+          <div className="command-bridge__governance">
+            <Button
+              onClick={() => void recordReview()}
+              disabled={Boolean(reviewId)}
+            >
+              {reviewId ? "Review recorded" : "Record support review"}
+            </Button>
+            <Button
+              onClick={() => void recordDecision()}
+              disabled={!reviewId || Boolean(decisionId)}
+            >
+              {decisionId ? "Decision recorded" : "Record owner decision"}
+            </Button>
+            <Button
+              onClick={() => void recordApproval()}
+              disabled={!decisionId || Boolean(approvalId)}
+            >
+              {approvalId ? "Approval recorded" : "Record approval"}
+            </Button>
+          </div>
+        )}
         <small>
-          No provider connected. Messages remain in this browser session.
+          The worker may recommend an action. It cannot approve, create Work, or
+          execute it.
         </small>
+        {result && <pre>{result}</pre>}
       </section>
     </>
   );

@@ -1,0 +1,31 @@
+app = "replace-with-aubos-hindsight-app"
+primary_region = "sjc"
+
+[build]
+  image = "ghcr.io/vectorize-io/hindsight@sha256:ac50c0d95a65c88545f46665dc432544bcc378cec89e03675786a1d9383feb2d"
+
+[env]
+  HINDSIGHT_API_HOST = "0.0.0.0"
+  HINDSIGHT_API_PORT = "8888"
+  HINDSIGHT_API_WORKER_ID = "replace-with-stable-installation-worker-id"
+  HINDSIGHT_API_DATABASE_BACKEND = "postgres"
+  HINDSIGHT_API_LLM_PROVIDER = "replace-with-explicit-provider"
+  HINDSIGHT_API_LLM_MODEL = "replace-with-explicit-model"
+  HINDSIGHT_API_EMBEDDINGS_PROVIDER = "openai"
+  HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL = "replace-with-explicit-embedding-model"
+  HINDSIGHT_API_RERANKER_PROVIDER = "rrf"
+  HINDSIGHT_API_TENANT_EXTENSION = "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension"
+  HINDSIGHT_API_MCP_ENABLED = "false"
+  HINDSIGHT_API_LOG_FORMAT = "json"
+
+[[services]]
+  internal_port = 8888
+  protocol = "tcp"
+  auto_start_machines = true
+  auto_stop_machines = "stop"
+  min_machines_running = 1
+
+  [[services.tcp_checks]]
+    interval = "20s"
+    timeout = "5s"
+    grace_period = "30s"

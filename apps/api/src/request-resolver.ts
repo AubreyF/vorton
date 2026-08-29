@@ -1,0 +1,375 @@
+import type {
+  ExecutiveWorkerJobRequest,
+  ExecutionAuthority,
+} from "@aubos/contracts";
+import type { Database } from "@aubos/database";
+import type {
+  HindsightAdapter,
+  HindsightBank,
+  HindsightMemory,
+} from "@aubos/memory";
+
+export interface ProposalInput {
+  installationId: string;
+  workId: string;
+  workerId: string;
+  roleId: string;
+  objective: string;
+  evidenceRecordIds: string[];
+  background: boolean;
+}
+
+export class ExecutiveRequestInputError extends Error {}
+export class ExecutiveRequestResolutionError extends Error {}
+
+interface BindingRow {
+  work_id: string;
+  worker_id: string;
+  role_id: string;
+  role_name: string;
+  role_version: number;
+  skill_markdown: string;
+  content_sha256: string;
+}
+
+interface EvidenceRow {
+  id: string;
+  summary: string;
+  source_uri: string | null;
+  classification: ExecutiveWorkerJobRequest["evidence"][number]["classification"];
+}
+
+interface GrantRow {
+  policy_id: string;
+  worker_id: string;
+  capability: string;
+  mode: ExecutionAuthority["mode"];
+}
+
+interface InstallationRow {
+  id: string;
+  display_name: string;
+  person_kind: "owner" | "member";
+}
+
+interface BootstrapBindingRow {
+  installation_id: string;
+  work_id: string;
+  work_title: string;
+  worker_id: string;
+  worker_name: string;
+  role_id: string;
+  role_name: string;
+}
+
+interface BootstrapEvidenceRow extends EvidenceRow {
+  installation_id: string;
+  work_id: string | null;
+}
+
+export interface RuntimeBootstrap {
+  installations: Array<{
+    id: string;
+    displayName: string;
+    personKind: "owner" | "member";
+    proposalBindings: Array<{
+      workId: string;
+      workTitle: string;
+      workerId: string;
+      workerName: string;
+      roleId: string;
+      roleName: string;
+      evidence: Array<{ id: string; summary: string; classification: string }>;
+    }>;
+  }>;
+}
+
+export class DatabaseExecutiveRequestResolver {
+  constructor(
+    private readonly database: Database,
+    private readonly provider: string,
+    private readonly model: string,
+    private readonly memory: HindsightAdapter,
+    private readonly onMemoryWarning: (error: unknown) => void = (error) =>
+      console.warn(
+        "AubOS derived memory recall is unavailable; continuing with authoritative evidence only",
+        error,
+      ),
+  ) {}
+
+  async resolveBootstrap(authUserId: string): Promise<RuntimeBootstrap> {
+    return this.database.asAdministrator(async (transaction) => {
+      const installations = await transaction.query<InstallationRow>(
+        `select installation.id, installation.display_name, person.kind as person_kind
+           from public.people person
+           join public.installations installation on installation.id = person.installation_id
+          where person.auth_user_id = $1
+          order by installation.display_name, installation.id`,
+        [authUserId],
+      );
+      const installationIds = installations.rows.map((row) => row.id);
+      if (installationIds.length === 0) return { installations: [] };
+      const bindings = await transaction.query<BootstrapBindingRow>(
+        `select work.installation_id, work.id as work_id, work.title as work_title,
+                worker.id as worker_id, worker.name as worker_name,
+                role.id as role_id, role.name as role_name
+           from public.work work
+           join public.workers worker on worker.installation_id = work.installation_id
+           join public.worker_role_assignments assignment
+             on assignment.installation_id = worker.installation_id and assignment.worker_id = worker.id
+           join public.roles role
+             on role.installation_id = assignment.installation_id and role.id = assignment.role_id
+           join public.capability_grants grant_row
+             on grant_row.installation_id = worker.installation_id
+            and grant_row.principal_kind = 'worker' and grant_row.worker_id = worker.id
+            and grant_row.capability = 'executive.propose' and grant_row.mode = 'recommend'
+            and (grant_row.work_id is null or grant_row.work_id = work.id)
+            and (grant_row.expires_at is null or grant_row.expires_at > now())
+          where work.installation_id = any($1::uuid[])
+            and work.state in ('proposed', 'ready', 'review')
+            and worker.provider = $2 and worker.model = $3
+            and not exists (
+              select 1 from public.capability_grant_revocations revocation
+               where revocation.installation_id = grant_row.installation_id
+                 and revocation.grant_id = grant_row.id
+            )
+          order by work.priority desc, work.created_at, worker.name, role.name`,
+        [installationIds, this.provider, this.model],
+      );
+      const evidence = await transaction.query<BootstrapEvidenceRow>(
+        `select installation_id, work_id, id, summary, source_uri, classification
+           from public.records
+          where installation_id = any($1::uuid[]) and kind = 'evidence'
+          order by created_at desc
+          limit 200`,
+        [installationIds],
+      );
+      return {
+        installations: installations.rows.map((installation) => ({
+          id: installation.id,
+          displayName: installation.display_name,
+          personKind: installation.person_kind,
+          proposalBindings: bindings.rows
+            .filter((binding) => binding.installation_id === installation.id)
+            .map((binding) => ({
+              workId: binding.work_id,
+              workTitle: binding.work_title,
+              workerId: binding.worker_id,
+              workerName: binding.worker_name,
+              roleId: binding.role_id,
+              roleName: binding.role_name,
+              evidence: evidence.rows
+                .filter(
+                  (record) =>
+                    record.installation_id === installation.id &&
+                    (record.work_id === null ||
+                      record.work_id === binding.work_id),
+                )
+                .map((record) => ({
+                  id: record.id,
+                  summary: record.summary,
+                  classification: record.classification,
+                })),
+            }))
+            .filter((binding) => binding.evidence.length > 0),
+        })),
+      };
+    });
+  }
+
+  async resolveProposal(
+    input: ProposalInput,
+  ): Promise<ExecutiveWorkerJobRequest> {
+    const request = await this.database.asAdministrator(async (transaction) => {
+      const binding = await transaction.query<BindingRow>(
+        `select work.id as work_id, worker.id as worker_id, role.id as role_id,
+                role.name as role_name, role.version as role_version,
+                role.skill_markdown, role.content_sha256
+           from public.work work
+           join public.workers worker
+             on worker.installation_id = work.installation_id and worker.id = $3
+           join public.worker_role_assignments assignment
+             on assignment.installation_id = worker.installation_id and assignment.worker_id = worker.id
+           join public.roles role
+             on role.installation_id = assignment.installation_id
+            and role.id = assignment.role_id and role.id = $4
+           join public.capability_grants grant_row
+             on grant_row.installation_id = worker.installation_id
+            and grant_row.principal_kind = 'worker'
+            and grant_row.worker_id = worker.id
+            and grant_row.capability = 'executive.propose'
+            and grant_row.mode = 'recommend'
+            and (grant_row.work_id is null or grant_row.work_id = work.id)
+            and (grant_row.expires_at is null or grant_row.expires_at > now())
+          where work.installation_id = $1 and work.id = $2
+            and work.state in ('proposed', 'ready', 'review')
+            and worker.provider = $5 and worker.model = $6
+            and not exists (
+              select 1 from public.capability_grant_revocations revocation
+               where revocation.installation_id = grant_row.installation_id
+                 and revocation.grant_id = grant_row.id
+            )`,
+        [
+          input.installationId,
+          input.workId,
+          input.workerId,
+          input.roleId,
+          this.provider,
+          this.model,
+        ],
+      );
+      const row = binding.rows[0];
+      if (!row) {
+        throw new ExecutiveRequestResolutionError(
+          "Work, assigned role, configured worker, or executive.propose capability is missing or inapplicable",
+        );
+      }
+      const evidence = await transaction.query<EvidenceRow>(
+        `select id, summary, source_uri, classification
+           from public.records
+          where installation_id = $1 and kind = 'evidence' and id = any($2::uuid[])
+          order by id`,
+        [input.installationId, input.evidenceRecordIds],
+      );
+      if (evidence.rows.length !== new Set(input.evidenceRecordIds).size) {
+        throw new ExecutiveRequestResolutionError(
+          "One or more evidence records are missing or belong to another installation",
+        );
+      }
+      return {
+        installationId: input.installationId,
+        workId: row.work_id,
+        workerId: row.worker_id,
+        role: {
+          roleId: row.role_id,
+          name: row.role_name,
+          version: row.role_version,
+          contentSha256: row.content_sha256,
+          skillMarkdown: row.skill_markdown,
+        },
+        objective: input.objective,
+        evidence: evidence.rows.map((item) => ({
+          recordId: item.id,
+          summary: item.summary,
+          sourceUri: item.source_uri,
+          classification: item.classification,
+        })),
+        background: input.background,
+      };
+    });
+    const bank: HindsightBank = {
+      id: `organizational:${input.installationId}:executive`,
+      installationId: input.installationId,
+      realm: "organizational",
+    };
+    let recalled: HindsightMemory[];
+    try {
+      await this.memory.ensureBank(bank);
+      recalled = await this.memory.retrieve(bank, input.objective);
+    } catch (error) {
+      this.onMemoryWarning(error);
+      recalled = [];
+    }
+    return {
+      ...request,
+      derivedContext: recalled
+        .filter((item) => item.citations.length > 0)
+        .map((item) => ({
+          text: item.text,
+          trust: "untrusted" as const,
+          derived: true as const,
+          citations: item.citations,
+        })),
+    };
+  }
+
+  async resolveAuthority(input: {
+    installationId: string;
+    capabilityGrantId: string;
+    approvalRecordId: string;
+  }): Promise<ExecutionAuthority> {
+    return this.database.asAdministrator(async (transaction) => {
+      const result = await transaction.query<GrantRow>(
+        `select grant_row.policy_id, grant_row.worker_id, grant_row.capability, grant_row.mode
+           from public.capability_grants grant_row
+          where grant_row.installation_id = $1 and grant_row.id = $2
+            and grant_row.principal_kind = 'worker'
+            and (grant_row.expires_at is null or grant_row.expires_at > now())
+            and not exists (
+              select 1 from public.capability_grant_revocations revocation
+               where revocation.installation_id = grant_row.installation_id
+                 and revocation.grant_id = grant_row.id
+            )`,
+        [input.installationId, input.capabilityGrantId],
+      );
+      const row = result.rows[0];
+      if (!row)
+        throw new ExecutiveRequestResolutionError(
+          "Capability grant is missing, expired, revoked, or belongs to another installation",
+        );
+      return {
+        policyId: row.policy_id,
+        capabilityGrantId: input.capabilityGrantId,
+        approvalRecordId: input.approvalRecordId,
+        executorWorkerId: row.worker_id,
+        capability: row.capability,
+        mode: row.mode,
+      };
+    });
+  }
+}
+
+const uuid =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function parseProposalInput(value: unknown): ProposalInput {
+  if (!value || typeof value !== "object")
+    throw new ExecutiveRequestInputError("Proposal request must be an object");
+  const input = value as Record<string, unknown>;
+  for (const forbidden of [
+    "role",
+    "skillMarkdown",
+    "evidence",
+    "authUserId",
+    "auth_user_id",
+    "userId",
+  ]) {
+    if (forbidden in input)
+      throw new ExecutiveRequestInputError(
+        `${forbidden} is server-resolved and cannot be supplied`,
+      );
+  }
+  for (const key of [
+    "installationId",
+    "workId",
+    "workerId",
+    "roleId",
+  ] as const) {
+    if (typeof input[key] !== "string" || !uuid.test(input[key]))
+      throw new ExecutiveRequestInputError(`${key} must be a UUID`);
+  }
+  if (typeof input.objective !== "string" || !input.objective.trim())
+    throw new ExecutiveRequestInputError("objective is required");
+  if (
+    !Array.isArray(input.evidenceRecordIds) ||
+    input.evidenceRecordIds.length === 0 ||
+    !input.evidenceRecordIds.every(
+      (id) => typeof id === "string" && uuid.test(id),
+    )
+  ) {
+    throw new ExecutiveRequestInputError(
+      "evidenceRecordIds must contain UUIDs",
+    );
+  }
+  if (input.background !== undefined && typeof input.background !== "boolean")
+    throw new ExecutiveRequestInputError("background must be boolean");
+  return {
+    installationId: input.installationId as string,
+    workId: input.workId as string,
+    workerId: input.workerId as string,
+    roleId: input.roleId as string,
+    objective: input.objective.trim(),
+    evidenceRecordIds: input.evidenceRecordIds as string[],
+    background: input.background ?? (false as boolean),
+  };
+}
