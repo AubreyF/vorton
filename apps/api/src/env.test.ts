@@ -21,6 +21,32 @@ const base = {
 };
 
 describe("API environment", () => {
+  it("loads a base64-encoded database certificate authority", () => {
+    const certificate = [
+      "-----BEGIN CERTIFICATE-----",
+      "c3ludGhldGljLWNh",
+      "-----END CERTIFICATE-----",
+      "",
+    ].join("\n");
+    expect(
+      readApiEnvironment({
+        ...base,
+        AUBOS_DATABASE_SSL_CA_BASE64:
+          Buffer.from(certificate).toString("base64"),
+      }).databaseSslCa,
+    ).toBe(certificate);
+  });
+
+  it("rejects malformed database certificate authorities", () => {
+    expect(() =>
+      readApiEnvironment({
+        ...base,
+        AUBOS_DATABASE_SSL_CA_BASE64:
+          Buffer.from("not a certificate").toString("base64"),
+      }),
+    ).toThrow("must decode to a PEM certificate authority");
+  });
+
   it("fails closed when the provider model is not configured", () => {
     expect(() =>
       readApiEnvironment({ ...base, AUBOS_WORKER_MODEL: "" }),

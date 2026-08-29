@@ -14,7 +14,12 @@ const env = readApiEnvironment();
 const database = new Database({
   contextSigningSecret: env.databaseContextSigningSecret,
   connectionString: env.databaseUrl,
-  ssl: env.databaseSsl ? { rejectUnauthorized: true } : undefined,
+  ssl: env.databaseSsl
+    ? {
+        rejectUnauthorized: true,
+        ...(env.databaseSslCa ? { ca: env.databaseSslCa } : {}),
+      }
+    : undefined,
   max: 10,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 30_000,
