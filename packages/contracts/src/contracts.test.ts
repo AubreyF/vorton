@@ -5,7 +5,9 @@ import {
   recordActorSchema,
   recordInputSchema,
   installationManifestSchema,
+  retrievedContextSchema,
   releaseManifestSchema,
+  transcriptRevisionSchema,
   workerAdvertisementSchema,
 } from "./index.js";
 
@@ -116,6 +118,69 @@ describe("installation contracts", () => {
         summary: "Synthetic worker completed an offline check.",
         payload: { fixture: true },
         classification: "synthetic",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("marks retrieved memory as derived and untrusted", () => {
+    expect(
+      retrievedContextSchema.safeParse({
+        text: "Synthetic context",
+        trust: "untrusted",
+        derived: true,
+        citations: [
+          {
+            sourceRevisionId: "11111111-1111-4111-a111-111111111111",
+            sourceUri: "synthetic://conversation/1",
+            revisionHash: "a".repeat(64),
+            locator: "utterance:0",
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      retrievedContextSchema.safeParse({
+        text: "Synthetic context",
+        trust: "trusted",
+        derived: true,
+        citations: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a provider-neutral synthetic transcript revision", () => {
+    expect(
+      transcriptRevisionSchema.safeParse({
+        id: "11111111-1111-4111-a111-111111111111",
+        installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        installationRealm: "organizational",
+        connectionId: "0dd9b2cc-b44c-4039-a1fc-5226b5d9bb06",
+        provider: "google-meet",
+        providerObjectId: "synthetic-meeting",
+        revisionHash: "a".repeat(64),
+        title: "Synthetic meeting",
+        startedAt: "2026-08-28T11:00:00.000Z",
+        endedAt: null,
+        participants: ["Synthetic Ada"],
+        utterances: [],
+        rawSourcePointer: null,
+        providerObservedAt: "2026-08-28T11:30:00.000Z",
+        ingestedAt: "2026-08-28T12:00:00.000Z",
+        adapterVersion: "fixture-v1",
+        classification: "synthetic",
+        completeness: "partial",
+        boundary: "organizational",
+        admissionState: "pending",
+        deletedAt: null,
+        supersedesRevisionId: null,
+        citations: [
+          {
+            sourceRevisionId: "11111111-1111-4111-a111-111111111111",
+            sourceUri: "google-meet://synthetic-meeting",
+            revisionHash: "a".repeat(64),
+            locator: "transcript",
+          },
+        ],
       }).success,
     ).toBe(true);
   });
