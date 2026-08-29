@@ -6,8 +6,11 @@ import {
   recordActorSchema,
   recordInputSchema,
   installationManifestSchema,
+  retrievedContextSchema,
   releaseManifestSchema,
+  transcriptRevisionSchema,
   workerAdvertisementSchema,
+  factoryReconciliationReceiptSchema,
 } from "./index.js";
 
 describe("installation contracts", () => {
@@ -147,5 +150,98 @@ describe("installation contracts", () => {
     expect(result.success).toBe(true);
     expect(result.data).not.toHaveProperty("policyId");
     expect(result.data).not.toHaveProperty("capabilityGrantId");
+  });
+
+  it("marks retrieved memory as derived and untrusted", () => {
+    expect(
+      retrievedContextSchema.safeParse({
+        text: "Synthetic context",
+        trust: "untrusted",
+        derived: true,
+        citations: [
+          {
+            sourceRevisionId: "11111111-1111-4111-a111-111111111111",
+            sourceUri: "synthetic://conversation/1",
+            revisionHash: "a".repeat(64),
+            locator: "utterance:0",
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      retrievedContextSchema.safeParse({
+        text: "Synthetic context",
+        trust: "trusted",
+        derived: true,
+        citations: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a provider-neutral synthetic transcript revision", () => {
+    expect(
+      transcriptRevisionSchema.safeParse({
+        id: "11111111-1111-4111-a111-111111111111",
+        installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        installationRealm: "organizational",
+        connectionId: "0dd9b2cc-b44c-4039-a1fc-5226b5d9bb06",
+        provider: "google-meet",
+        providerObjectId: "synthetic-meeting",
+        revisionHash: "a".repeat(64),
+        title: "Synthetic meeting",
+        startedAt: "2026-08-28T11:00:00.000Z",
+        endedAt: null,
+        participants: ["Synthetic Ada"],
+        utterances: [],
+        rawSourcePointer: null,
+        providerObservedAt: "2026-08-28T11:30:00.000Z",
+        ingestedAt: "2026-08-28T12:00:00.000Z",
+        adapterVersion: "fixture-v1",
+        classification: "synthetic",
+        completeness: "partial",
+        boundary: "organizational",
+        admissionState: "pending",
+        deletedAt: null,
+        supersedesRevisionId: null,
+        citations: [
+          {
+            sourceRevisionId: "11111111-1111-4111-a111-111111111111",
+            sourceUri: "google-meet://synthetic-meeting",
+            revisionHash: "a".repeat(64),
+            locator: "transcript",
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("binds Factory receipts to exact source and authority generations", () => {
+    expect(
+      factoryReconciliationReceiptSchema.safeParse({
+        schemaVersion: 1,
+        installationWorkId: "WORK-FREED-1628",
+        repositoryTicketId: "github:freed-project/freed#1628",
+        outcome: "blocked",
+        sourceHead: "031a27aa348dd621aa39e102afc9bc6f7904ab9b",
+        cursor: {
+          provider: "github",
+          repository: "freed-project/freed",
+          observedAt: "2026-08-29T00:33:00.000Z",
+          ticketRevision: "issue-1628@2026-08-28T20:56:36Z",
+          executionRevision: "authority-generation-conflict",
+        },
+        authority: {
+          ticket: "github",
+          claim: "repository-execution",
+          lease: "repository-execution",
+          branch: "repository-execution",
+          pullRequest: "repository-execution",
+          checks: "github",
+          publication: "repository-execution",
+          recovery: "repository-execution",
+        },
+        blockers: ["authority_generation_conflict"],
+      }).success,
+    ).toBe(true);
   });
 });
