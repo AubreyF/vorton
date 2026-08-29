@@ -1,0 +1,21 @@
+apiVersion: aubos.dev/v1alpha1
+kind: Installation
+metadata:
+  name: example
+spec:
+  release:
+    channel: pinned
+    version: 0.1.0
+  modules:
+    - command-bridge
+    - goals
+    - tasks
+    - tools
+    - admin
+    - factory
+  deployment:
+    provider: fly
+    region: sea
+  secrets:
+    supabaseUrl: AUBOS_SUPABASE_URL
+    supabaseAnonKey: AUBOS_SUPABASE_ANON_KEY

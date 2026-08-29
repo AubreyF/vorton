@@ -1,0 +1,28 @@
+{
+  "name": "aubos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A reusable operating system for people and organizations.",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "modules/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run typecheck && npm run test",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}
