@@ -30,7 +30,7 @@ const repositoryRoot = resolve(
 );
 const fixtureRoot = join(
   repositoryRoot,
-  "packages/cli/test-fixtures/freedos-private",
+  "packages/cli/test-fixtures/synthetic-organization",
 );
 const generatedRoots: string[] = [];
 
@@ -42,8 +42,8 @@ function manifest(version: "0.1.0" | "0.1.1"): string {
   );
 }
 
-function privateStyleRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "aubos-freedos-proof-"));
+function syntheticInstallationRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "aubos-synthetic-proof-"));
   generatedRoots.push(root);
   cpSync(fixtureRoot, root, { recursive: true });
   return root;
@@ -95,13 +95,13 @@ afterEach(() => {
   }
 });
 
-describe("FreedOS private installation acceptance", () => {
+describe("synthetic organization installation acceptance", () => {
   it("adopts an exact release and resumes an interrupted apply idempotently", () => {
-    const root = privateStyleRoot();
+    const root = syntheticInstallationRoot();
     const existingBefore = snapshotExistingFiles(root);
     const planned = planInit({
       root,
-      organization: "FreedOS",
+      organization: "Moonbase Lab",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
       allowCandidate: true,
@@ -154,10 +154,10 @@ describe("FreedOS private installation acceptance", () => {
   });
 
   it("refuses a tampered upgrade preimage before changing any managed file", () => {
-    const root = privateStyleRoot();
+    const root = syntheticInstallationRoot();
     const initialized = planInit({
       root,
-      organization: "FreedOS",
+      organization: "Moonbase Lab",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
       allowCandidate: true,
@@ -183,10 +183,10 @@ describe("FreedOS private installation acceptance", () => {
   });
 
   it("upgrades one managed host file and narrowly rolls it back", () => {
-    const root = privateStyleRoot();
+    const root = syntheticInstallationRoot();
     const initialized = planInit({
       root,
-      organization: "FreedOS",
+      organization: "Moonbase Lab",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
       allowCandidate: true,
@@ -230,10 +230,10 @@ describe("FreedOS private installation acceptance", () => {
   });
 
   it("refuses rollback after a managed postimage drifts", () => {
-    const root = privateStyleRoot();
+    const root = syntheticInstallationRoot();
     const initialized = planInit({
       root,
-      organization: "FreedOS",
+      organization: "Moonbase Lab",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
       allowCandidate: true,
@@ -256,10 +256,10 @@ describe("FreedOS private installation acceptance", () => {
   });
 
   it("contains no personal data or secret values", () => {
-    const root = privateStyleRoot();
+    const root = syntheticInstallationRoot();
     const planned = planInit({
       root,
-      organization: "FreedOS",
+      organization: "Moonbase Lab",
       releaseManifestPath: manifest("0.1.0"),
       releaseRoot: repositoryRoot,
       allowCandidate: true,
@@ -269,7 +269,7 @@ describe("FreedOS private installation acceptance", () => {
       .map((path) => `${relative(root, path)}\n${readFileSync(path, "utf8")}`)
       .join("\n");
 
-    expect(combined).not.toMatch(/aubrey|@(?:gmail|icloud)\.com/i);
+    expect(combined).not.toMatch(/@(?:gmail|icloud)\.com/i);
     expect(combined).not.toMatch(/\b(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{12,}/);
     expect(combined).not.toMatch(
       /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,

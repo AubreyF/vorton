@@ -1,29 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { createFreedFactoryFixtureDataSource } from "./index.js";
+import { createSyntheticFactoryFixtureDataSource } from "./index.js";
 
-describe("Freed Factory fixture", () => {
-  it("preserves the active pilot as a read-only authority observation", async () => {
-    const snapshot = await createFreedFactoryFixtureDataSource().getSnapshot();
+describe("synthetic Factory fixture", () => {
+  it("preserves external execution authority through read-only observation", async () => {
+    const snapshot =
+      await createSyntheticFactoryFixtureDataSource().getSnapshot();
     const ticket = snapshot.tickets[0]!;
 
     expect(snapshot.mode).toBe("read-only");
-    expect(snapshot.repository).toBe("freed-project/freed");
-    expect(ticket.ticket.number).toBe(1628);
+    expect(snapshot.repository).toBe("moonbase-lab/launch-control");
+    expect(ticket.ticket.number).toBe(42);
     expect(ticket.claimedWorker).toBeNull();
     expect(ticket.lease).toMatchObject({
       state: "blocked",
       recovery: "awaiting-owner",
     });
     expect(ticket.pullRequest).toMatchObject({
-      number: 1629,
+      number: 43,
       draft: true,
-      branch: "fix/event-history-witness-repair",
-      sourceHead: "031a27aa348dd621aa39e102afc9bc6f7904ab9b",
+      branch: "fix/offline-telemetry-replay",
+      sourceHead: "e8f63827e20c5f0625fe8ef505f3b95c8f310623",
     });
     expect(ticket.receipt.authority.claim).toBe("repository-execution");
     expect(ticket.receipt.authority.ticket).toBe("github");
     expect(ticket.receipt.cursor.executionRevision).toContain(
       "authority_generation_conflict",
     );
+    expect(ticket.ticket.url).toContain("example.invalid");
   });
 });

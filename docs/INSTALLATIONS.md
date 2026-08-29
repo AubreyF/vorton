@@ -5,7 +5,7 @@ Organizations own a private installation repository. They configure AubOS withou
 ## Repository contract
 
 ```text
-freedos/
+my-organization/
   aubos.yaml
   aubos.lock.json
   host/
@@ -43,7 +43,7 @@ The CLI rejects path traversal and symbolic-link escapes. A plan cannot expand u
 
 ```bash
 aubos init plan \
-  --organization FreedOS \
+  --organization "My Organization" \
   --manifest /absolute/path/to/aubos-release-manifest.json \
   --artifact-root /absolute/path/to/unpacked-release
 aubos init apply --plan sha256:<plan>
@@ -88,7 +88,7 @@ Organizations that modify AubOS core become distributors. They maintain a separa
 
 Fly configuration remains organization-owned. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
 
-## FreedOS scaffold
+## Installation scaffold
 
 The installation templates create an organizational installation with Fly deployment intent and environment-variable references for Supabase, Postgres, and Hindsight. Postgres remains authoritative for decisions, approvals, Policy, Work, receipts, and outcomes. Hindsight stores derived memory and grants no authority.
 
@@ -102,10 +102,10 @@ The checked-in acceptance fixture uses synthetic manifests and `registry.invalid
 
 ```bash
 cd packages/cli
-npm run proof:installation -- --output /tmp/aubos-freedos-installation-proof
+npm run proof:installation -- --output /tmp/aubos-installation-proof
 ```
 
-The command creates `/tmp/aubos-freedos-installation-proof/freedos` and `/tmp/aubos-freedos-installation-proof/proof.json`. It adopts fixture release `0.1.0`, applies fixture release `0.1.1`, verifies the managed host change, compares organization-owned file digests, and rolls back only `host/**` and `aubos.lock.json`. It refuses to overwrite an existing output directory.
+The command creates `/tmp/aubos-installation-proof/moonbase-lab` and `/tmp/aubos-installation-proof/proof.json`. It adopts synthetic fixture release `0.1.0`, applies synthetic fixture release `0.1.1`, verifies the managed host change, compares organization-owned file digests, and rolls back only `host/**` and `aubos.lock.json`. It refuses to overwrite an existing output directory.
 
 Run the acceptance suite from the CLI package:
 

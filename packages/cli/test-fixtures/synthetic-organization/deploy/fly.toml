@@ -1,9 +1,9 @@
 # Organization-owned Fly deployment intent. No deployment is performed.
-app = "freedos-aubos"
+app = "moonbase-lab-aubos"
 primary_region = "sea"
 
 [build]
   image = "REPLACE_WITH_LOCKED_OCI_REFERENCE"
 
 [env]
-  AUBOS_INSTALLATION = "freedos"
+  AUBOS_INSTALLATION = "moonbase-lab"

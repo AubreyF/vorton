@@ -65,5 +65,6 @@ describe("Factory control-plane view", () => {
     expect(html).toContain("No worker was selected");
     expect(html).toContain("2 active witnesses");
     expect(html).not.toContain("worker-a</strong>");
+    expect(html).not.toContain("Freed");
   });
 });
