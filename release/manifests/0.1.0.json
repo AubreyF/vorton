@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "released",
   "version": "0.1.0",
-  "sourceCommit": "20c736b00c9fcacc41a574e57f6e78f0c4bc87e4",
-  "createdAt": "2026-08-28T00:00:00.000Z",
+  "sourceCommit": "0424a9995b4da3989e491778c7ad85b960291523",
+  "createdAt": "2026-08-29T02:09:16.000Z",
   "cliVersion": "0.1.0",
   "contracts": {
     "host": 1,
@@ -11,7 +11,16 @@
     "worker": 1
   },
   "coreMigrationHead": "20260828000300_executive",
-  "images": {},
+  "images": {
+    "control-plane": {
+      "reference": "ghcr.io/aubreyf/aubos-control-plane@sha256:15b55828b43a19a449e9f69c14c5e273402f3a8b566c003645214f8eec6e10b2",
+      "digest": "sha256:15b55828b43a19a449e9f69c14c5e273402f3a8b566c003645214f8eec6e10b2"
+    },
+    "worker": {
+      "reference": "ghcr.io/aubreyf/aubos-worker@sha256:b8ec8a835d7e15c3822bee758c47f45ba7849464ccdbe8decdb02681cdc7fde8",
+      "digest": "sha256:b8ec8a835d7e15c3822bee758c47f45ba7849464ccdbe8decdb02681cdc7fde8"
+    }
+  },
   "managedFiles": [
     {
       "path": "host/aubos-runtime.json",
