@@ -8,6 +8,10 @@ import {
   type ModuleSummary,
 } from "@aubos/control-plane";
 import {
+  createFreedFactoryFixtureDataSource,
+  type FactorySnapshot,
+} from "@aubos/factory";
+import {
   Badge,
   Button,
   EmptyState,
@@ -30,8 +34,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { isPageId, kernelNav, moduleNav, type PageId } from "./navigation.js";
+import { FactoryPage } from "./FactoryPage.js";
 
 const source = createSyntheticControlPlaneDataSource();
+const factorySource = createFreedFactoryFixtureDataSource();
 
 function initialPage(): PageId {
   const hash = window.location.hash.slice(1);
@@ -40,12 +46,14 @@ function initialPage(): PageId {
 
 export function App() {
   const [snapshot, setSnapshot] = useState<ControlPlaneSnapshot>();
+  const [factorySnapshot, setFactorySnapshot] = useState<FactorySnapshot>();
   const [page, setPage] = useState<PageId>(initialPage);
   const [railOpen, setRailOpen] = useState(false);
   const [newWorkOpen, setNewWorkOpen] = useState(false);
 
   useEffect(() => {
     void source.getSnapshot().then(setSnapshot);
+    void factorySource.getSnapshot().then(setFactorySnapshot);
   }, []);
   useEffect(() => {
     const onHash = () => setPage(initialPage());
@@ -64,7 +72,7 @@ export function App() {
     setSnapshot(await source.getSnapshot());
   }
 
-  if (!snapshot)
+  if (!snapshot || !factorySnapshot)
     return (
       <div className="boot">
         <Mark />
@@ -164,6 +172,7 @@ export function App() {
         <Page
           page={page}
           snapshot={snapshot}
+          factorySnapshot={factorySnapshot}
           navigate={navigate}
           onNewWork={() => setNewWorkOpen(true)}
         />
@@ -211,11 +220,13 @@ function NavGroup({
 function Page({
   page,
   snapshot,
+  factorySnapshot,
   navigate,
   onNewWork,
 }: {
   page: PageId;
   snapshot: ControlPlaneSnapshot;
+  factorySnapshot: FactorySnapshot;
   navigate: (page: PageId) => void;
   onNewWork: () => void;
 }) {
@@ -230,6 +241,7 @@ function Page({
   if (page === "records") return <Records snapshot={snapshot} />;
   if (page === "tools") return <Tools />;
   if (page === "command") return <CommandBridge />;
+  if (page === "factory") return <FactoryPage snapshot={factorySnapshot} />;
   return (
     <ModulePage
       module={snapshot.modules.find((module) => module.id === page)!}
