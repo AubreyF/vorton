@@ -143,6 +143,9 @@ describe("immutable release contracts", () => {
     for (const action of actions) {
       expect(action).toMatch(/@[a-f0-9]{40}$/);
     }
+    expect(ciWorkflow).toMatch(
+      /actions\/checkout@[a-f0-9]{40}[\s\S]*?fetch-depth:\s*0/,
+    );
     expect(buildWorkflow).toContain("org.opencontainers.image.revision");
     expect(buildWorkflow).toContain("provenance: mode=max");
     expect(buildWorkflow).toContain("sbom: true");
