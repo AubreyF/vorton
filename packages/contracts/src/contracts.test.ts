@@ -9,6 +9,7 @@ import {
   releaseManifestSchema,
   transcriptRevisionSchema,
   workerAdvertisementSchema,
+  factoryReconciliationReceiptSchema,
 } from "./index.js";
 
 describe("installation contracts", () => {
@@ -181,6 +182,36 @@ describe("installation contracts", () => {
             locator: "transcript",
           },
         ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("binds Factory receipts to exact source and authority generations", () => {
+    expect(
+      factoryReconciliationReceiptSchema.safeParse({
+        schemaVersion: 1,
+        installationWorkId: "WORK-FREED-1628",
+        repositoryTicketId: "github:freed-project/freed#1628",
+        outcome: "blocked",
+        sourceHead: "031a27aa348dd621aa39e102afc9bc6f7904ab9b",
+        cursor: {
+          provider: "github",
+          repository: "freed-project/freed",
+          observedAt: "2026-08-29T00:33:00.000Z",
+          ticketRevision: "issue-1628@2026-08-28T20:56:36Z",
+          executionRevision: "authority-generation-conflict",
+        },
+        authority: {
+          ticket: "github",
+          claim: "repository-execution",
+          lease: "repository-execution",
+          branch: "repository-execution",
+          pullRequest: "repository-execution",
+          checks: "github",
+          publication: "repository-execution",
+          recovery: "repository-execution",
+        },
+        blockers: ["authority_generation_conflict"],
       }).success,
     ).toBe(true);
   });
