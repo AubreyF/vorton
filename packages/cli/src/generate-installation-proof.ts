@@ -3,9 +3,10 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -46,27 +47,42 @@ const releaseManifest = (version: string): string =>
     "packages/cli/test-fixtures/releases",
     `${version}.json`,
   );
-const protectedPaths = [
-  "organization/identity.yaml",
-  "organization/modules.yaml",
-  "organization/policies/authority.yaml",
-  "organization/roles/owner.yaml",
-  "deploy/fly.toml",
-  "tools/README.md",
-  "tests/acceptance/organization.test.md",
-] as const;
+const filesUnder = (root: string): string[] => {
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else files.push(path);
+    }
+  };
+  visit(root);
+  return files.sort();
+};
 const protectedDigests = (): Record<string, string> =>
-  Object.fromEntries(
-    protectedPaths.map((path) => [
-      path,
-      sha256(readFileSync(join(installationRoot, path))),
-    ]),
-  );
+  (() => {
+    const lock = JSON.parse(
+      readFileSync(join(installationRoot, "aubos.lock.json"), "utf8"),
+    ) as { managedFiles: Record<string, string> };
+    const managed = new Set(Object.keys(lock.managedFiles));
+    return Object.fromEntries(
+      filesUnder(installationRoot)
+        .map((path) => relative(installationRoot, path))
+        .filter(
+          (path) =>
+            path !== "aubos.lock.json" &&
+            !path.startsWith(".aubos/") &&
+            !managed.has(path),
+        )
+        .map((path) => [
+          path,
+          sha256(readFileSync(join(installationRoot, path))),
+        ]),
+    );
+  })();
 
 mkdirSync(outputRoot, { recursive: false });
 cpSync(fixtureRoot, installationRoot, { recursive: true });
-const organizationBefore = protectedDigests();
-
 const adoption = planInit({
   root: installationRoot,
   organization: "FreedOS",
@@ -79,6 +95,7 @@ const adoptionResult = applyPlan({
   planHash: adoption.hash,
 });
 validateInstallation(installationRoot);
+const organizationBefore = protectedDigests();
 
 const upgrade = planUpgrade({
   root: installationRoot,

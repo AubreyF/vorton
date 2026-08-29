@@ -11,6 +11,7 @@ spec:
     - admin
     - tasks
     - tools
+    - factory
   deployment:
     provider: fly
     region: sea

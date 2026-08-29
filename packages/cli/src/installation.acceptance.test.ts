@@ -62,22 +62,30 @@ function filesUnder(root: string): string[] {
   return files.sort();
 }
 
-const protectedOrganizationPaths = [
-  "organization/identity.yaml",
-  "organization/modules.yaml",
-  "organization/policies/authority.yaml",
-  "organization/roles/owner.yaml",
-  "deploy/fly.toml",
-  "tools/README.md",
-  "tests/acceptance/organization.test.md",
-] as const;
-
-function snapshot(root: string): Record<string, string> {
+function snapshotExistingFiles(root: string): Record<string, string> {
   return Object.fromEntries(
-    protectedOrganizationPaths.map((path) => [
-      path,
-      readFileSync(join(root, path), "utf8"),
+    filesUnder(root).map((path) => [
+      relative(root, path),
+      readFileSync(path, "utf8"),
     ]),
+  );
+}
+
+function snapshotOrganizationOwned(root: string): Record<string, string> {
+  const lock = JSON.parse(
+    readFileSync(join(root, "aubos.lock.json"), "utf8"),
+  ) as { managedFiles: Record<string, string> };
+  const managed = new Set(Object.keys(lock.managedFiles));
+  return Object.fromEntries(
+    filesUnder(root)
+      .map((path) => relative(root, path))
+      .filter(
+        (path) =>
+          path !== "aubos.lock.json" &&
+          !path.startsWith(".aubos/") &&
+          !managed.has(path),
+      )
+      .map((path) => [path, readFileSync(join(root, path), "utf8")]),
   );
 }
 
@@ -90,7 +98,7 @@ afterEach(() => {
 describe("FreedOS private installation acceptance", () => {
   it("adopts an exact release and resumes an interrupted apply idempotently", () => {
     const root = privateStyleRoot();
-    const organizationBefore = snapshot(root);
+    const existingBefore = snapshotExistingFiles(root);
     const planned = planInit({
       root,
       organization: "FreedOS",
@@ -139,7 +147,7 @@ describe("FreedOS private installation acceptance", () => {
       "already-applied",
     );
     validateInstallation(root);
-    expect(snapshot(root)).toEqual(organizationBefore);
+    expect(snapshotExistingFiles(root)).toMatchObject(existingBefore);
     expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toContain(
       '"version": "0.1.0"',
     );
@@ -176,7 +184,6 @@ describe("FreedOS private installation acceptance", () => {
 
   it("upgrades one managed host file and narrowly rolls it back", () => {
     const root = privateStyleRoot();
-    const organizationBefore = snapshot(root);
     const initialized = planInit({
       root,
       organization: "FreedOS",
@@ -185,6 +192,7 @@ describe("FreedOS private installation acceptance", () => {
       allowCandidate: true,
     });
     applyPlan({ root, planHash: initialized.hash });
+    const organizationBefore = snapshotOrganizationOwned(root);
     const originalHost = readFileSync(
       join(root, "host/aubos-runtime.json"),
       "utf8",
@@ -206,7 +214,7 @@ describe("FreedOS private installation acceptance", () => {
     expect(
       readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
     ).toContain('"readinessPath": "/api/ready"');
-    expect(snapshot(root)).toEqual(organizationBefore);
+    expect(snapshotOrganizationOwned(root)).toEqual(organizationBefore);
 
     expect(rollbackPlan({ root, planHash: upgraded.hash })).toEqual({
       status: "rolled-back",
@@ -218,7 +226,7 @@ describe("FreedOS private installation acceptance", () => {
     expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toBe(
       originalLock,
     );
-    expect(snapshot(root)).toEqual(organizationBefore);
+    expect(snapshotOrganizationOwned(root)).toEqual(organizationBefore);
   });
 
   it("refuses rollback after a managed postimage drifts", () => {
