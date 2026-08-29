@@ -2,7 +2,7 @@ import type {
   ExecutiveWorkerJobRequest,
   ExecutionAuthority,
 } from "@aubos/contracts";
-import type { Database } from "@aubos/database";
+import type { Database, PersonContext } from "@aubos/database";
 import type {
   HindsightAdapter,
   HindsightBank,
@@ -98,19 +98,21 @@ export class DatabaseExecutiveRequestResolver {
   ) {}
 
   async resolveBootstrap(authUserId: string): Promise<RuntimeBootstrap> {
-    return this.database.asAdministrator(async (transaction) => {
-      const installations = await transaction.query<InstallationRow>(
-        `select installation.id, installation.display_name, person.kind as person_kind
+    return this.database.asPersonAcrossInstallations(
+      authUserId,
+      async (transaction) => {
+        const installations = await transaction.query<InstallationRow>(
+          `select installation.id, installation.display_name, person.kind as person_kind
            from public.people person
            join public.installations installation on installation.id = person.installation_id
           where person.auth_user_id = $1
           order by installation.display_name, installation.id`,
-        [authUserId],
-      );
-      const installationIds = installations.rows.map((row) => row.id);
-      if (installationIds.length === 0) return { installations: [] };
-      const bindings = await transaction.query<BootstrapBindingRow>(
-        `select work.installation_id, work.id as work_id, work.title as work_title,
+          [authUserId],
+        );
+        const installationIds = installations.rows.map((row) => row.id);
+        if (installationIds.length === 0) return { installations: [] };
+        const bindings = await transaction.query<BootstrapBindingRow>(
+          `select work.installation_id, work.id as work_id, work.title as work_title,
                 worker.id as worker_id, worker.name as worker_name,
                 role.id as role_id, role.name as role_name
            from public.work work
@@ -134,55 +136,64 @@ export class DatabaseExecutiveRequestResolver {
                  and revocation.grant_id = grant_row.id
             )
           order by work.priority desc, work.created_at, worker.name, role.name`,
-        [installationIds, this.provider, this.model],
-      );
-      const evidence = await transaction.query<BootstrapEvidenceRow>(
-        `select installation_id, work_id, id, summary, source_uri, classification
+          [installationIds, this.provider, this.model],
+        );
+        const evidence = await transaction.query<BootstrapEvidenceRow>(
+          `select installation_id, work_id, id, summary, source_uri, classification
            from public.records
           where installation_id = any($1::uuid[]) and kind = 'evidence'
           order by created_at desc
           limit 200`,
-        [installationIds],
-      );
-      return {
-        installations: installations.rows.map((installation) => ({
-          id: installation.id,
-          displayName: installation.display_name,
-          personKind: installation.person_kind,
-          proposalBindings: bindings.rows
-            .filter((binding) => binding.installation_id === installation.id)
-            .map((binding) => ({
-              workId: binding.work_id,
-              workTitle: binding.work_title,
-              workerId: binding.worker_id,
-              workerName: binding.worker_name,
-              roleId: binding.role_id,
-              roleName: binding.role_name,
-              evidence: evidence.rows
-                .filter(
-                  (record) =>
-                    record.installation_id === installation.id &&
-                    (record.work_id === null ||
-                      record.work_id === binding.work_id),
-                )
-                .map((record) => ({
-                  id: record.id,
-                  summary: record.summary,
-                  classification: record.classification,
-                })),
-            }))
-            .filter((binding) => binding.evidence.length > 0),
-        })),
-      };
-    });
+          [installationIds],
+        );
+        return {
+          installations: installations.rows.map((installation) => ({
+            id: installation.id,
+            displayName: installation.display_name,
+            personKind: installation.person_kind,
+            proposalBindings: bindings.rows
+              .filter((binding) => binding.installation_id === installation.id)
+              .map((binding) => ({
+                workId: binding.work_id,
+                workTitle: binding.work_title,
+                workerId: binding.worker_id,
+                workerName: binding.worker_name,
+                roleId: binding.role_id,
+                roleName: binding.role_name,
+                evidence: evidence.rows
+                  .filter(
+                    (record) =>
+                      record.installation_id === installation.id &&
+                      (record.work_id === null ||
+                        record.work_id === binding.work_id),
+                  )
+                  .map((record) => ({
+                    id: record.id,
+                    summary: record.summary,
+                    classification: record.classification,
+                  })),
+              }))
+              .filter((binding) => binding.evidence.length > 0),
+          })),
+        };
+      },
+    );
   }
 
   async resolveProposal(
     input: ProposalInput,
+    requester: PersonContext,
   ): Promise<ExecutiveWorkerJobRequest> {
-    const request = await this.database.asAdministrator(async (transaction) => {
-      const binding = await transaction.query<BindingRow>(
-        `select work.id as work_id, worker.id as worker_id, role.id as role_id,
+    if (requester.installationId !== input.installationId) {
+      throw new ExecutiveRequestResolutionError(
+        "Requester context cannot cross installations",
+      );
+    }
+    const request = await this.database.asPerson(
+      requester,
+      async (transaction) => {
+        const binding = await transaction.query<BindingRow>(
+          `select work.id as work_id, worker.id as worker_id, role.id as role_id,
                 role.name as role_name, role.version as role_version,
                 role.skill_markdown, role.content_sha256
            from public.work work
@@ -209,54 +220,55 @@ export class DatabaseExecutiveRequestResolver {
                where revocation.installation_id = grant_row.installation_id
                  and revocation.grant_id = grant_row.id
             )`,
-        [
-          input.installationId,
-          input.workId,
-          input.workerId,
-          input.roleId,
-          this.provider,
-          this.model,
-        ],
-      );
-      const row = binding.rows[0];
-      if (!row) {
-        throw new ExecutiveRequestResolutionError(
-          "Work, assigned role, configured worker, or executive.propose capability is missing or inapplicable",
+          [
+            input.installationId,
+            input.workId,
+            input.workerId,
+            input.roleId,
+            this.provider,
+            this.model,
+          ],
         );
-      }
-      const evidence = await transaction.query<EvidenceRow>(
-        `select id, summary, source_uri, classification
+        const row = binding.rows[0];
+        if (!row) {
+          throw new ExecutiveRequestResolutionError(
+            "Work, assigned role, configured worker, or executive.propose capability is missing or inapplicable",
+          );
+        }
+        const evidence = await transaction.query<EvidenceRow>(
+          `select id, summary, source_uri, classification
            from public.records
           where installation_id = $1 and kind = 'evidence' and id = any($2::uuid[])
           order by id`,
-        [input.installationId, input.evidenceRecordIds],
-      );
-      if (evidence.rows.length !== new Set(input.evidenceRecordIds).size) {
-        throw new ExecutiveRequestResolutionError(
-          "One or more evidence records are missing or belong to another installation",
+          [input.installationId, input.evidenceRecordIds],
         );
-      }
-      return {
-        installationId: input.installationId,
-        workId: row.work_id,
-        workerId: row.worker_id,
-        role: {
-          roleId: row.role_id,
-          name: row.role_name,
-          version: row.role_version,
-          contentSha256: row.content_sha256,
-          skillMarkdown: row.skill_markdown,
-        },
-        objective: input.objective,
-        evidence: evidence.rows.map((item) => ({
-          recordId: item.id,
-          summary: item.summary,
-          sourceUri: item.source_uri,
-          classification: item.classification,
-        })),
-        background: input.background,
-      };
-    });
+        if (evidence.rows.length !== new Set(input.evidenceRecordIds).size) {
+          throw new ExecutiveRequestResolutionError(
+            "One or more evidence records are missing or belong to another installation",
+          );
+        }
+        return {
+          installationId: input.installationId,
+          workId: row.work_id,
+          workerId: row.worker_id,
+          role: {
+            roleId: row.role_id,
+            name: row.role_name,
+            version: row.role_version,
+            contentSha256: row.content_sha256,
+            skillMarkdown: row.skill_markdown,
+          },
+          objective: input.objective,
+          evidence: evidence.rows.map((item) => ({
+            recordId: item.id,
+            summary: item.summary,
+            sourceUri: item.source_uri,
+            classification: item.classification,
+          })),
+          background: input.background,
+        };
+      },
+    );
     const bank: HindsightBank = {
       id: `organizational:${input.installationId}:executive`,
       installationId: input.installationId,
@@ -283,12 +295,20 @@ export class DatabaseExecutiveRequestResolver {
     };
   }
 
-  async resolveAuthority(input: {
-    installationId: string;
-    capabilityGrantId: string;
-    approvalRecordId: string;
-  }): Promise<ExecutionAuthority> {
-    return this.database.asAdministrator(async (transaction) => {
+  async resolveAuthority(
+    input: {
+      installationId: string;
+      capabilityGrantId: string;
+      approvalRecordId: string;
+    },
+    requester: PersonContext,
+  ): Promise<ExecutionAuthority> {
+    if (requester.installationId !== input.installationId) {
+      throw new ExecutiveRequestResolutionError(
+        "Requester context cannot cross installations",
+      );
+    }
+    return this.database.asPerson(requester, async (transaction) => {
       const result = await transaction.query<GrantRow>(
         `select grant_row.policy_id, grant_row.worker_id, grant_row.capability, grant_row.mode
            from public.capability_grants grant_row

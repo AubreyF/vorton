@@ -130,6 +130,56 @@ describe("installation contracts", () => {
     expect(result.success).toBe(false);
   });
 
+  it("preserves v1 releases and requires web in v2 releases", () => {
+    const digest = `sha256:${"c".repeat(64)}`;
+    const historical = {
+      schemaVersion: 1 as const,
+      status: "released" as const,
+      version: "0.1.1",
+      sourceCommit: "b".repeat(40),
+      createdAt: "2026-08-28T00:00:00.000Z",
+      cliVersion: "0.1.1",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260828000300_executive",
+      images: {
+        "control-plane": {
+          reference: `ghcr.io/example/aubos-control-plane@${digest}`,
+          digest,
+        },
+        worker: {
+          reference: `ghcr.io/example/aubos-worker@${digest}`,
+          digest,
+        },
+      },
+      managedFiles: [
+        {
+          path: "host/runtime.json",
+          template: "templates/releases/0.1.1/host/runtime.json",
+          digest,
+        },
+      ],
+    };
+
+    expect(releaseManifestSchema.safeParse(historical).success).toBe(true);
+    expect(
+      releaseManifestSchema.safeParse({ ...historical, schemaVersion: 2 })
+        .success,
+    ).toBe(false);
+    expect(
+      releaseManifestSchema.safeParse({
+        ...historical,
+        schemaVersion: 2,
+        images: {
+          ...historical.images,
+          web: {
+            reference: `ghcr.io/example/aubos-web@${digest}`,
+            digest,
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires at least one managed file in every release manifest", () => {
     const digest = `sha256:${"c".repeat(64)}`;
     const result = releaseManifestSchema.safeParse({

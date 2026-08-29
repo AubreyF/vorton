@@ -18,6 +18,10 @@ const memorySqlTestUrl = new URL(
   "../../../supabase/tests/memory_conversations.sql",
   import.meta.url,
 );
+const runtimeAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260828000400_runtime_authority.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -77,6 +81,28 @@ describe("executive migration contract", () => {
       "Model output grants no database or external action authority",
     );
     expect(sql).not.toContain("grant update on public.work to aubos_worker");
+  });
+});
+
+describe("runtime authority migration contract", () => {
+  it("requires a transaction-bound signature before RLS accepts claimed context", async () => {
+    const sql = await readFile(runtimeAuthorityMigrationUrl, "utf8");
+    expect(sql).toContain("aubos_private.runtime_context_keys");
+    expect(sql).toContain("txid_current()::text");
+    expect(sql).toContain("extensions.hmac(");
+    expect(sql).toContain("where context_key.role_name = session_user");
+    expect(sql).toContain("current_setting('aubos.context_signature', true)");
+  });
+
+  it("prevents a worker from appending human authority records", async () => {
+    const sql = await readFile(runtimeAuthorityMigrationUrl, "utf8");
+    expect(sql).toContain("kind not in ('approval', 'decision', 'review')");
+    expect(sql).toContain(
+      "public.worker_has_capability('executive.propose', 'recommend', work_id)",
+    );
+    expect(sql).toContain(
+      "revoke all on aubos_private.runtime_context_keys from public, anon, authenticated, aubos_worker",
+    );
   });
 });
 

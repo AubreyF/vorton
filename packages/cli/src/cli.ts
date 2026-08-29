@@ -9,6 +9,7 @@ import {
   rollbackPlan,
   validateInstallation,
 } from "./index.js";
+import { CLI_VERSION } from "./version.js";
 
 function value(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -45,6 +46,7 @@ function main(): void {
       organization: required(args, "--organization"),
       releaseManifestPath: resolve(required(args, "--manifest")),
       releaseRoot: resolve(required(args, "--artifact-root")),
+      cliVersion: CLI_VERSION,
     });
     process.stdout.write(`${result.hash}\n${result.path}\n`);
     return;
@@ -55,19 +57,28 @@ function main(): void {
       root,
       releaseManifestPath: resolve(required(args, "--manifest")),
       releaseRoot: resolve(required(args, "--artifact-root")),
+      cliVersion: CLI_VERSION,
     });
     process.stdout.write(`${result.hash}\n${result.path}\n`);
     return;
   }
 
   if ((command === "init" || command === "upgrade") && phase === "apply") {
-    const result = applyPlan({ root, planHash: required(args, "--plan") });
+    const result = applyPlan({
+      root,
+      planHash: required(args, "--plan"),
+      cliVersion: CLI_VERSION,
+    });
     process.stdout.write(`${result.status}\n${result.journalPath}\n`);
     return;
   }
 
   if (command === "rollback") {
-    const result = rollbackPlan({ root, planHash: required(args, "--plan") });
+    const result = rollbackPlan({
+      root,
+      planHash: required(args, "--plan"),
+      cliVersion: CLI_VERSION,
+    });
     process.stdout.write(`${result.status}\n${result.restored.join("\n")}\n`);
     return;
   }

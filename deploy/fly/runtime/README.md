@@ -4,7 +4,7 @@ This directory defines four Fly apps: the public control plane, the public authe
 
 ## Authority boundary
 
-`AUBOS_DATABASE_URL` is the authoritative AubOS Supabase/Postgres connection. Only the API uses it. The stateless recommendation worker has no database connection. Hindsight must use `HINDSIGHT_API_DATABASE_URL` for a separate per-installation Supabase project or a separately owned Postgres database with pgvector. The two URLs must not be equal. There is no fallback from Hindsight to `AUBOS_DATABASE_URL`.
+`AUBOS_DATABASE_URL` is the authoritative AubOS Supabase/Postgres connection. Only the API uses it. The login is the `NOINHERIT`, `NOBYPASSRLS` runtime identity created by the first-install bootstrap, not a migration identity or Supabase service role. `AUBOS_DATABASE_CONTEXT_SIGNING_SECRET` binds each person or worker context to one PostgreSQL transaction. Keep it separate from the database password. The stateless recommendation worker has no database connection. Hindsight must use `HINDSIGHT_API_DATABASE_URL` for a separate per-installation Supabase project or a separately owned Postgres database with pgvector. The two URLs must not be equal. There is no fallback from Hindsight to `AUBOS_DATABASE_URL`.
 
 Hindsight is derived and untrusted. A recall result is evidence input at most. It cannot create Policy, grants, approvals, Work, receipts, or outcomes. Its Fly service has no public port. API key tenant authentication remains mandatory on the private network, and MCP is disabled.
 
@@ -14,7 +14,7 @@ Factory is read-only in this runtime. No runtime route or worker adapter may con
 
 Set these through Fly secrets. Never place values in TOML or browser build arguments:
 
-- API: `AUBOS_DATABASE_URL`, `AUBOS_WORKER_SHARED_SECRET`, `AUBOS_HINDSIGHT_API_KEY`.
+- API: `AUBOS_DATABASE_URL`, `AUBOS_DATABASE_CONTEXT_SIGNING_SECRET`, `AUBOS_WORKER_SHARED_SECRET`, `AUBOS_HINDSIGHT_API_KEY`.
 - Worker: `AUBOS_WORKER_SHARED_SECRET`, `AUBOS_OPENAI_API_KEY`.
 - Hindsight: `HINDSIGHT_API_DATABASE_URL`, `HINDSIGHT_API_TENANT_API_KEY`, `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY`.
 

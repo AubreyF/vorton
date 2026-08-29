@@ -13,10 +13,16 @@ import {
   useState,
 } from "react";
 
-interface BrowserRuntimeConfig {
+export interface BrowserRuntimeConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   apiUrl: string;
+}
+
+interface BrowserRuntimeConfigSource {
+  supabaseUrl?: unknown;
+  supabaseAnonKey?: unknown;
+  apiUrl?: unknown;
 }
 
 export interface RuntimeBootstrap {
@@ -49,31 +55,64 @@ interface RuntimeContextValue {
 const RuntimeContext = createContext<RuntimeContextValue | null>(null);
 
 export function readBrowserRuntimeConfig(
-  env: ImportMetaEnv = import.meta.env,
+  source: BrowserRuntimeConfigSource = readInjectedRuntimeConfig(),
 ): BrowserRuntimeConfig {
-  const supabaseUrl = env.VITE_AUBOS_SUPABASE_URL?.trim();
-  const supabaseAnonKey = env.VITE_AUBOS_SUPABASE_ANON_KEY?.trim();
-  const apiUrl = env.VITE_AUBOS_API_URL?.trim();
+  const supabaseUrl = readRequiredString(source.supabaseUrl);
+  const supabaseAnonKey = readRequiredString(source.supabaseAnonKey);
+  const apiUrl = readRequiredString(source.apiUrl);
   if (!supabaseUrl || !supabaseAnonKey || !apiUrl) {
     throw new Error(
-      "VITE_AUBOS_SUPABASE_URL, VITE_AUBOS_SUPABASE_ANON_KEY, and VITE_AUBOS_API_URL are required",
+      "supabaseUrl, supabaseAnonKey, and apiUrl are required in the public runtime configuration",
     );
   }
-  const parsedApiUrl = new URL(apiUrl);
-  if (
-    parsedApiUrl.protocol !== "https:" &&
-    parsedApiUrl.hostname !== "127.0.0.1" &&
-    parsedApiUrl.hostname !== "localhost"
-  ) {
-    throw new Error(
-      "VITE_AUBOS_API_URL must use HTTPS outside local development",
-    );
-  }
+
+  const parsedSupabaseUrl = parsePublicServiceUrl(supabaseUrl, "supabaseUrl");
+  const parsedApiUrl = parsePublicServiceUrl(apiUrl, "apiUrl");
   return {
-    supabaseUrl,
+    supabaseUrl: normalizeServiceUrl(parsedSupabaseUrl),
     supabaseAnonKey,
-    apiUrl: parsedApiUrl.toString().replace(/\/$/, ""),
+    apiUrl: normalizeServiceUrl(parsedApiUrl),
   };
+}
+
+function readInjectedRuntimeConfig(): BrowserRuntimeConfigSource {
+  const value = (
+    globalThis as typeof globalThis & {
+      __AUBOS_RUNTIME_CONFIG__?: unknown;
+    }
+  ).__AUBOS_RUNTIME_CONFIG__;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Public runtime configuration is unavailable");
+  }
+  return value as BrowserRuntimeConfigSource;
+}
+
+function readRequiredString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
+function parsePublicServiceUrl(value: string, field: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${field} must be an absolute URL`);
+  }
+  const localDevelopment =
+    parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !localDevelopment) {
+    throw new Error(`${field} must use HTTPS outside local development`);
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error(
+      `${field} must not contain credentials, a query, or a hash`,
+    );
+  }
+  return parsed;
+}
+
+function normalizeServiceUrl(value: URL): string {
+  return value.toString().replace(/\/$/, "");
 }
 
 export function BrowserRuntime({

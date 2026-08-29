@@ -1,0 +1,18 @@
+{
+  "name": "@aubos/release-bootstrap-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Dependency-locked runtime for an extracted AubOS release bootstrap.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "aubos": "node bin/aubos.cjs",
+    "bootstrap:apply": "tsx deploy/bootstrap/provision.ts --apply",
+    "bootstrap:plan": "tsx deploy/bootstrap/provision.ts --plan"
+  },
+  "dependencies": {
+    "pg": "8.23.0",
+    "tsx": "4.23.12"
+  }
+}

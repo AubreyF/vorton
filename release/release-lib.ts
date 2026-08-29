@@ -17,6 +17,7 @@ function releaseImageRepositories(
   }
   return {
     "control-plane": `ghcr.io/${owner}/aubos-control-plane`,
+    web: `ghcr.io/${owner}/aubos-web`,
     worker: `ghcr.io/${owner}/aubos-worker`,
   };
 }
@@ -24,9 +25,15 @@ function releaseImageRepositories(
 function requireReleaseImageRepositories(
   images: Record<string, { reference: string; digest: string }>,
   repositoryOwner: string,
+  schemaVersion: 1 | 2,
 ): void {
   const repositories = releaseImageRepositories(repositoryOwner);
-  for (const [name, expectedRepository] of Object.entries(repositories)) {
+  const requiredNames =
+    schemaVersion === 1
+      ? (["control-plane", "worker"] as const)
+      : (["control-plane", "web", "worker"] as const);
+  for (const name of requiredNames) {
+    const expectedRepository = repositories[name];
     const image = images[name];
     if (!image || image.reference !== `${expectedRepository}@${image.digest}`) {
       throw new Error(
@@ -147,12 +154,13 @@ export function parseImageReceipt(
   const imageEntries = Object.entries(receipt.images);
   const names = imageEntries.map(([name]) => name).sort();
   if (
-    names.length !== 2 ||
+    names.length !== 3 ||
     names[0] !== "control-plane" ||
-    names[1] !== "worker"
+    names[1] !== "web" ||
+    names[2] !== "worker"
   ) {
     throw new Error(
-      `Image receipt must contain exactly control-plane and worker`,
+      `Image receipt must contain exactly control-plane, web, and worker`,
     );
   }
   const images = Object.fromEntries(
@@ -164,7 +172,7 @@ export function parseImageReceipt(
       return [name, { reference: image.reference, digest: image.digest }];
     }),
   );
-  requireReleaseImageRepositories(images, repositoryOwner);
+  requireReleaseImageRepositories(images, repositoryOwner, 2);
   return images;
 }
 
@@ -244,6 +252,7 @@ export function validateReleaseManifest(options: {
       requireReleaseImageRepositories(
         manifest.images,
         options.expectedRepositoryOwner,
+        manifest.schemaVersion,
       );
     }
   }

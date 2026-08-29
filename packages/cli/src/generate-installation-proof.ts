@@ -76,7 +76,14 @@ const protectedDigests = (): Record<string, string> =>
         )
         .map((path) => [
           path,
-          sha256(readFileSync(join(installationRoot, path))),
+          sha256(
+            path === "aubos.yaml"
+              ? readFileSync(join(installationRoot, path), "utf8").replace(
+                  /^(\s*version:\s*)[^\n#]+/m,
+                  "$1{{AUBOS_VERSION}}",
+                )
+              : readFileSync(join(installationRoot, path)),
+          ),
         ]),
     );
   })();

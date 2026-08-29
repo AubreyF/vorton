@@ -16,7 +16,11 @@ import {
   type WorkInput,
 } from "@aubos/contracts";
 import type { ExecutiveWorkerProvider } from "@aubos/workers";
-import type { PersonContext } from "@aubos/database";
+import type {
+  DatabaseContext,
+  PersonContext,
+  WorkerContext,
+} from "@aubos/database";
 
 export type ExecutiveActor =
   { kind: "person"; id: string } | { kind: "worker"; id: string };
@@ -49,11 +53,18 @@ export interface AppendExecutiveRecord {
 }
 
 export interface ExecutiveLedger {
-  append(record: AppendExecutiveRecord): Promise<ExecutiveRecord>;
-  getRecord(id: string): Promise<ExecutiveRecord | null>;
+  append(
+    record: AppendExecutiveRecord,
+    context?: DatabaseContext,
+  ): Promise<ExecutiveRecord>;
+  getRecord(
+    id: string,
+    context?: DatabaseContext,
+  ): Promise<ExecutiveRecord | null>;
   createWork(
     input: WorkInput,
     authority: ExecutionAuthority,
+    context?: PersonContext,
   ): Promise<ExecutiveWork>;
 }
 
@@ -104,6 +115,7 @@ export interface ExecutiveAuthorityVerification {
   approval: ExecutiveRecord;
   decision: ExecutiveRecord;
   proposal: ExecutiveRecord;
+  requester: PersonContext;
 }
 
 /** The implementation must verify Policy, grant, revocation, scope, and expiry. */
@@ -121,8 +133,9 @@ async function requireRecord(
   ledger: ExecutiveLedger,
   id: string,
   kind: ExecutiveRecord["kind"],
+  context?: DatabaseContext,
 ): Promise<ExecutiveRecord> {
-  const record = await ledger.getRecord(id);
+  const record = await ledger.getRecord(id, context);
   if (!record || record.kind !== kind) {
     throw new Error(`A ${kind} record is required`);
   }
@@ -192,7 +205,10 @@ export class ExecutiveWorkflow {
     });
   }
 
-  async startProposal(request: ExecutiveWorkerJobRequest): Promise<{
+  async startProposal(
+    request: ExecutiveWorkerJobRequest,
+    requester?: PersonContext,
+  ): Promise<{
     job: ExecutiveWorkerJob;
     proposal: ExecutiveRecord | null;
   }> {
@@ -202,6 +218,7 @@ export class ExecutiveWorkflow {
         this.#ledger,
         evidence.recordId,
         "evidence",
+        requester,
       );
       if (record.installationId !== parsedRequest.installationId) {
         throw new Error("Evidence cannot cross installation boundaries");
@@ -259,6 +276,7 @@ export class ExecutiveWorkflow {
       this.#ledger,
       input.proposalRecordId,
       "proposal",
+      input.reviewer,
     );
     if (input.reviewer.installationId !== proposal.installationId) {
       throw new Error("Reviewer context cannot cross installations");
@@ -269,17 +287,20 @@ export class ExecutiveWorkflow {
       requiredAuthority: "member",
       operation: "review",
     });
-    return this.#ledger.append({
-      installationId: proposal.installationId,
-      workId: proposal.workId,
-      kind: "review",
-      summary: input.summary,
-      payload: {
-        proposalRecordId: proposal.id,
-        disposition: input.disposition,
+    return this.#ledger.append(
+      {
+        installationId: proposal.installationId,
+        workId: proposal.workId,
+        kind: "review",
+        summary: input.summary,
+        payload: {
+          proposalRecordId: proposal.id,
+          disposition: input.disposition,
+        },
+        actor: { kind: "person", id: reviewerPersonId },
       },
-      actor: { kind: "person", id: reviewerPersonId },
-    });
+      input.reviewer,
+    );
   }
 
   async decide(input: {
@@ -292,6 +313,7 @@ export class ExecutiveWorkflow {
       this.#ledger,
       input.reviewRecordId,
       "review",
+      input.decisionMaker,
     );
     const classification = decisionClassificationSchema.parse(
       input.classification,
@@ -305,18 +327,21 @@ export class ExecutiveWorkflow {
       requiredAuthority: "owner",
       operation: "decision",
     });
-    return this.#ledger.append({
-      installationId: review.installationId,
-      workId: review.workId,
-      kind: "decision",
-      summary: input.summary,
-      payload: {
-        reviewRecordId: review.id,
-        proposalRecordId: review.payload.proposalRecordId,
-        classification,
+    return this.#ledger.append(
+      {
+        installationId: review.installationId,
+        workId: review.workId,
+        kind: "decision",
+        summary: input.summary,
+        payload: {
+          reviewRecordId: review.id,
+          proposalRecordId: review.payload.proposalRecordId,
+          classification,
+        },
+        actor: { kind: "person", id: decisionMakerPersonId },
       },
-      actor: { kind: "person", id: decisionMakerPersonId },
-    });
+      input.decisionMaker,
+    );
   }
 
   async approve(input: {
@@ -328,6 +353,7 @@ export class ExecutiveWorkflow {
       this.#ledger,
       input.decisionRecordId,
       "decision",
+      input.approver,
     );
     if (decision.payload.classification === "prohibited") {
       throw new Error("A prohibited decision cannot be approved");
@@ -341,17 +367,20 @@ export class ExecutiveWorkflow {
       requiredAuthority: "owner",
       operation: "approval",
     });
-    return this.#ledger.append({
-      installationId: decision.installationId,
-      workId: decision.workId,
-      kind: "approval",
-      summary: input.summary,
-      payload: {
-        decisionRecordId: decision.id,
-        proposalRecordId: decision.payload.proposalRecordId,
+    return this.#ledger.append(
+      {
+        installationId: decision.installationId,
+        workId: decision.workId,
+        kind: "approval",
+        summary: input.summary,
+        payload: {
+          decisionRecordId: decision.id,
+          proposalRecordId: decision.payload.proposalRecordId,
+        },
+        actor: { kind: "person", id: approverPersonId },
       },
-      actor: { kind: "person", id: approverPersonId },
-    });
+      input.approver,
+    );
   }
 
   async createExecutionWork(input: {
@@ -361,6 +390,7 @@ export class ExecutiveWorkflow {
     requestedOutcome: string;
     acceptanceCriteria: string[];
     priority?: number;
+    requester: PersonContext;
   }): Promise<ExecutiveWork> {
     const authority = executionAuthoritySchema.parse(input.authority);
     if (authority.approvalRecordId !== input.approvalRecordId) {
@@ -370,17 +400,28 @@ export class ExecutiveWorkflow {
       this.#ledger,
       input.approvalRecordId,
       "approval",
+      input.requester,
     );
     const decisionId = approval.payload.decisionRecordId;
     if (typeof decisionId !== "string") {
       throw new Error("Approval does not cite a decision");
     }
-    const decision = await requireRecord(this.#ledger, decisionId, "decision");
+    const decision = await requireRecord(
+      this.#ledger,
+      decisionId,
+      "decision",
+      input.requester,
+    );
     const proposalId = approval.payload.proposalRecordId;
     if (typeof proposalId !== "string") {
       throw new Error("Approval does not cite a proposal");
     }
-    const proposal = await requireRecord(this.#ledger, proposalId, "proposal");
+    const proposal = await requireRecord(
+      this.#ledger,
+      proposalId,
+      "proposal",
+      input.requester,
+    );
     const action = recommendationFrom(proposal).recommendedAction;
     if (
       action.capability !== authority.capability ||
@@ -394,6 +435,7 @@ export class ExecutiveWorkflow {
       approval,
       decision,
       proposal,
+      requester: input.requester,
     });
     return this.#ledger.createWork(
       {
@@ -405,6 +447,7 @@ export class ExecutiveWorkflow {
         priority: input.priority ?? 50,
       },
       authority,
+      input.requester,
     );
   }
 
@@ -419,17 +462,23 @@ export class ExecutiveWorkflow {
         "Receipt worker does not hold the verified execution authority",
       );
     }
-    return this.#ledger.append({
-      installationId: input.work.input.installationId,
-      workId: input.work.id,
-      kind: "receipt",
-      summary: input.summary,
-      payload: {
-        authority: input.work.authority,
-        artifacts: input.artifacts,
+    return this.#ledger.append(
+      {
+        installationId: input.work.input.installationId,
+        workId: input.work.id,
+        kind: "receipt",
+        summary: input.summary,
+        payload: {
+          authority: input.work.authority,
+          artifacts: input.artifacts,
+        },
+        actor: { kind: "worker", id: input.workerId },
       },
-      actor: { kind: "worker", id: input.workerId },
-    });
+      {
+        installationId: input.work.input.installationId,
+        workerId: input.workerId,
+      },
+    );
   }
 
   async recordOutcome(input: {
@@ -486,22 +535,29 @@ export class ExecutiveWorkflow {
     if (!job.recommendation) {
       throw new Error("Completed worker job has no structured recommendation");
     }
-    return this.#ledger.append({
+    const workerContext: WorkerContext = {
       installationId: job.installationId,
-      workId: job.workId,
-      kind: "proposal",
-      summary: job.recommendation.summary,
-      payload: {
-        providerJob: {
-          id: job.jobId,
-          provider: job.provider,
-          model: job.model,
-          store: job.store,
-          background: job.background,
+      workerId: job.workerId,
+    };
+    return this.#ledger.append(
+      {
+        installationId: job.installationId,
+        workId: job.workId,
+        kind: "proposal",
+        summary: job.recommendation.summary,
+        payload: {
+          providerJob: {
+            id: job.jobId,
+            provider: job.provider,
+            model: job.model,
+            store: job.store,
+            background: job.background,
+          },
+          recommendation: job.recommendation,
         },
-        recommendation: job.recommendation,
+        actor: { kind: "worker", id: job.workerId },
       },
-      actor: { kind: "worker", id: job.workerId },
-    });
+      workerContext,
+    );
   }
 }

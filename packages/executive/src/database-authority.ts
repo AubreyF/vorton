@@ -23,15 +23,20 @@ export class DatabaseExecutiveAuthorityVerifier implements ExecutiveAuthorityVer
     requiredAuthority: "member" | "owner";
     operation: "review" | "decision" | "approval";
   }): Promise<string> {
-    const result = await this.database.asAdministrator((transaction) =>
-      transaction.query<{ id: string }>(
-        `select id
+    const result = await this.database.asPerson(
+      {
+        installationId: input.installationId,
+        authUserId: input.authUserId,
+      },
+      (transaction) =>
+        transaction.query<{ id: string }>(
+          `select id
            from public.people
           where installation_id = $1
             and auth_user_id = $2
             and ($3 = 'member' or kind = 'owner')`,
-        [input.installationId, input.authUserId, input.requiredAuthority],
-      ),
+          [input.installationId, input.authUserId, input.requiredAuthority],
+        ),
     );
     const person = result.rows[0];
     if (!person) {
@@ -43,9 +48,11 @@ export class DatabaseExecutiveAuthorityVerifier implements ExecutiveAuthorityVer
   }
 
   async assertApplicable(input: ExecutiveAuthorityVerification): Promise<void> {
-    const result = await this.database.asAdministrator((transaction) =>
-      transaction.query<AuthorityRow>(
-        `select grant.id as grant_id
+    const result = await this.database.asPerson(
+      input.requester,
+      (transaction) =>
+        transaction.query<AuthorityRow>(
+          `select grant.id as grant_id
            from public.capability_grants grant
            join public.policies policy
              on policy.installation_id = grant.installation_id
@@ -65,16 +72,16 @@ export class DatabaseExecutiveAuthorityVerifier implements ExecutiveAuthorityVer
                where revocation.installation_id = grant.installation_id
                  and revocation.grant_id = grant.id
             )`,
-        [
-          input.installationId,
-          input.authority.capabilityGrantId,
-          input.authority.policyId,
-          input.authority.executorWorkerId,
-          input.authority.capability,
-          input.authority.mode,
-          input.proposal.workId,
-        ],
-      ),
+          [
+            input.installationId,
+            input.authority.capabilityGrantId,
+            input.authority.policyId,
+            input.authority.executorWorkerId,
+            input.authority.capability,
+            input.authority.mode,
+            input.proposal.workId,
+          ],
+        ),
     );
     if (!result.rows[0]) {
       throw new Error(

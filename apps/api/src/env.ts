@@ -7,6 +7,7 @@ export interface ApiEnvironment {
   port: number;
   databaseUrl: string;
   databaseSsl: boolean;
+  databaseContextSigningSecret: string;
   supabaseProjectRef: string;
   supabaseUrl: string;
   jwtIssuer: string;
@@ -112,10 +113,20 @@ export function readApiEnvironment(
     "AUBOS_HINDSIGHT_URL",
     ["http:", "https:"],
   );
+  const databaseContextSigningSecret = required(
+    env,
+    "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET",
+  );
+  if (databaseContextSigningSecret.length < 32) {
+    throw new Error(
+      "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
+    );
+  }
   return {
     port,
     databaseUrl: required(env, "AUBOS_DATABASE_URL"),
     databaseSsl: exactBoolean(env, "AUBOS_DATABASE_SSL", true),
+    databaseContextSigningSecret,
     supabaseProjectRef: projectRef,
     supabaseUrl: supabaseUrl.toString().replace(/\/$/, ""),
     jwtIssuer: issuer.toString().replace(/\/$/, ""),

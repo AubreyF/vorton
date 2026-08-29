@@ -12,6 +12,7 @@ import {
   sha256,
   validateReleaseManifest,
 } from "./release-lib.js";
+import { stageContractArchive } from "./stage-contract-archive.js";
 
 const repositories: string[] = [];
 
@@ -89,6 +90,23 @@ function manifest(sourceCommit: string, digest = `sha256:${"a".repeat(64)}`) {
   };
 }
 
+function schemaV2Manifest(
+  sourceCommit: string,
+  digest = `sha256:${"a".repeat(64)}`,
+) {
+  return {
+    ...manifest(sourceCommit, digest),
+    schemaVersion: 2,
+    images: {
+      ...manifest(sourceCommit, digest).images,
+      web: {
+        reference: `ghcr.io/aubreyf/aubos-web@${digest}`,
+        digest,
+      },
+    },
+  };
+}
+
 afterEach(() => {
   repositories.length = 0;
 });
@@ -114,6 +132,7 @@ describe("immutable release contracts", () => {
       ),
     ) as {
       properties: {
+        schemaVersion: { enum: number[] };
         images: {
           additionalProperties: {
             properties: { reference: { pattern: string } };
@@ -122,9 +141,16 @@ describe("immutable release contracts", () => {
         managedFiles: { minItems?: number };
       };
       allOf: Array<{
+        if: {
+          properties: {
+            schemaVersion: { const: number };
+            status: { const: string };
+          };
+        };
         then: {
           properties: {
             images: {
+              required: string[];
               additionalProperties: {
                 properties: { reference: { pattern: string } };
               };
@@ -147,21 +173,57 @@ describe("immutable release contracts", () => {
       /actions\/checkout@[a-f0-9]{40}[\s\S]*?fetch-depth:\s*0/,
     );
     expect(buildWorkflow).toContain("org.opencontainers.image.revision");
+    expect(buildWorkflow).toContain("apps/web/Dockerfile");
+    expect(buildWorkflow).toContain("aubos-web");
+    expect(buildWorkflow).toContain("web.spdx.json");
     expect(buildWorkflow).toContain("provenance: mode=max");
     expect(buildWorkflow).toContain("sbom: true");
     expect(releaseWorkflow).toContain("workflow_dispatch:");
+    expect(releaseWorkflow).toContain("image: postgres:16");
+    expect(releaseWorkflow).toContain(
+      "AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority",
+    );
+    const postgresAuthorityGate = releaseWorkflow.indexOf(
+      "run: npm run test:postgres-authority",
+    );
+    expect(postgresAuthorityGate).toBeGreaterThan(-1);
+    expect(postgresAuthorityGate).toBeLessThan(
+      releaseWorkflow.indexOf("name: Create GitHub Release from tag"),
+    );
     expect(releaseWorkflow).toContain(
       'git show-ref --verify "refs/tags/$TAG_NAME"',
     );
     expect(releaseWorkflow).toContain(".Image.Config.Labels");
     expect(releaseWorkflow).toContain("{{json .Provenance}}");
     expect(releaseWorkflow).toContain("{{json .SBOM}}");
+    expect(releaseWorkflow).toContain("stage-contract-archive.ts");
+    expect(releaseWorkflow).toContain("--sort=name --mtime='@0'");
+    expect(releaseWorkflow).toContain("--owner=0 --group=0 --numeric-owner");
     expect(releaseWorkflow).toContain(
       '--repository-owner "${{ github.repository_owner }}"',
     );
     expect(buildWorkflow).not.toContain("actions/attest@");
     expect(releaseWorkflow).not.toContain("actions/attest@");
     expect(manifestJsonSchema.properties.managedFiles.minItems).toBe(1);
+    expect(manifestJsonSchema.properties.schemaVersion.enum).toEqual([1, 2]);
+    expect(
+      manifestJsonSchema.allOf.map((condition) => ({
+        schemaVersion: condition.if.properties.schemaVersion.const,
+        status: condition.if.properties.status.const,
+        images: condition.then.properties.images.required,
+      })),
+    ).toEqual([
+      {
+        schemaVersion: 1,
+        status: "released",
+        images: ["control-plane", "worker"],
+      },
+      {
+        schemaVersion: 2,
+        status: "released",
+        images: ["control-plane", "web", "worker"],
+      },
+    ]);
     const fixtureReference = `registry.invalid/aubos-fixture/control-plane@sha256:${"1".repeat(64)}`;
     expect(
       new RegExp(
@@ -195,6 +257,173 @@ describe("immutable release contracts", () => {
     ).toThrow(/pinned by sha256/);
   });
 
+  it("runs the documented bootstrap plan from only an extracted contract archive", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aubos-contract-archive-test-"));
+    const staged = join(root, "staged");
+    const extracted = join(root, "extracted");
+    const archive = join(root, "contracts.tgz");
+    await stageContractArchive(staged);
+    mkdirSync(extracted);
+
+    execFileSync("tar", ["-czf", archive, "-C", staged, "."]);
+    execFileSync("tar", ["-xzf", archive, "-C", extracted]);
+    expect(
+      readFileSync(
+        join(extracted, "packages/executive/roles/strategic-reviewer/SKILL.md"),
+        "utf8",
+      ),
+    ).toContain("# Strategic reviewer");
+    expect(
+      readFileSync(
+        join(extracted, "supabase/migrations/20260828000300_executive.sql"),
+        "utf8",
+      ),
+    ).toContain("create table public.worker_runs");
+    expect(
+      readFileSync(
+        join(
+          extracted,
+          "supabase/migrations/20260828000400_runtime_authority.sql",
+        ),
+        "utf8",
+      ),
+    ).toContain("aubos_private.runtime_context_keys");
+
+    const cli = join(extracted, "bin/aubos.cjs");
+    const installation = join(root, "installation");
+    const extractionManifest = join(root, "extraction-release.json");
+    mkdirSync(installation);
+    const hostTemplate = "templates/releases/0.2.0/host/aubos-runtime.json";
+    const extractionRelease = {
+      schemaVersion: 2,
+      status: "released",
+      version: "0.2.0",
+      sourceCommit: "c".repeat(40),
+      createdAt: "2026-08-28T12:00:00.000Z",
+      cliVersion: "0.2.0",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260828000400_runtime_authority",
+      images: {
+        "control-plane": {
+          reference: `ghcr.io/aubreyf/aubos-control-plane@sha256:${"3".repeat(64)}`,
+          digest: `sha256:${"3".repeat(64)}`,
+        },
+        web: {
+          reference: `ghcr.io/aubreyf/aubos-web@sha256:${"4".repeat(64)}`,
+          digest: `sha256:${"4".repeat(64)}`,
+        },
+        worker: {
+          reference: `ghcr.io/aubreyf/aubos-worker@sha256:${"5".repeat(64)}`,
+          digest: `sha256:${"5".repeat(64)}`,
+        },
+      },
+      managedFiles: [
+        {
+          path: "host/aubos-runtime.json",
+          template: hostTemplate,
+          digest: sha256(readFileSync(join(extracted, hostTemplate))),
+        },
+      ],
+    };
+    writeFileSync(
+      extractionManifest,
+      `${JSON.stringify(extractionRelease, null, 2)}\n`,
+    );
+    const cliPlanOutput = execFileSync(
+      "node",
+      [
+        cli,
+        "init",
+        "plan",
+        "--organization",
+        "Ion Lab",
+        "--manifest",
+        extractionManifest,
+        "--artifact-root",
+        extracted,
+        "--root",
+        installation,
+      ],
+      { cwd: extracted, encoding: "utf8" },
+    );
+    const cliPlanHash = cliPlanOutput.trim().split("\n")[0]!;
+    expect(cliPlanHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    execFileSync(
+      "node",
+      [cli, "init", "apply", "--plan", cliPlanHash, "--root", installation],
+      { cwd: extracted, stdio: "pipe" },
+    );
+    expect(
+      execFileSync("node", [cli, "validate", "--root", installation], {
+        cwd: extracted,
+        encoding: "utf8",
+      }),
+    ).toBe("valid\n");
+    expect(
+      readFileSync(join(installation, "deploy/hindsight.fly.toml"), "utf8"),
+    ).toContain('HINDSIGHT_API_WORKER_ID = "ion-lab-memory"');
+
+    writeFileSync(
+      extractionManifest,
+      `${JSON.stringify(
+        { ...extractionRelease, cliVersion: "9.9.9" },
+        null,
+        2,
+      )}\n`,
+    );
+    let mismatch = "";
+    try {
+      execFileSync(
+        "node",
+        [
+          cli,
+          "upgrade",
+          "plan",
+          "--manifest",
+          extractionManifest,
+          "--artifact-root",
+          extracted,
+          "--root",
+          installation,
+        ],
+        { cwd: extracted, stdio: "pipe" },
+      );
+    } catch (error) {
+      mismatch = String((error as { stderr?: Buffer }).stderr ?? error);
+    }
+    expect(mismatch).toContain(
+      "requires AubOS CLI 9.9.9, but the running CLI is 0.2.0",
+    );
+
+    execFileSync(
+      "npm",
+      ["ci", "--ignore-scripts", "--offline", "--no-audit", "--no-fund"],
+      { cwd: extracted, stdio: "pipe" },
+    );
+    const plan = JSON.parse(
+      execFileSync("npm", ["run", "--silent", "bootstrap:plan"], {
+        cwd: extracted,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          AUBOS_BOOTSTRAP_AUTH_USER_ID: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+          AUBOS_WORKER_PROVIDER: "openai-responses",
+          AUBOS_WORKER_MODEL: "gpt-5.4",
+          AUBOS_OPENAI_MODEL: "gpt-5.4",
+        },
+      }),
+    ) as Record<string, unknown>;
+
+    expect(plan).toMatchObject({
+      operation: "bootstrap-organizational-installation",
+      effects: "none",
+      executiveBinding: {
+        provider: "openai-responses",
+        mode: "recommend",
+      },
+    });
+  });
+
   it("binds the external image receipt to source and version", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     const receipt = JSON.stringify({
@@ -202,6 +431,7 @@ describe("immutable release contracts", () => {
       version: "0.1.0",
       images: {
         "control-plane": `ghcr.io/aubreyf/aubos-control-plane@${digest}`,
+        web: `ghcr.io/aubreyf/aubos-web@${digest}`,
         worker: `ghcr.io/aubreyf/aubos-worker@${digest}`,
       },
     });
@@ -209,7 +439,7 @@ describe("immutable release contracts", () => {
       Object.keys(
         parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "AubreyF"),
       ).sort(),
-    ).toEqual(["control-plane", "worker"]);
+    ).toEqual(["control-plane", "web", "worker"]);
     expect(() =>
       parseImageReceipt(receipt, "c".repeat(40), "0.1.0", "AubreyF"),
     ).toThrow(/source commit/);
@@ -222,6 +452,7 @@ describe("immutable release contracts", () => {
       version: "0.1.0",
       images: {
         "control-plane": `ghcr.io/attacker/not-control@${digest}`,
+        web: `ghcr.io/attacker/not-web@${digest}`,
         worker: `ghcr.io/attacker/not-worker@${digest}`,
       },
     });
@@ -256,6 +487,39 @@ describe("immutable release contracts", () => {
         releaseCommit,
       }).version,
     ).toBe("0.1.0");
+  });
+
+  it("requires the canonical web image in schema v2 releases", () => {
+    const { repository, sourceCommit } = fixture();
+    const manifestPath = join(repository, "release/manifests/0.1.0.json");
+    write(
+      repository,
+      "release/manifests/0.1.0.json",
+      `${JSON.stringify(schemaV2Manifest(sourceCommit), null, 2)}\n`,
+    );
+
+    expect(
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "AubreyF",
+      }).schemaVersion,
+    ).toBe(2);
+
+    const missingWeb = schemaV2Manifest(sourceCommit);
+    delete (missingWeb.images as Partial<typeof missingWeb.images>).web;
+    write(
+      repository,
+      "release/manifests/0.1.0.json",
+      `${JSON.stringify(missingWeb, null, 2)}\n`,
+    );
+    expect(() =>
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "AubreyF",
+      }),
+    ).toThrow(/control-plane, web, worker/);
   });
 
   it("fails closed on migration, managed-file, and release-commit drift", () => {

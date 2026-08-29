@@ -22,6 +22,19 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aubos_authority
+          POSTGRES_PASSWORD: synthetic-admin-password-000000000001
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d aubos_authority"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -43,6 +56,10 @@ jobs:
           echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
       - run: npm ci
+      - name: Verify PostgreSQL authority boundary
+        run: npm run test:postgres-authority
+        env:
+          AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority
       - run: npm run check
       - run: npm run format:check
       - name: Verify tagged release manifest and source parent
@@ -63,7 +80,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MANIFEST: release/manifests/${{ steps.version.outputs.value }}.json
         run: |
-          test "$(jq -r '.images | keys | join(",")' "$MANIFEST")" = "control-plane,worker"
+          schema_version=$(jq -r '.schemaVersion' "$MANIFEST")
+          expected_images="control-plane,worker"
+          if [ "$schema_version" = "2" ]; then
+            expected_images="control-plane,web,worker"
+          fi
+          test "$(jq -r '.images | keys | join(",")' "$MANIFEST")" = "$expected_images"
           source_commit=$(jq -r '.sourceCommit' "$MANIFEST")
           while IFS= read -r reference; do
             docker buildx imagetools inspect "$reference" >/dev/null
@@ -79,8 +101,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           artifact="aubos-$VERSION-contracts.tgz"
+          staging_directory=$(mktemp -d)
+          npx tsx release/stage-contract-archive.ts "$staging_directory"
           tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
-            -cf - release schemas deploy templates | gzip -n > "$artifact"
+            -C "$staging_directory" -cf - . \
+            | gzip -n > "$artifact"
           sha256sum "$artifact" > "$artifact.sha256"
       - name: Generate release SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0

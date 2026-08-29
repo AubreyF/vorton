@@ -9,7 +9,8 @@ class FakeDatabase {
   rows: Array<Record<string, unknown>> = [];
   statement: { text: string; values?: readonly unknown[] } | null = null;
 
-  asAdministrator<T>(
+  asPerson<T>(
+    _context: { installationId: string; authUserId: string },
     work: (transaction: SqlExecutor) => Promise<T>,
   ): Promise<T> {
     return work({
@@ -34,6 +35,10 @@ const verification = {
   approval: { id: "approval" },
   decision: { id: "decision" },
   proposal: { id: "proposal", workId: "fbc4ac66-4a32-4a34-b810-88f4330205aa" },
+  requester: {
+    installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+    authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+  },
 } as ExecutiveAuthorityVerification;
 
 describe("database executive authority verifier", () => {

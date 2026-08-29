@@ -108,6 +108,7 @@ describe("governed executive workflow", () => {
       summary: "Approved for the synthetic fixture only.",
     });
     const work = await workflow.createExecutionWork({
+      requester: { installationId, authUserId: ownerAuthUserId },
       approvalRecordId: approval.id,
       authority: {
         policyId,
@@ -213,6 +214,7 @@ describe("governed executive workflow", () => {
 
     await expect(
       workflow.createExecutionWork({
+        requester: { installationId, authUserId: ownerAuthUserId },
         approvalRecordId: approval.id,
         authority: {
           policyId,
