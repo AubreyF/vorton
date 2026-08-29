@@ -22,7 +22,8 @@ primary_region = "sea"
   AUBOS_HINDSIGHT_URL = "http://{{INSTALLATION_NAME}}-hindsight.internal:8888"
 
 # Set AUBOS_DATABASE_URL, AUBOS_DATABASE_CONTEXT_SIGNING_SECRET,
-# AUBOS_WORKER_SHARED_SECRET, and AUBOS_HINDSIGHT_API_KEY with Fly secrets.
+# AUBOS_WORKER_SHARED_SECRET, and AUBOS_HINDSIGHT_API_KEY with Fly secrets. Set
+# AUBOS_DATABASE_SSL_CA_BASE64 when the authority database uses a private CA.
 
 [http_service]
   internal_port = 8080

@@ -7,6 +7,7 @@ export interface ApiEnvironment {
   port: number;
   databaseUrl: string;
   databaseSsl: boolean;
+  databaseSslCa: string | undefined;
   databaseContextSigningSecret: string;
   supabaseProjectRef: string;
   supabaseUrl: string;
@@ -40,6 +41,25 @@ function exactBoolean(
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`${name} must be exactly true or false`);
+}
+
+function optionalCertificateAuthority(
+  env: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  const encoded = env[name]?.trim();
+  if (!encoded) return undefined;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new Error(`${name} must be canonical base64`);
+  }
+  const decoded = Buffer.from(encoded, "base64").toString("utf8").trim();
+  if (
+    !decoded.startsWith("-----BEGIN CERTIFICATE-----") ||
+    !decoded.endsWith("-----END CERTIFICATE-----")
+  ) {
+    throw new Error(`${name} must decode to a PEM certificate authority`);
+  }
+  return `${decoded}\n`;
 }
 
 function url(value: string, name: string, protocols: string[]): URL {
@@ -126,6 +146,10 @@ export function readApiEnvironment(
     port,
     databaseUrl: required(env, "AUBOS_DATABASE_URL"),
     databaseSsl: exactBoolean(env, "AUBOS_DATABASE_SSL", true),
+    databaseSslCa: optionalCertificateAuthority(
+      env,
+      "AUBOS_DATABASE_SSL_CA_BASE64",
+    ),
     databaseContextSigningSecret,
     supabaseProjectRef: projectRef,
     supabaseUrl: supabaseUrl.toString().replace(/\/$/, ""),
