@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +27,7 @@ function command(repository: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd: repository,
     encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
 
@@ -33,6 +41,124 @@ function commit(repository: string, message: string): string {
   command(repository, ["add", "."]);
   command(repository, ["commit", "-m", message]);
   return command(repository, ["rev-parse", "HEAD"]);
+}
+
+function releaseDiscoveryScript(workflow: string): string {
+  const startMarker = "          # BEGIN bounded release discovery";
+  const endMarker = "          # END bounded release discovery";
+  const start = workflow.indexOf(startMarker);
+  const end = workflow.indexOf(endMarker);
+  if (start < 0 || end <= start) {
+    throw new Error("bounded release discovery markers are required");
+  }
+  return workflow
+    .slice(start + startMarker.length, end)
+    .split("\n")
+    .map((line) => (line.startsWith("          ") ? line.slice(10) : line))
+    .join("\n");
+}
+
+interface ReleaseDiscoveryRun {
+  apiCount: number;
+  createCount: number;
+  matching: unknown[];
+  sleepCalls: string[];
+  succeeded: boolean;
+}
+
+function fileCount(path: string): number {
+  return existsSync(path) ? Number(readFileSync(path, "utf8").trim()) : 0;
+}
+
+function runReleaseDiscovery(
+  listings: readonly unknown[],
+  options: { repository?: string; workflow?: string } = {},
+): ReleaseDiscoveryRun {
+  const repository =
+    options.repository ?? mkdtempSync(join(tmpdir(), "aubos-discovery-test-"));
+  const workflow =
+    options.workflow ??
+    readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
+  const fakeBin = join(repository, "fake-bin");
+  mkdirSync(fakeBin, { recursive: true });
+  const listingsFile = join(repository, "fake-release-listings.jsonl");
+  const apiCountFile = join(repository, "fake-api-count");
+  const createCountFile = join(repository, "fake-create-count");
+  const sleepLog = join(repository, "fake-sleep-log");
+  writeFileSync(
+    listingsFile,
+    `${listings.map((listing) => JSON.stringify(listing)).join("\n")}\n`,
+  );
+  writeFileSync(
+    join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'if [ "$1" = "api" ]; then',
+      '  count=$(test -f "$FAKE_GH_API_COUNT" && cat "$FAKE_GH_API_COUNT" || printf 0)',
+      "  count=$((count + 1))",
+      '  printf "%s\\n" "$count" > "$FAKE_GH_API_COUNT"',
+      '  sed -n "${count}p" "$FAKE_GH_LISTINGS"',
+      'elif [ "$1" = "release" ] && [ "$2" = "create" ]; then',
+      '  count=$(test -f "$FAKE_GH_CREATE_COUNT" && cat "$FAKE_GH_CREATE_COUNT" || printf 0)',
+      "  count=$((count + 1))",
+      '  printf "%s\\n" "$count" > "$FAKE_GH_CREATE_COUNT"',
+      "else",
+      '  printf "unexpected gh invocation: %s\\n" "$*" >&2',
+      "  exit 99",
+      "fi",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(fakeBin, "sleep"),
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'printf "%s\\n" "$1" >> "$FAKE_SLEEP_LOG"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(fakeBin, "gh"), 0o755);
+  chmodSync(join(fakeBin, "sleep"), 0o755);
+  const script = join(repository, "run-release-discovery.sh");
+  writeFileSync(
+    script,
+    `set -euo pipefail\n${releaseDiscoveryScript(workflow)}\n`,
+  );
+
+  let succeeded = true;
+  try {
+    execFileSync("bash", [script], {
+      cwd: repository,
+      env: {
+        ...process.env,
+        FAKE_GH_API_COUNT: apiCountFile,
+        FAKE_GH_CREATE_COUNT: createCountFile,
+        FAKE_GH_LISTINGS: listingsFile,
+        FAKE_SLEEP_LOG: sleepLog,
+        GITHUB_REPOSITORY: "moonbase-labs/aubos",
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        TAG_NAME: "v0.3.0",
+      },
+      stdio: "pipe",
+    });
+  } catch {
+    succeeded = false;
+  }
+
+  const matchingPath = join(repository, "matching-releases.json");
+  return {
+    apiCount: fileCount(apiCountFile),
+    createCount: fileCount(createCountFile),
+    matching: existsSync(matchingPath)
+      ? (JSON.parse(readFileSync(matchingPath, "utf8")) as unknown[])
+      : [],
+    sleepCalls: existsSync(sleepLog)
+      ? readFileSync(sleepLog, "utf8").trim().split("\n")
+      : [],
+    succeeded,
+  };
 }
 
 function releaseFixture(
@@ -543,6 +669,114 @@ describe("release preflight", () => {
     ).toThrow(/Fly contract and AubOS CLI HINDSIGHT_IMAGE must match exactly/);
   });
 
+  it("discovers a delayed draft after one creation and bounded read-only checks", () => {
+    const draft = { id: 42, tag_name: "v0.3.0", draft: true };
+    const result = runReleaseDiscovery([[[]], [[]], [[]], [[draft]]]);
+
+    expect(result).toEqual({
+      apiCount: 4,
+      createCount: 1,
+      matching: [draft],
+      sleepCalls: ["2", "2"],
+      succeeded: true,
+    });
+  });
+
+  it("fails closed after six post-create checks spanning ten seconds", () => {
+    const result = runReleaseDiscovery(Array.from({ length: 7 }, () => [[]]));
+
+    expect(result).toEqual({
+      apiCount: 7,
+      createCount: 1,
+      matching: [],
+      sleepCalls: ["2", "2", "2", "2", "2"],
+      succeeded: false,
+    });
+  });
+
+  it("rejects duplicate exact-tag releases without creating another", () => {
+    const result = runReleaseDiscovery([
+      [
+        [
+          { id: 43, tag_name: "v0.3.0", draft: true },
+          { id: 44, tag_name: "v0.3.0", draft: true },
+        ],
+      ],
+    ]);
+
+    expect(result.apiCount).toBe(1);
+    expect(result.createCount).toBe(0);
+    expect(result.matching).toHaveLength(2);
+    expect(result.sleepCalls).toEqual([]);
+    expect(result.succeeded).toBe(false);
+  });
+
+  it("leaves an existing published release unchanged", () => {
+    const published = { id: 45, tag_name: "v0.3.0", draft: false };
+    const result = runReleaseDiscovery([[[published]]]);
+
+    expect(result).toEqual({
+      apiCount: 1,
+      createCount: 0,
+      matching: [published],
+      sleepCalls: [],
+      succeeded: true,
+    });
+  });
+
+  it("replays a pre-helper tag with resolver logic carried by the active workflow", () => {
+    const repository = mkdtempSync(join(tmpdir(), "aubos-replay-test-"));
+    command(repository, ["init", "-q"]);
+    command(repository, ["config", "user.name", "Release Test"]);
+    command(repository, [
+      "config",
+      "user.email",
+      "release-test@example.invalid",
+    ]);
+    write(
+      repository,
+      ".github/workflows/release.yml",
+      "name: Historical release workflow\n",
+    );
+    commit(repository, "historical release");
+    command(repository, ["tag", "v0.3.0"]);
+
+    const activeWorkflow = readFileSync(
+      join(process.cwd(), ".github/workflows/release.yml"),
+      "utf8",
+    );
+    write(repository, ".github/workflows/release.yml", activeWorkflow);
+    commit(repository, "current release workflow");
+    const loadedWorkflow = command(repository, [
+      "show",
+      "HEAD:.github/workflows/release.yml",
+    ]);
+    command(repository, ["checkout", "--detach", "v0.3.0"]);
+
+    expect(() =>
+      command(repository, [
+        "cat-file",
+        "-e",
+        "HEAD:release/resolve-github-release.ts",
+      ]),
+    ).toThrow();
+    expect(releaseDiscoveryScript(loadedWorkflow)).not.toMatch(
+      /release\/resolve-github-release|\b(?:node|npx|tsx)\b/,
+    );
+
+    const published = { id: 46, tag_name: "v0.3.0", draft: false };
+    expect(
+      runReleaseDiscovery([[[published]]], {
+        repository,
+        workflow: loadedWorkflow,
+      }),
+    ).toMatchObject({
+      createCount: 0,
+      matching: [published],
+      succeeded: true,
+    });
+  });
+
   it("wires one preflight into CI and tag publication, with recoverable release uploads", () => {
     const ci = readFileSync(
       join(process.cwd(), ".github/workflows/ci.yml"),
@@ -561,7 +795,9 @@ describe("release preflight", () => {
     expect(ci).toContain("--if-present");
     expect(release).toContain("npm run release:preflight");
     expect(release).toContain('gh release view "$TAG_NAME"');
-    expect(release).toContain('gh release create "$TAG_NAME"');
+    expect(release).toContain("# BEGIN bounded release discovery");
+    expect(release).toContain("for visibility_check in 1 2 3 4 5 6");
+    expect(release).not.toContain("release/resolve-github-release");
     expect(release).toContain('gh release upload "$TAG_NAME"');
     expect(release).toContain("--clobber");
     expect(release).toContain(

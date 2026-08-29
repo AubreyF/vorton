@@ -118,6 +118,7 @@ jobs:
             'Runtime images are identified only by the digest-pinned GHCR references in the release manifest.' \
             > release-notes.md
 
+          # BEGIN bounded release discovery
           find_release() {
             gh api --paginate --slurp \
               "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
@@ -125,6 +126,11 @@ jobs:
             jq --arg tag "$TAG_NAME" \
               '[.[][] | select(.tag_name == $tag)]' \
               release-pages.json > matching-releases.json
+            release_count=$(jq 'length' matching-releases.json)
+            if [ "$release_count" -gt 1 ]; then
+              echo "found $release_count GitHub Releases for $TAG_NAME" >&2
+              return 1
+            fi
           }
 
           find_release
@@ -135,10 +141,19 @@ jobs:
               --verify-tag \
               --title "AubOS $TAG_NAME" \
               --notes-file release-notes.md
-            find_release
-            release_count=$(jq 'length' matching-releases.json)
+            for visibility_check in 1 2 3 4 5 6; do
+              find_release
+              release_count=$(jq 'length' matching-releases.json)
+              if [ "$release_count" -eq 1 ]; then
+                break
+              fi
+              if [ "$visibility_check" -lt 6 ]; then
+                sleep 2
+              fi
+            done
           fi
           test "$release_count" -eq 1
+          # END bounded release discovery
           test "$(jq -r '.[0].tag_name' matching-releases.json)" = "$TAG_NAME"
           test "$(jq -r '.[0].prerelease' matching-releases.json)" = "false"
           test "$(jq -r '.[0].name' matching-releases.json)" = "AubOS $TAG_NAME"
