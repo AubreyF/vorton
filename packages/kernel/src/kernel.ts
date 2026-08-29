@@ -40,11 +40,78 @@ interface IdRow {
   id: string;
 }
 
-interface PersonRow extends IdRow {
+export interface PersonRow extends IdRow {
   installation_id: string;
   auth_user_id: string;
   display_name: string;
   kind: "owner" | "member";
+  created_at: Date;
+}
+
+export interface WorkerRow extends IdRow {
+  installation_id: string;
+  name: string;
+  provider: string;
+  billing_realm: string;
+  host: string;
+  runtime: string;
+  model: string;
+  advertised_capabilities: string[];
+  data_classification_ceiling: DataClassification;
+  isolation: string;
+  network_policy: string;
+  health: "healthy" | "degraded" | "offline";
+  last_seen_at: Date | null;
+  created_at: Date;
+}
+
+export interface RoleRow extends IdRow {
+  installation_id: string;
+  name: string;
+  version: number;
+  skill_markdown: string;
+  content_sha256: string;
+  created_by_person_id: string;
+  created_at: Date;
+}
+
+export interface WorkRow extends IdRow {
+  installation_id: string;
+  title: string;
+  requested_outcome: string;
+  acceptance_criteria: string[];
+  state: string;
+  priority: number;
+  parent_work_id: string | null;
+  requested_by_person_id: string | null;
+  custodian_person_id: string | null;
+  custodian_worker_id: string | null;
+  lease_expires_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface PolicyRow extends IdRow {
+  installation_id: string;
+  name: string;
+  version: number;
+  definition: Record<string, unknown>;
+  content_sha256: string;
+  created_by_person_id: string;
+  created_at: Date;
+}
+
+export interface RecordRow extends IdRow {
+  installation_id: string;
+  work_id: string | null;
+  kind: RecordInput["kind"];
+  summary: string;
+  payload: Record<string, unknown>;
+  source_uri: string | null;
+  classification: DataClassification;
+  actor_person_id: string | null;
+  actor_worker_id: string | null;
+  supersedes_record_id: string | null;
   created_at: Date;
 }
 
@@ -151,6 +218,21 @@ export class WorkersService {
     this.#now = dependencies.now ?? (() => new Date());
     this.#randomToken =
       dependencies.randomToken ?? (() => randomBytes(32).toString("base64url"));
+  }
+
+  list(context: PersonContext): Promise<WorkerRow[]> {
+    return this.database.asPerson(context, async (transaction) => {
+      const result = await transaction.query<WorkerRow>(
+        `select id, installation_id, name, provider, billing_realm, host, runtime, model,
+                advertised_capabilities, data_classification_ceiling, isolation,
+                network_policy, health, last_seen_at, created_at
+           from public.workers
+          where installation_id = $1
+          order by name, id`,
+        [context.installationId],
+      );
+      return result.rows;
+    });
   }
 
   register(
@@ -371,6 +453,20 @@ export class WorkersService {
 export class RolesService {
   constructor(private readonly database: Database) {}
 
+  list(context: PersonContext): Promise<RoleRow[]> {
+    return this.database.asPerson(context, async (transaction) => {
+      const result = await transaction.query<RoleRow>(
+        `select id, installation_id, name, version, skill_markdown, content_sha256,
+                created_by_person_id, created_at
+           from public.roles
+          where installation_id = $1
+          order by name, version desc`,
+        [context.installationId],
+      );
+      return result.rows;
+    });
+  }
+
   createVersion(
     context: PersonContext,
     input: { name: string; version: number; skillMarkdown: string },
@@ -427,6 +523,22 @@ export class RolesService {
 
 export class WorkService {
   constructor(private readonly database: Database) {}
+
+  list(context: PersonContext): Promise<WorkRow[]> {
+    return this.database.asPerson(context, async (transaction) => {
+      const result = await transaction.query<WorkRow>(
+        `select id, installation_id, title, requested_outcome, acceptance_criteria,
+                state, priority, parent_work_id, requested_by_person_id,
+                custodian_person_id, custodian_worker_id, lease_expires_at,
+                created_at, updated_at
+           from public.work
+          where installation_id = $1
+          order by priority desc, created_at, id`,
+        [context.installationId],
+      );
+      return result.rows;
+    });
+  }
 
   create(context: PersonContext, input: WorkInput): Promise<string> {
     const work = workInputSchema.parse(input);
@@ -496,6 +608,20 @@ export class WorkService {
 
 export class PolicyService {
   constructor(private readonly database: Database) {}
+
+  list(context: PersonContext): Promise<PolicyRow[]> {
+    return this.database.asPerson(context, async (transaction) => {
+      const result = await transaction.query<PolicyRow>(
+        `select id, installation_id, name, version, definition, content_sha256,
+                created_by_person_id, created_at
+           from public.policies
+          where installation_id = $1
+          order by name, version desc`,
+        [context.installationId],
+      );
+      return result.rows;
+    });
+  }
 
   createVersion(
     context: PersonContext,
@@ -605,6 +731,22 @@ export class PolicyService {
 
 export class RecordsService {
   constructor(private readonly database: Database) {}
+
+  listForWork(context: PersonContext, workId: string): Promise<RecordRow[]> {
+    requireUuid(workId, "workId");
+    return this.database.asPerson(context, async (transaction) => {
+      const result = await transaction.query<RecordRow>(
+        `select id, installation_id, work_id, kind, summary, payload, source_uri,
+                classification, actor_person_id, actor_worker_id,
+                supersedes_record_id, created_at
+           from public.records
+          where installation_id = $1 and work_id = $2
+          order by created_at, id`,
+        [context.installationId, workId],
+      );
+      return result.rows;
+    });
+  }
 
   appendAsPerson(context: PersonContext, input: RecordInput): Promise<string> {
     const record = recordInputSchema.parse(input);

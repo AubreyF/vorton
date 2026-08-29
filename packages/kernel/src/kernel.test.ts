@@ -6,6 +6,7 @@ import {
   PolicyService,
   RecordsService,
   RolesService,
+  WorkService,
   WorkersService,
 } from "./kernel.js";
 
@@ -102,6 +103,13 @@ describe("worker credentials", () => {
 });
 
 describe("authority boundaries", () => {
+  it("scopes Work inspection to the authenticated installation", async () => {
+    const fake = new FakeDatabase();
+    await new WorkService(fake as unknown as Database).list(actor);
+    expect(fake.statements[0]?.text).toContain("where installation_id = $1");
+    expect(fake.statements[0]?.values).toEqual([installationId]);
+  });
+
   it("assigning a role touches no capability grant", async () => {
     const fake = new FakeDatabase();
     fake.responses.push({ rows: [{ id: credentialId }], rowCount: 1 });
