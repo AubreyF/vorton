@@ -281,6 +281,136 @@ function parseObject(
   return parsed as Record<string, unknown>;
 }
 
+function requireNonemptyString(value: string, description: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`${description} must be nonempty`);
+  return normalized;
+}
+
+function requirePositiveInteger(value: string, description: string): number {
+  const normalized = value.trim();
+  if (!/^[1-9]\d*$/.test(normalized)) {
+    throw new Error(`${description} must be a positive integer`);
+  }
+  return Number(normalized);
+}
+
+function parseJson(value: string, description: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${description} is not valid JSON`);
+  }
+}
+
+function parseNullableProvenanceBuilder(
+  value: string,
+  description: string,
+): Record<string, unknown> | null {
+  const parsed = parseJson(value, description);
+  if (parsed === null) return null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${description} must be an object or null`);
+  }
+  const builder = parsed as Record<string, unknown>;
+  if (!("id" in builder) || typeof builder.id !== "string") {
+    throw new Error(`${description} must contain a string id`);
+  }
+  return builder;
+}
+
+function parseNullableString(
+  value: string,
+  description: string,
+): string | null {
+  const parsed = parseJson(value, description);
+  if (parsed === null || typeof parsed === "string") return parsed;
+  throw new Error(`${description} must be a string or null`);
+}
+
+function requireSupportedProvenance(
+  inspector: OciInspector,
+  reference: string,
+  description: string,
+): void {
+  const legacyBuilder = parseNullableProvenanceBuilder(
+    inspector.format(
+      reference,
+      "{{with .Provenance.SLSA.builder}}{{json .}}{{else}}null{{end}}",
+    ),
+    `${description} SLSA v0.2 builder`,
+  );
+  const legacyBuildType = parseNullableString(
+    inspector.format(
+      reference,
+      "{{with .Provenance.SLSA.buildType}}{{json .}}{{else}}null{{end}}",
+    ),
+    `${description} SLSA v0.2 build type`,
+  );
+  const v1Builder = parseNullableProvenanceBuilder(
+    inspector.format(
+      reference,
+      "{{with .Provenance.SLSA.runDetails}}{{with .builder}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}",
+    ),
+    `${description} SLSA v1 builder`,
+  );
+  const v1BuildType = parseNullableString(
+    inspector.format(
+      reference,
+      "{{with .Provenance.SLSA.buildDefinition}}{{with .buildType}}{{json .}}{{else}}null{{end}}{{else}}null{{end}}",
+    ),
+    `${description} SLSA v1 build type`,
+  );
+
+  const hasLegacy = legacyBuilder !== null || legacyBuildType !== null;
+  const hasV1 = v1Builder !== null || v1BuildType !== null;
+  if (
+    hasLegacy &&
+    !hasV1 &&
+    legacyBuilder !== null &&
+    legacyBuildType === "https://mobyproject.org/buildkit@v1"
+  ) {
+    return;
+  }
+  if (
+    hasV1 &&
+    !hasLegacy &&
+    v1Builder !== null &&
+    v1BuildType ===
+      "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md"
+  ) {
+    return;
+  }
+  throw new Error(
+    `${description} must contain exactly one complete recognized BuildKit SLSA v0.2 or v1 predicate`,
+  );
+}
+
+function requireSpdxCreationInfo(
+  value: string,
+  description: string,
+): Record<string, unknown> {
+  const creationInfo = parseObject(value, description);
+  if (
+    typeof creationInfo.created !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(
+      creationInfo.created,
+    )
+  ) {
+    throw new Error(`${description} must contain a UTC created timestamp`);
+  }
+  if (
+    !Array.isArray(creationInfo.creators) ||
+    creationInfo.creators.length === 0 ||
+    creationInfo.creators.some(
+      (creator) => typeof creator !== "string" || !creator.trim(),
+    )
+  ) {
+    throw new Error(`${description} must contain nonempty string creators`);
+  }
+  return creationInfo;
+}
+
 export function parseHindsightImageReference(toml: string): string {
   let section = "";
   const references: string[] = [];
@@ -456,13 +586,39 @@ export function runReleasePreflight(options: {
         `Image ${name} revision label does not match sourceCommit ${manifest.sourceCommit}`,
       );
     }
-    parseObject(
-      inspector.format(image.reference, "{{json .Provenance}}"),
+    requireSupportedProvenance(
+      inspector,
+      image.reference,
       `Image ${name} provenance`,
     );
-    parseObject(
-      inspector.format(image.reference, "{{json .SBOM}}"),
-      `Image ${name} SBOM`,
+    const spdxVersion = requireNonemptyString(
+      inspector.format(image.reference, "{{.SBOM.SPDX.spdxVersion}}"),
+      `Image ${name} SBOM SPDX version`,
+    );
+    if (spdxVersion !== "SPDX-2.3") {
+      throw new Error(`Image ${name} SBOM must use SPDX-2.3`);
+    }
+    const sbomDocumentId = requireNonemptyString(
+      inspector.format(image.reference, "{{.SBOM.SPDX.SPDXID}}"),
+      `Image ${name} SBOM document ID`,
+    );
+    if (sbomDocumentId !== "SPDXRef-DOCUMENT") {
+      throw new Error(`Image ${name} SBOM must use SPDXRef-DOCUMENT`);
+    }
+    const sbomDataLicense = requireNonemptyString(
+      inspector.format(image.reference, "{{.SBOM.SPDX.dataLicense}}"),
+      `Image ${name} SBOM data license`,
+    );
+    if (sbomDataLicense !== "CC0-1.0") {
+      throw new Error(`Image ${name} SBOM must use CC0-1.0`);
+    }
+    requireSpdxCreationInfo(
+      inspector.format(image.reference, "{{json .SBOM.SPDX.creationInfo}}"),
+      `Image ${name} SBOM creation info`,
+    );
+    requirePositiveInteger(
+      inspector.format(image.reference, "{{len .SBOM.SPDX.packages}}"),
+      `Image ${name} SBOM package count`,
     );
   }
 
