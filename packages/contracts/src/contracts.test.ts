@@ -69,6 +69,44 @@ describe("installation contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("allows fixture registries only for candidate manifests", () => {
+    const controlDigest = `sha256:${"1".repeat(64)}`;
+    const workerDigest = `sha256:${"2".repeat(64)}`;
+    const candidate = {
+      schemaVersion: 1,
+      status: "candidate" as const,
+      version: "0.1.0",
+      sourceCommit: "b".repeat(40),
+      createdAt: "2026-08-28T00:00:00.000Z",
+      cliVersion: "0.1.0",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260828000300_executive",
+      images: {
+        "control-plane": {
+          reference: `registry.invalid/aubos-fixture/control-plane@${controlDigest}`,
+          digest: controlDigest,
+        },
+        worker: {
+          reference: `registry.invalid/aubos-fixture/worker@${workerDigest}`,
+          digest: workerDigest,
+        },
+      },
+      managedFiles: [
+        {
+          path: "host/runtime.json",
+          template: "templates/releases/0.1.0/host/runtime.json",
+          digest: controlDigest,
+        },
+      ],
+    };
+
+    expect(releaseManifestSchema.safeParse(candidate).success).toBe(true);
+    expect(
+      releaseManifestSchema.safeParse({ ...candidate, status: "released" })
+        .success,
+    ).toBe(false);
+  });
+
   it("requires both first-party immutable images in a released manifest", () => {
     const result = releaseManifestSchema.safeParse({
       schemaVersion: 1,

@@ -6,7 +6,7 @@ import { basename, relative } from "node:path";
 import { releaseManifestSchema, type ReleaseManifest } from "@aubos/contracts";
 
 const imageReferencePattern =
-  /^ghcr\.io\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$/;
+  /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/;
 
 function releaseImageRepositories(
   repositoryOwner: string,
@@ -111,7 +111,7 @@ export function parseImageArgument(value: string): {
   }
   if (!imageReferencePattern.test(reference)) {
     throw new Error(
-      `Image ${name} must be a lowercase GHCR reference pinned by sha256 digest`,
+      `Image ${name} must be a normalized OCI reference pinned by sha256 digest`,
     );
   }
   const digest = reference.slice(reference.lastIndexOf("@") + 1);

@@ -43,7 +43,7 @@
         "properties": {
           "reference": {
             "type": "string",
-            "pattern": "^ghcr\\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$"
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
           },
           "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
         }
@@ -78,7 +78,14 @@
           "images": {
             "required": ["control-plane", "worker"],
             "minProperties": 2,
-            "maxProperties": 2
+            "maxProperties": 2,
+            "additionalProperties": {
+              "properties": {
+                "reference": {
+                  "pattern": "^ghcr\\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
           }
         }
       }

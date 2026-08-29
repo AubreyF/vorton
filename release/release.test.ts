@@ -112,7 +112,27 @@ describe("immutable release contracts", () => {
         join(process.cwd(), "release/release-manifest.schema.json"),
         "utf8",
       ),
-    ) as { properties: { managedFiles: { minItems?: number } } };
+    ) as {
+      properties: {
+        images: {
+          additionalProperties: {
+            properties: { reference: { pattern: string } };
+          };
+        };
+        managedFiles: { minItems?: number };
+      };
+      allOf: Array<{
+        then: {
+          properties: {
+            images: {
+              additionalProperties: {
+                properties: { reference: { pattern: string } };
+              };
+            };
+          };
+        };
+      }>;
+    };
     const actions = [
       ...`${buildWorkflow}\n${releaseWorkflow}\n${ciWorkflow}`.matchAll(
         /uses:\s+([^\s#]+)/g,
@@ -135,9 +155,22 @@ describe("immutable release contracts", () => {
     expect(buildWorkflow).not.toContain("actions/attest@");
     expect(releaseWorkflow).not.toContain("actions/attest@");
     expect(manifestJsonSchema.properties.managedFiles.minItems).toBe(1);
+    const fixtureReference = `registry.invalid/aubos-fixture/control-plane@sha256:${"1".repeat(64)}`;
+    expect(
+      new RegExp(
+        manifestJsonSchema.properties.images.additionalProperties.properties
+          .reference.pattern,
+      ).test(fixtureReference),
+    ).toBe(true);
+    expect(
+      new RegExp(
+        manifestJsonSchema.allOf[0]!.then.properties.images.additionalProperties
+          .properties.reference.pattern,
+      ).test(fixtureReference),
+    ).toBe(false);
   });
 
-  it("accepts only explicit digest-pinned GHCR image inputs", () => {
+  it("accepts only normalized digest-pinned OCI image inputs", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     expect(
       parseImageArgument(

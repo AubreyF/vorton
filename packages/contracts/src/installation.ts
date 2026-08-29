@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9-]*$/);
 const sha256Digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+const immutableOciReference = z
+  .string()
+  .regex(
+    /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/,
+  );
 const immutableGhcrReference = z
   .string()
   .regex(
@@ -73,7 +78,7 @@ export const releaseManifestSchema = z
     images: z.record(
       identifier,
       z.object({
-        reference: immutableGhcrReference,
+        reference: immutableOciReference,
         digest: sha256Digest,
       }),
     ),
@@ -108,6 +113,16 @@ export const releaseManifestSchema = z
           code: "custom",
           path: ["images", name, "reference"],
           message: "OCI references must be pinned to their declared digest",
+        });
+      }
+      if (
+        manifest.status === "released" &&
+        !immutableGhcrReference.safeParse(image.reference).success
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["images", name, "reference"],
+          message: "released OCI references must use lowercase GHCR paths",
         });
       }
     }
