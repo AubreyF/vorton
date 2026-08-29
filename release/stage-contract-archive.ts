@@ -70,6 +70,20 @@ export async function stageContractArchive(
     packages: "bundle",
   });
   await chmod(cliOutput, 0o755);
+
+  const canaryOutput = join(destination, "bin/hindsight-canary.cjs");
+  await build({
+    entryPoints: [join(sourceRoot, "release/hindsight-canary-cli.ts")],
+    outfile: canaryOutput,
+    bundle: true,
+    platform: "node",
+    target: "node22",
+    format: "cjs",
+    legalComments: "none",
+    sourcemap: false,
+    packages: "bundle",
+  });
+  await chmod(canaryOutput, 0o755);
 }
 
 async function main(): Promise<void> {

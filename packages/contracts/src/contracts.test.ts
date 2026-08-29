@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveDataClassification,
   executiveRecommendationSchema,
   installationLockSchema,
   recordActorSchema,
@@ -104,6 +105,21 @@ describe("installation contracts", () => {
     expect(
       releaseManifestSchema.safeParse({ ...candidate, status: "released" })
         .success,
+    ).toBe(false);
+    expect(
+      retrievedContextSchema.safeParse({
+        text: "Unclassified context",
+        trust: "untrusted",
+        derived: true,
+        citations: [
+          {
+            sourceRevisionId: "11111111-1111-4111-a111-111111111111",
+            sourceUri: "synthetic://conversation/1",
+            revisionHash: "a".repeat(64),
+            locator: "utterance:0",
+          },
+        ],
+      }).success,
     ).toBe(false);
   });
 
@@ -311,6 +327,7 @@ describe("installation contracts", () => {
         text: "Synthetic context",
         trust: "untrusted",
         derived: true,
+        classification: "synthetic",
         citations: [
           {
             sourceRevisionId: "11111111-1111-4111-a111-111111111111",
@@ -329,6 +346,18 @@ describe("installation contracts", () => {
         citations: [],
       }).success,
     ).toBe(false);
+  });
+
+  it("derives the most restrictive real classification from every source", () => {
+    expect(deriveDataClassification(["synthetic", "synthetic"])).toBe(
+      "synthetic",
+    );
+    expect(
+      deriveDataClassification(["synthetic", "public", "restricted"]),
+    ).toBe("restricted");
+    expect(() => deriveDataClassification([])).toThrow(
+      "at least one supporting source",
+    );
   });
 
   it("accepts a provider-neutral synthetic transcript revision", () => {

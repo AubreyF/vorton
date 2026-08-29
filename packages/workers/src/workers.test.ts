@@ -151,6 +151,7 @@ describe("executive worker providers", () => {
           text: "Untrusted recollection",
           trust: "untrusted",
           derived: true,
+          classification: "synthetic",
           citations: [
             {
               sourceRevisionId: evidenceRecordId,
@@ -244,6 +245,39 @@ describe("executive worker providers", () => {
       adapter.submit({
         ...request,
         evidence: [{ ...request.evidence[0]!, classification: "restricted" }],
+      }),
+    ).rejects.toThrow("exceeds the worker provider ceiling");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a restricted derived observation above the provider ceiling", async () => {
+    const fetch = vi.fn() as unknown as typeof globalThis.fetch;
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch,
+      dataClassificationCeiling: "internal",
+    });
+
+    await expect(
+      adapter.submit({
+        ...request,
+        derivedContext: [
+          {
+            text: "Restricted derived observation",
+            trust: "untrusted",
+            derived: true,
+            classification: "restricted",
+            citations: [
+              {
+                sourceRevisionId: evidenceRecordId,
+                sourceUri: "urn:aubos:synthetic",
+                revisionHash: "b".repeat(64),
+                locator: "fixture:restricted",
+              },
+            ],
+          },
+        ],
       }),
     ).rejects.toThrow("exceeds the worker provider ceiling");
     expect(fetch).not.toHaveBeenCalled();

@@ -16,9 +16,10 @@ export interface ApiEnvironment {
   jwtJwksUrl: string;
   workerUrl: string;
   workerSharedSecret: string;
-  workerProvider: string;
+  workerProvider: "openai-responses" | "codex-subscription";
   workerModel: string;
   workerClassificationCeiling: DataClassification;
+  workerRequestTimeoutMs: number;
   release: string;
   allowedOrigin: string;
   hindsightUrl: string;
@@ -41,6 +42,25 @@ function exactBoolean(
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`${name} must be exactly true or false`);
+}
+
+function boundedInteger(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = required(env, name);
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  const value = Number(raw);
+  if (value < minimum || value > maximum) {
+    throw new Error(
+      `${name} must be from ${String(minimum)} through ${String(maximum)}`,
+    );
+  }
+  return value;
 }
 
 function optionalCertificateAuthority(
@@ -71,6 +91,25 @@ function url(value: string, name: string, protocols: string[]): URL {
   }
   if (!protocols.includes(parsed.protocol)) {
     throw new Error(`${name} must use ${protocols.join(" or ")}`);
+  }
+  return parsed;
+}
+
+function privateFlyServiceUrl(value: string, name: string, port: number): URL {
+  const parsed = url(value, name, ["http:", "https:"]);
+  if (
+    parsed.protocol !== "http:" ||
+    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.internal$/.test(parsed.hostname) ||
+    parsed.port !== String(port) ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error(
+      `${name} must be exactly http://<fly-app>.internal:${String(port)}`,
+    );
   }
   return parsed;
 }
@@ -119,19 +158,20 @@ export function readApiEnvironment(
     throw new Error(
       "AUBOS_WORKER_SHARED_SECRET must contain at least 32 characters",
     );
-  const workerUrl = url(required(env, "AUBOS_WORKER_URL"), "AUBOS_WORKER_URL", [
-    "http:",
-    "https:",
-  ]);
+  const workerUrl = privateFlyServiceUrl(
+    required(env, "AUBOS_WORKER_URL"),
+    "AUBOS_WORKER_URL",
+    8080,
+  );
   const allowedOrigin = url(
     required(env, "AUBOS_ALLOWED_ORIGIN"),
     "AUBOS_ALLOWED_ORIGIN",
     ["https:"],
   );
-  const hindsightUrl = url(
+  const hindsightUrl = privateFlyServiceUrl(
     required(env, "AUBOS_HINDSIGHT_URL"),
     "AUBOS_HINDSIGHT_URL",
-    ["http:", "https:"],
+    8888,
   );
   const databaseContextSigningSecret = required(
     env,
@@ -141,6 +181,22 @@ export function readApiEnvironment(
     throw new Error(
       "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
     );
+  }
+  const workerProvider = required(env, "AUBOS_WORKER_PROVIDER");
+  if (
+    workerProvider !== "openai-responses" &&
+    workerProvider !== "codex-subscription"
+  ) {
+    throw new Error(
+      "AUBOS_WORKER_PROVIDER must be openai-responses or codex-subscription",
+    );
+  }
+  for (const name of ["AUBOS_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
+    if (env[name]?.trim()) {
+      throw new Error(
+        `The AubOS API must not receive provider billing secret ${name}`,
+      );
+    }
   }
   return {
     port,
@@ -158,10 +214,16 @@ export function readApiEnvironment(
     jwtJwksUrl: jwks.toString(),
     workerUrl: workerUrl.toString().replace(/\/$/, ""),
     workerSharedSecret: secret,
-    workerProvider: required(env, "AUBOS_WORKER_PROVIDER"),
+    workerProvider,
     workerModel: required(env, "AUBOS_WORKER_MODEL"),
     workerClassificationCeiling: dataClassificationSchema.parse(
       env.AUBOS_WORKER_CLASSIFICATION_CEILING ?? "internal",
+    ),
+    workerRequestTimeoutMs: boundedInteger(
+      env,
+      "AUBOS_WORKER_REQUEST_TIMEOUT_MS",
+      60_000,
+      1_860_000,
     ),
     release:
       env.FLY_IMAGE_REF?.trim() || env.AUBOS_RELEASE?.trim() || "development",

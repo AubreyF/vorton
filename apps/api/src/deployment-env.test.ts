@@ -11,19 +11,42 @@ const valid = {
   HINDSIGHT_API_TENANT_EXTENSION:
     "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension",
   HINDSIGHT_API_TENANT_API_KEY: "synthetic-tenant-key",
-  HINDSIGHT_API_LLM_API_KEY: "synthetic-model-key",
-  HINDSIGHT_API_LLM_PROVIDER: "openai",
-  HINDSIGHT_API_LLM_MODEL: "explicit-model",
-  HINDSIGHT_API_EMBEDDINGS_PROVIDER: "openai",
-  HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: "text-embedding-3-small",
-  HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: "synthetic-embedding-key",
+  HINDSIGHT_API_DATABASE_BACKEND: "postgresql",
+  HINDSIGHT_ENABLE_API: "true",
+  HINDSIGHT_ENABLE_CP: "false",
+  HINDSIGHT_API_HOST: "::",
+  HINDSIGHT_API_LLM_PROVIDER: "openai-codex",
+  HINDSIGHT_API_LLM_MODEL: "gpt-5.4-mini",
+  HINDSIGHT_API_LLM_REASONING_EFFORT: "low",
+  HINDSIGHT_API_LLM_MAX_CONCURRENT: "1",
+  HINDSIGHT_API_LLM_STRICT_SCHEMA: "true",
+  HINDSIGHT_API_CONSOLIDATION_LLM_PROVIDER: "openai-codex",
+  HINDSIGHT_API_CONSOLIDATION_LLM_MODEL: "gpt-5.4-mini",
+  HINDSIGHT_API_CONSOLIDATION_LLM_REASONING_EFFORT: "low",
+  HINDSIGHT_API_CONSOLIDATION_LLM_MAX_CONCURRENT: "1",
+  HINDSIGHT_API_CONSOLIDATION_LLM_PARALLELISM: "1",
+  HINDSIGHT_API_RUN_MIGRATIONS_ON_STARTUP: "false",
+  HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH: "true",
+  CODEX_HOME: "/data/hindsight-codex",
+  HINDSIGHT_API_EMBEDDINGS_PROVIDER: "local",
+  HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL: "BAAI/bge-small-en-v1.5",
+  HINDSIGHT_API_EMBEDDINGS_LOCAL_FORCE_CPU: "true",
   HINDSIGHT_API_RERANKER_PROVIDER: "rrf",
+  HINDSIGHT_API_ENABLE_OBSERVATIONS: "true",
+  HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: "true",
+  HINDSIGHT_API_WORKER_ENABLED: "true",
   HINDSIGHT_API_WORKER_ID: "installation-memory-1",
   HINDSIGHT_API_MCP_ENABLED: "false",
-  AUBOS_WORKER_PROVIDER: "openai-responses",
+  AUBOS_WORKER_PROVIDER: "codex-subscription",
   AUBOS_WORKER_MODEL: "explicit-model",
-  AUBOS_OPENAI_MODEL: "explicit-model",
-  AUBOS_OPENAI_STORE_RESPONSES: "false",
+  AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
+  AUBOS_WORKER_REQUEST_TIMEOUT_MS: "930000",
+  AUBOS_CODEX_MODEL: "explicit-model",
+  AUBOS_CODEX_CLASSIFICATION_CEILING: "internal",
+  AUBOS_CODEX_REASONING_EFFORT: "high",
+  AUBOS_CODEX_EXECUTION_TIMEOUT_MS: "900000",
+  AUBOS_CODEX_HOME: "/data/codex",
+  AUBOS_CODEX_WORKDIR: "/var/empty/aubos-worker",
   AUBOS_ALLOWED_ORIGIN: "https://control.aubos.example",
 };
 
@@ -56,12 +79,21 @@ describe("combined deployment environment", () => {
     ).toThrow("must remain disabled");
   });
 
-  it("requires the API worker boundary and OpenAI worker to use one exact model", () => {
+  it("requires the API and Codex worker boundary to use one exact model", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...valid,
-        AUBOS_OPENAI_MODEL: "different-model",
+        AUBOS_CODEX_MODEL: "different-model",
       }),
     ).toThrow("must exactly match");
+  });
+
+  it("requires the API request timeout to outlive Codex execution", () => {
+    expect(() =>
+      validateRuntimeEnvironment({
+        ...valid,
+        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "900000",
+      }),
+    ).toThrow("must exceed AUBOS_CODEX_EXECUTION_TIMEOUT_MS");
   });
 });

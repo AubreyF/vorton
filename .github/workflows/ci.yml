@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   check:
@@ -23,6 +24,45 @@ jobs:
       - run: npm run check
       - run: npm run release:validate
       - run: npm run format:check
+
+  release-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Detect a release manifest child
+        id: release
+        run: |
+          if git diff-tree -m --no-commit-id --name-only -r HEAD \
+            | grep -Eq '^release/manifests/[^/]+\.json$'; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.release.outputs.present == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.release.outputs.present == 'true'
+        run: npm ci
+      - if: steps.release.outputs.present == 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: steps.release.outputs.present == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify the exact release child and runtime evidence
+        if: steps.release.outputs.present == 'true'
+        run: >-
+          npm run release:preflight --
+          --if-present
+          --repository-owner "${{ github.repository_owner }}"
+          --release-commit "$(git rev-parse HEAD)"
 
   postgres-authority:
     runs-on: ubuntu-latest

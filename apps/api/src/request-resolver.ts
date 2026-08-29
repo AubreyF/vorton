@@ -1,12 +1,18 @@
-import type {
-  ExecutiveWorkerJobRequest,
-  ExecutionAuthority,
+import {
+  dataClassificationSchema,
+  deriveDataClassification,
+  retrievedContextSchema,
+  sourceCitationSchema,
+  type ExecutiveWorkerJobRequest,
+  type ExecutionAuthority,
+  type RetrievedContext,
+  type SourceCitation,
 } from "@aubos/contracts";
 import type { Database, PersonContext } from "@aubos/database";
-import type {
-  HindsightAdapter,
-  HindsightBank,
-  HindsightMemory,
+import {
+  installationHindsightBank,
+  type HindsightAdapter,
+  type HindsightMemory,
 } from "@aubos/memory";
 
 export interface ProposalInput {
@@ -37,6 +43,14 @@ interface EvidenceRow {
   summary: string;
   source_uri: string | null;
   classification: ExecutiveWorkerJobRequest["evidence"][number]["classification"];
+}
+
+interface MemorySourceRow {
+  source_revision_id: string;
+  classification: string;
+  source_uri: string;
+  revision_hash: string;
+  locator: string;
 }
 
 interface GrantRow {
@@ -269,30 +283,135 @@ export class DatabaseExecutiveRequestResolver {
         };
       },
     );
-    const bank: HindsightBank = {
-      id: `organizational:${input.installationId}:executive`,
-      installationId: input.installationId,
-      realm: "organizational",
-    };
-    let recalled: HindsightMemory[];
+    const bank = installationHindsightBank(
+      input.installationId,
+      "organizational",
+    );
+    let derivedContext: RetrievedContext[];
     try {
       await this.memory.ensureBank(bank);
-      recalled = await this.memory.retrieve(bank, input.objective);
+      const recalled = await this.memory.retrieve(bank, input.objective);
+      derivedContext = await this.#resolveDerivedContext(
+        input.installationId,
+        requester,
+        recalled,
+      );
     } catch (error) {
       this.onMemoryWarning(error);
-      recalled = [];
+      derivedContext = [];
     }
     return {
       ...request,
-      derivedContext: recalled
-        .filter((item) => item.citations.length > 0)
-        .map((item) => ({
-          text: item.text,
-          trust: "untrusted" as const,
-          derived: true as const,
-          citations: item.citations,
-        })),
+      derivedContext,
     };
+  }
+
+  async #resolveDerivedContext(
+    installationId: string,
+    requester: PersonContext,
+    recalled: HindsightMemory[],
+  ): Promise<RetrievedContext[]> {
+    const candidates = recalled.flatMap((item) => {
+      const citations = sourceCitationSchema.array().safeParse(item.citations);
+      if (
+        !citations.success ||
+        citations.data.length === 0 ||
+        item.invalidatedAt !== null ||
+        !sameStringSet(
+          item.sourceRevisionIds,
+          citations.data.map((citation) => citation.sourceRevisionId),
+        )
+      ) {
+        return [];
+      }
+      return [{ item, citations: citations.data }];
+    });
+    const sourceRevisionIds = [
+      ...new Set(candidates.flatMap(({ item }) => item.sourceRevisionIds)),
+    ];
+    if (sourceRevisionIds.length === 0) return [];
+
+    const sourceRows = await this.database.asPerson(
+      requester,
+      async (transaction) =>
+        transaction.query<MemorySourceRow>(
+          `select revision.id as source_revision_id, revision.classification,
+                  citation.source_uri, citation.revision_hash, citation.locator
+             from public.transcript_revisions revision
+             join public.memory_candidates candidate
+               on candidate.installation_id = revision.installation_id
+              and candidate.installation_realm = revision.installation_realm
+              and candidate.source_revision_id = revision.id
+              and candidate.admission_state = 'admitted'
+              and candidate.bank_id is not null
+             join public.source_citations citation
+               on citation.installation_id = revision.installation_id
+              and citation.installation_realm = revision.installation_realm
+              and citation.transcript_revision_id = revision.id
+            where revision.installation_id = $1
+              and revision.installation_realm = 'organizational'
+              and revision.id = any($2::uuid[])
+              and revision.deleted_at is null
+              and revision.boundary = 'organizational'
+              and revision.admission_state = 'admitted'
+              and not exists (
+                select 1 from public.transcript_revisions successor
+                 where successor.installation_id = revision.installation_id
+                   and successor.installation_realm = revision.installation_realm
+                   and successor.supersedes_revision_id = revision.id
+              )
+            order by revision.id, citation.locator`,
+          [installationId, sourceRevisionIds],
+        ),
+    );
+    const rowsBySource = new Map<string, MemorySourceRow[]>();
+    for (const row of sourceRows.rows) {
+      const rows = rowsBySource.get(row.source_revision_id) ?? [];
+      rows.push(row);
+      rowsBySource.set(row.source_revision_id, rows);
+    }
+
+    return candidates.flatMap(({ item, citations }) => {
+      const classifications = item.sourceRevisionIds.flatMap(
+        (sourceRevisionId) => {
+          const rows = rowsBySource.get(sourceRevisionId);
+          if (!rows || rows.length === 0) return [];
+          const classification = dataClassificationSchema.safeParse(
+            rows[0]?.classification,
+          );
+          if (
+            !classification.success ||
+            rows.some((row) => row.classification !== classification.data)
+          ) {
+            return [];
+          }
+          return [classification.data];
+        },
+      );
+      if (classifications.length !== item.sourceRevisionIds.length) return [];
+      const authoritativeCitations = new Set(
+        item.sourceRevisionIds.flatMap((sourceRevisionId) =>
+          (rowsBySource.get(sourceRevisionId) ?? []).map(citationKey),
+        ),
+      );
+      const recalledCitations = new Set(citations.map(citationKey));
+      if (
+        recalledCitations.size !== authoritativeCitations.size ||
+        [...recalledCitations].some(
+          (citation) => !authoritativeCitations.has(citation),
+        )
+      ) {
+        return [];
+      }
+      const parsed = retrievedContextSchema.safeParse({
+        text: item.text,
+        trust: "untrusted",
+        derived: true,
+        classification: deriveDataClassification(classifications),
+        citations,
+      });
+      return parsed.success ? [parsed.data] : [];
+    });
   }
 
   async resolveAuthority(
@@ -337,6 +456,26 @@ export class DatabaseExecutiveRequestResolver {
       };
     });
   }
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return (
+    leftSet.size === rightSet.size &&
+    [...leftSet].every((value) => rightSet.has(value))
+  );
+}
+
+function citationKey(citation: SourceCitation | MemorySourceRow): string {
+  return JSON.stringify([
+    "sourceRevisionId" in citation
+      ? citation.sourceRevisionId
+      : citation.source_revision_id,
+    "sourceUri" in citation ? citation.sourceUri : citation.source_uri,
+    "revisionHash" in citation ? citation.revisionHash : citation.revision_hash,
+    citation.locator,
+  ]);
 }
 
 const uuid =

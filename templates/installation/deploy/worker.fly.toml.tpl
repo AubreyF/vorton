@@ -8,23 +8,28 @@ primary_region = "sea"
 
 [env]
   PORT = "8080"
-  AUBOS_WORKER_PROVIDER = "openai-responses"
-  AUBOS_OPENAI_MODEL = "replace-with-explicit-model"
-  AUBOS_OPENAI_STORE_RESPONSES = "false"
-  AUBOS_OPENAI_CLASSIFICATION_CEILING = "internal"
+  AUBOS_WORKER_PROVIDER = "codex-subscription"
+  AUBOS_CODEX_MODEL = "replace-with-explicit-codex-model"
+  AUBOS_CODEX_REASONING_EFFORT = "high"
+  AUBOS_CODEX_EXECUTION_TIMEOUT_MS = "900000"
+  AUBOS_CODEX_HOME = "/data/codex"
+  AUBOS_CODEX_WORKDIR = "/var/empty/aubos-worker"
+  AUBOS_CODEX_CLASSIFICATION_CEILING = "internal"
 
-# Set AUBOS_WORKER_SHARED_SECRET and AUBOS_OPENAI_API_KEY with Fly secrets.
+# Set AUBOS_WORKER_SHARED_SECRET and the one-time AUBOS_CODEX_AUTH_JSON seed
+# with Fly secrets. After a healthy volume-backed restart, remove the seed with
+# `fly secrets unset AUBOS_CODEX_AUTH_JSON --app <worker-app>` and verify health.
+# The persistent cache is never overwritten by the seed.
 
-[[services]]
-  internal_port = 8080
-  protocol = "tcp"
-  auto_start_machines = true
-  auto_stop_machines = "stop"
-  min_machines_running = 1
+[[mounts]]
+  source = "{{INSTALLATION_NAME}}_codex_auth"
+  destination = "/data"
 
-  [[services.http_checks]]
-    interval = "15s"
-    timeout = "3s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/healthz"
+[checks.health]
+  type = "http"
+  port = 8080
+  interval = "15s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "get"
+  path = "/healthz"

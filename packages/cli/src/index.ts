@@ -99,6 +99,8 @@ export interface RollbackResult {
 }
 
 const HINDSIGHT_IMAGE =
+  "ghcr.io/vectorize-io/hindsight@sha256:a0e937366261b8a8f20ebcaf13758c689c381dcbbf01684e4375c2787c8c666d";
+const PREVIOUS_HINDSIGHT_IMAGE =
   "ghcr.io/vectorize-io/hindsight@sha256:ac50c0d95a65c88545f46665dc432544bcc378cec89e03675786a1d9383feb2d";
 
 const deploymentImageRoles = {
@@ -422,19 +424,42 @@ function validatorImageAssertion(content: string): string | null {
   return content.includes(dynamicImageAssertion) ? dynamicImageAssertion : null;
 }
 
+function validatorHindsightImageAssertion(content: string): {
+  assertion: string;
+  image: string;
+} | null {
+  const matches = [
+    ...content.matchAll(
+      /^\s*"deploy\/hindsight\.fly\.toml"\s*=>\s*"([^"]+)"\s*,?\s*$/gm,
+    ),
+  ];
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) {
+    throw new Error(`Validator must contain one Hindsight image contract`);
+  }
+  const image = matches[0]![1]!;
+  if (image !== HINDSIGHT_IMAGE && image !== PREVIOUS_HINDSIGHT_IMAGE) {
+    throw new Error(`Validator has an unrecognized Hindsight image contract`);
+  }
+  return { assertion: matches[0]![0], image };
+}
+
 function validatorContractFragments(content: string): {
   migration: string;
   images: string;
+  hindsight: string | null;
 } {
   if (!content.includes("Desired and locked releases differ")) {
     throw new Error(`Validator does not enforce desired and locked versions`);
   }
   const migration = validatorMigrationAssertion(content);
   const images = validatorImageAssertion(content);
+  const hindsight =
+    validatorHindsightImageAssertion(content)?.assertion ?? null;
   if (!migration || !images) {
     throw new Error(`Validator has an unrecognized release contract`);
   }
-  return { migration, images };
+  return { migration, images, hindsight };
 }
 
 function parseRubyStringList(value: string): string[] {
@@ -464,8 +489,11 @@ function validatorContractSemantics(
 ): {
   migrationHead: string | null;
   imageNames: string[];
+  hindsightImage: string | null;
 } {
   const fragments = validatorContractFragments(content);
+  const hindsightImage =
+    validatorHindsightImageAssertion(content)?.image ?? null;
   const migrationHead =
     /lock\.fetch\("coreMigrationHead"\) == "([a-z0-9_]+)"/.exec(
       fragments.migration,
@@ -484,6 +512,7 @@ function validatorContractSemantics(
   return {
     migrationHead: migrationHead ?? null,
     imageNames: parseRubyStringList(imageNamesSource),
+    hindsightImage,
   };
 }
 
@@ -498,16 +527,30 @@ function updateValidatorContract(
       ? ["control-plane", "worker"]
       : ["control-plane", "web", "worker"];
   const images = `assert(images.keys.sort == ${JSON.stringify(imageNames)}, "Unexpected runtime image set")`;
-  return content
+  let updated = content
     .replace(current.migration, migration)
     .replace(current.images, images);
+  if (release.schemaVersion === 2 && current.hindsight !== null) {
+    updated = updated.replace(
+      current.hindsight,
+      `    "deploy/hindsight.fly.toml" => "${HINDSIGHT_IMAGE}",`,
+    );
+  }
+  return updated;
 }
 
 function normalizeValidatorContract(content: string): string {
   const fragments = validatorContractFragments(content);
-  return content
+  let normalized = content
     .replace(fragments.migration, "{{AUBOS_MIGRATION_CONTRACT}}")
     .replace(fragments.images, "{{AUBOS_IMAGE_CONTRACT}}");
+  if (fragments.hindsight !== null) {
+    normalized = normalized.replace(
+      fragments.hindsight,
+      "{{AUBOS_HINDSIGHT_IMAGE_CONTRACT}}",
+    );
+  }
+  return normalized;
 }
 
 function restoreValidatorContract(
@@ -520,13 +563,28 @@ function restoreValidatorContract(
   const previousFragments = validatorContractFragments(previous);
   if (
     currentFragments.migration !== appliedFragments.migration ||
-    currentFragments.images !== appliedFragments.images
+    currentFragments.images !== appliedFragments.images ||
+    currentFragments.hindsight !== appliedFragments.hindsight
   ) {
     throw new Error(`Validator release contract changed after apply`);
   }
-  return current
+  let restored = current
     .replace(currentFragments.migration, previousFragments.migration)
     .replace(currentFragments.images, previousFragments.images);
+  if (
+    currentFragments.hindsight !== null &&
+    previousFragments.hindsight !== null
+  ) {
+    restored = restored.replace(
+      currentFragments.hindsight,
+      previousFragments.hindsight,
+    );
+  } else if (currentFragments.hindsight !== previousFragments.hindsight) {
+    throw new Error(
+      `Validator Hindsight contract shape changed during upgrade`,
+    );
+  }
+  return restored;
 }
 
 function buildImage(content: string, path: string): string {
@@ -551,15 +609,483 @@ function buildImage(content: string, path: string): string {
   return images[0]!;
 }
 
-function quotedTomlValue(content: string, key: string, path: string): string {
-  const expression = new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"\\s*$`, "gm");
-  const values = [...content.matchAll(expression)].map((match) => match[1]!);
+function tomlSectionValues(
+  content: string,
+  section: string,
+  arraySection: boolean,
+  key: string,
+  kind: "quoted" | "integer",
+): string[] {
+  let activeSection: string | null = null;
+  let activeArraySection = false;
+  const values: string[] = [];
+  for (const line of content.split("\n")) {
+    const arrayHeader = /^\s*\[\[([A-Za-z0-9_.-]+)\]\]\s*(?:#.*)?$/.exec(line);
+    if (arrayHeader) {
+      activeSection = arrayHeader[1]!;
+      activeArraySection = true;
+      continue;
+    }
+    const tableHeader = /^\s*\[([A-Za-z0-9_.-]+)]\s*(?:#.*)?$/.exec(line);
+    if (tableHeader) {
+      activeSection = tableHeader[1]!;
+      activeArraySection = false;
+      continue;
+    }
+    if (activeSection !== section || activeArraySection !== arraySection) {
+      continue;
+    }
+    const assignment =
+      kind === "quoted"
+        ? /^\s*([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"\s*(?:#.*)?$/.exec(line)
+        : /^\s*([A-Za-z0-9_-]+)\s*=\s*(\d+)\s*(?:#.*)?$/.exec(line);
+    if (assignment?.[1] === key) values.push(assignment[2]!);
+  }
+  return values;
+}
+
+function tomlSectionCount(
+  content: string,
+  section: string,
+  arraySection = false,
+): number {
+  const expression = arraySection
+    ? /^\s*\[\[([A-Za-z0-9_.-]+)\]\]\s*(?:#.*)?$/gm
+    : /^\s*\[([A-Za-z0-9_.-]+)]\s*(?:#.*)?$/gm;
+  return [...content.matchAll(expression)].filter(
+    (match) => match[1] === section,
+  ).length;
+}
+
+function hasFlyProxyServiceSection(content: string): boolean {
+  return [
+    ...content.matchAll(/^\s*\[{1,2}([A-Za-z0-9_.-]+)]{1,2}\s*(?:#.*)?$/gm),
+  ].some((match) =>
+    ["http_service", "services"].some(
+      (section) => match[1] === section || match[1]!.startsWith(`${section}.`),
+    ),
+  );
+}
+
+function quotedTomlValue(
+  content: string,
+  key: string,
+  path: string,
+  section: string,
+  arraySection = false,
+): string {
+  const values = tomlSectionValues(
+    content,
+    section,
+    arraySection,
+    key,
+    "quoted",
+  );
   if (values.length !== 1) {
     throw new Error(
-      `Fly configuration ${path} must contain exactly one ${key}`,
+      `Fly configuration ${path} must contain exactly one ${key} in ${arraySection ? "[[" : "["}${section}${arraySection ? "]]" : "]"}`,
     );
   }
   return values[0]!;
+}
+
+function optionalQuotedTomlValue(
+  content: string,
+  key: string,
+  path: string,
+  section: string,
+  arraySection = false,
+): string | null {
+  const values = tomlSectionValues(
+    content,
+    section,
+    arraySection,
+    key,
+    "quoted",
+  );
+  if (values.length > 1) {
+    throw new Error(
+      `Fly configuration ${path} must contain at most one ${key} in ${arraySection ? "[[" : "["}${section}${arraySection ? "]]" : "]"}`,
+    );
+  }
+  return values[0] ?? null;
+}
+
+function integerTomlValue(
+  content: string,
+  key: string,
+  path: string,
+  section: string,
+): number {
+  const values = tomlSectionValues(content, section, false, key, "integer");
+  if (values.length !== 1) {
+    throw new Error(
+      `Fly configuration ${path} must contain exactly one integer ${key} in [${section}]`,
+    );
+  }
+  return Number(values[0]!);
+}
+
+function assertSubscriptionFlyBoundary(
+  root: string,
+  overrides: Readonly<Partial<Record<DeploymentPath, string>>> = {},
+): void {
+  const apiPath = "deploy/api.fly.toml";
+  const workerPath = "deploy/worker.fly.toml";
+  const hindsightPath = "deploy/hindsight.fly.toml";
+  const api =
+    overrides[apiPath] ?? readFileSync(safeTarget(root, apiPath), "utf8");
+  if (
+    optionalQuotedTomlValue(api, "AUBOS_WORKER_PROVIDER", apiPath, "env") !==
+    "codex-subscription"
+  ) {
+    return;
+  }
+
+  const worker =
+    overrides[workerPath] ?? readFileSync(safeTarget(root, workerPath), "utf8");
+  const hindsight =
+    overrides[hindsightPath] ??
+    readFileSync(safeTarget(root, hindsightPath), "utf8");
+  if (
+    quotedTomlValue(worker, "AUBOS_WORKER_PROVIDER", workerPath, "env") !==
+      "codex-subscription" ||
+    quotedTomlValue(api, "AUBOS_WORKER_MODEL", apiPath, "env") !==
+      quotedTomlValue(worker, "AUBOS_CODEX_MODEL", workerPath, "env")
+  ) {
+    throw new Error(
+      "API and worker must use the same subscription provider and exact model",
+    );
+  }
+  const boundedMilliseconds = (
+    content: string,
+    key: string,
+    path: string,
+    minimum: number,
+    maximum: number,
+  ): number => {
+    const raw = quotedTomlValue(content, key, path, "env");
+    if (!/^\d+$/.test(raw)) {
+      throw new Error(`${key} in ${path} must be a decimal integer`);
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+      throw new Error(
+        `${key} in ${path} must be from ${minimum} through ${maximum}`,
+      );
+    }
+    return value;
+  };
+  const requestTimeoutMs = boundedMilliseconds(
+    api,
+    "AUBOS_WORKER_REQUEST_TIMEOUT_MS",
+    apiPath,
+    60_000,
+    1_860_000,
+  );
+  const executionTimeoutMs = boundedMilliseconds(
+    worker,
+    "AUBOS_CODEX_EXECUTION_TIMEOUT_MS",
+    workerPath,
+    60_000,
+    1_800_000,
+  );
+  const idleTimeoutMs =
+    integerTomlValue(
+      api,
+      "idle_timeout",
+      apiPath,
+      "http_service.http_options",
+    ) * 1_000;
+  for (const [label, margin] of [
+    ["worker request", requestTimeoutMs - executionTimeoutMs],
+    ["Fly idle", idleTimeoutMs - requestTimeoutMs],
+  ] as const) {
+    if (margin < 10_000 || margin > 60_000) {
+      throw new Error(
+        `${label} timeout margin must be from 10000 through 60000 milliseconds`,
+      );
+    }
+  }
+  const workerUrl = new URL(
+    quotedTomlValue(api, "AUBOS_WORKER_URL", apiPath, "env"),
+  );
+  const hindsightUrl = new URL(
+    quotedTomlValue(api, "AUBOS_HINDSIGHT_URL", apiPath, "env"),
+  );
+  if (
+    workerUrl.protocol !== "http:" ||
+    !workerUrl.hostname.endsWith("-worker.internal") ||
+    workerUrl.port !== "8080" ||
+    workerUrl.username !== "" ||
+    workerUrl.password !== "" ||
+    workerUrl.pathname !== "/" ||
+    workerUrl.search !== "" ||
+    workerUrl.hash !== "" ||
+    hindsightUrl.protocol !== "http:" ||
+    !hindsightUrl.hostname.endsWith("-hindsight.internal") ||
+    hindsightUrl.port !== "8888" ||
+    hindsightUrl.username !== "" ||
+    hindsightUrl.password !== "" ||
+    hindsightUrl.pathname !== "/" ||
+    hindsightUrl.search !== "" ||
+    hindsightUrl.hash !== ""
+  ) {
+    throw new Error(
+      "Subscription worker and Hindsight URLs must use Fly private networking",
+    );
+  }
+  const apiCeiling = quotedTomlValue(
+    api,
+    "AUBOS_WORKER_CLASSIFICATION_CEILING",
+    apiPath,
+    "env",
+  );
+  const workerCeiling = quotedTomlValue(
+    worker,
+    "AUBOS_CODEX_CLASSIFICATION_CEILING",
+    workerPath,
+    "env",
+  );
+  const classifications = new Set([
+    "public",
+    "internal",
+    "confidential",
+    "restricted",
+    "synthetic",
+  ]);
+  if (
+    apiCeiling !== workerCeiling ||
+    !classifications.has(apiCeiling) ||
+    !classifications.has(workerCeiling)
+  ) {
+    throw new Error(
+      "API and subscription worker classification ceilings must match exactly",
+    );
+  }
+  if (
+    tomlSectionCount(worker, "checks.health") !== 1 ||
+    hasFlyProxyServiceSection(worker) ||
+    tomlSectionCount(hindsight, "checks.ready") !== 1 ||
+    tomlSectionCount(hindsight, "checks.live") !== 1 ||
+    hasFlyProxyServiceSection(hindsight) ||
+    quotedTomlValue(worker, "type", workerPath, "checks.health") !== "http" ||
+    integerTomlValue(worker, "port", workerPath, "checks.health") !== 8080 ||
+    quotedTomlValue(worker, "path", workerPath, "checks.health") !==
+      "/healthz" ||
+    quotedTomlValue(hindsight, "HINDSIGHT_API_HOST", hindsightPath, "env") !==
+      "::"
+  ) {
+    throw new Error(
+      "Private worker and Hindsight services must use Fly 6PN listeners and top-level checks",
+    );
+  }
+}
+
+const hindsightProfile = {
+  HINDSIGHT_ENABLE_API: "true",
+  HINDSIGHT_ENABLE_CP: "false",
+  HINDSIGHT_API_HOST: "::",
+  HINDSIGHT_API_PORT: "8888",
+  HINDSIGHT_API_DATABASE_BACKEND: "postgresql",
+  HINDSIGHT_API_LLM_PROVIDER: "openai-codex",
+  HINDSIGHT_API_LLM_MODEL: "gpt-5.4-mini",
+  HINDSIGHT_API_LLM_REASONING_EFFORT: "low",
+  HINDSIGHT_API_LLM_MAX_CONCURRENT: "1",
+  HINDSIGHT_API_LLM_STRICT_SCHEMA: "true",
+  HINDSIGHT_API_CONSOLIDATION_LLM_PROVIDER: "openai-codex",
+  HINDSIGHT_API_CONSOLIDATION_LLM_MODEL: "gpt-5.4-mini",
+  HINDSIGHT_API_CONSOLIDATION_LLM_REASONING_EFFORT: "low",
+  HINDSIGHT_API_CONSOLIDATION_LLM_MAX_CONCURRENT: "1",
+  HINDSIGHT_API_CONSOLIDATION_LLM_PARALLELISM: "1",
+  HINDSIGHT_API_RUN_MIGRATIONS_ON_STARTUP: "false",
+  HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH: "true",
+  CODEX_HOME: "/data/hindsight-codex",
+  HINDSIGHT_API_EMBEDDINGS_PROVIDER: "local",
+  HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL: "BAAI/bge-small-en-v1.5",
+  HINDSIGHT_API_EMBEDDINGS_LOCAL_FORCE_CPU: "true",
+  HINDSIGHT_API_RERANKER_PROVIDER: "rrf",
+  HINDSIGHT_API_ENABLE_OBSERVATIONS: "true",
+  HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION: "true",
+  HINDSIGHT_API_WORKER_ENABLED: "true",
+  HINDSIGHT_API_TENANT_EXTENSION:
+    "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension",
+  HINDSIGHT_API_MCP_ENABLED: "false",
+  HINDSIGHT_API_LOG_FORMAT: "json",
+} as const;
+
+function assertQuotedProfile(
+  content: string,
+  profile: Readonly<Record<string, string>>,
+  path: string,
+): void {
+  for (const [key, value] of Object.entries(profile)) {
+    if (quotedTomlValue(content, key, path, "env") !== value) {
+      throw new Error(
+        `Invalid Hindsight profile at ${path}: expected ${key}=${value}`,
+      );
+    }
+  }
+}
+
+function runtimeDeploymentContract(
+  releaseRoot: string,
+  release: ReleaseManifest,
+): number | null {
+  const host = release.managedFiles.find(
+    (entry) => entry.path === "host/aubos-runtime.json",
+  );
+  if (!host) return null;
+  const content = readFileSync(safeTarget(releaseRoot, host.template), "utf8");
+  if (sha256(content) !== host.digest) {
+    throw new Error(`Template digest mismatch: ${host.template}`);
+  }
+  const parsed = JSON.parse(content) as { deploymentContract?: unknown };
+  return typeof parsed.deploymentContract === "number" &&
+    Number.isSafeInteger(parsed.deploymentContract)
+    ? parsed.deploymentContract
+    : null;
+}
+
+function assertHindsightRuntimeProfile(
+  content: string,
+  path: string,
+  installationName: string,
+  workerContent: string,
+  workerPath: string,
+): void {
+  assertQuotedProfile(content, hindsightProfile, path);
+  if (quotedTomlValue(content, "memory", path, "vm") !== "2gb") {
+    throw new Error(`Expected a 2gb Hindsight VM at ${path}`);
+  }
+  if (
+    quotedTomlValue(content, "HINDSIGHT_API_WORKER_ID", path, "env") !==
+    `${installationName}-memory`
+  ) {
+    throw new Error(`Invalid Hindsight worker identity at ${path}`);
+  }
+  if (tomlSectionCount(content, "mounts", true) !== 1) {
+    throw new Error(
+      `Hindsight must declare exactly one auth volume in ${path}`,
+    );
+  }
+  const mountSource = quotedTomlValue(content, "source", path, "mounts", true);
+  const mountDestination = quotedTomlValue(
+    content,
+    "destination",
+    path,
+    "mounts",
+    true,
+  );
+  if (
+    !/^[a-z0-9][a-z0-9_-]*$/.test(mountSource) ||
+    mountDestination !== "/data" ||
+    mountSource === mountDestination
+  ) {
+    throw new Error(
+      `Hindsight must use a dedicated named auth volume mounted at /data in ${path}`,
+    );
+  }
+  if (
+    optionalQuotedTomlValue(
+      workerContent,
+      "AUBOS_WORKER_PROVIDER",
+      workerPath,
+      "env",
+    ) === "codex-subscription"
+  ) {
+    if (tomlSectionCount(workerContent, "mounts", true) !== 1) {
+      throw new Error(
+        `Subscription worker must declare exactly one auth volume in ${workerPath}`,
+      );
+    }
+    const workerMountSource = quotedTomlValue(
+      workerContent,
+      "source",
+      workerPath,
+      "mounts",
+      true,
+    );
+    const workerMountDestination = quotedTomlValue(
+      workerContent,
+      "destination",
+      workerPath,
+      "mounts",
+      true,
+    );
+    if (
+      workerMountDestination !== "/data" ||
+      workerMountSource === mountSource
+    ) {
+      throw new Error(
+        "Hindsight and the executive worker must use separate auth volumes mounted at /data",
+      );
+    }
+  }
+  if (
+    tomlSectionCount(content, "checks.ready") !== 1 ||
+    tomlSectionCount(content, "checks.live") !== 1 ||
+    hasFlyProxyServiceSection(content) ||
+    quotedTomlValue(content, "type", path, "checks.ready") !== "http" ||
+    integerTomlValue(content, "port", path, "checks.ready") !== 8888 ||
+    quotedTomlValue(content, "method", path, "checks.ready") !== "get" ||
+    quotedTomlValue(content, "path", path, "checks.ready") !==
+      "/health/ready" ||
+    quotedTomlValue(content, "type", path, "checks.live") !== "http" ||
+    integerTomlValue(content, "port", path, "checks.live") !== 8888 ||
+    quotedTomlValue(content, "method", path, "checks.live") !== "get" ||
+    quotedTomlValue(content, "path", path, "checks.live") !== "/health/live"
+  ) {
+    throw new Error(
+      `Hindsight must use top-level ready and live checks without Fly Proxy services in ${path}`,
+    );
+  }
+}
+
+function assertHindsightUpgradeProfile(
+  content: string,
+  path: string,
+  installationName: string,
+  root: string,
+  rollbackImage: string,
+): void {
+  try {
+    const workerPath = "deploy/worker.fly.toml";
+    assertHindsightRuntimeProfile(
+      content,
+      path,
+      installationName,
+      readFileSync(safeTarget(root, workerPath), "utf8"),
+      workerPath,
+    );
+    assertHindsightRollbackContract(root, rollbackImage);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Hindsight image upgrade is blocked until the organization lands the reviewed option-one profile without deploying it: ${detail}`,
+    );
+  }
+}
+
+function assertHindsightRollbackContract(
+  root: string,
+  rollbackImage: string,
+): void {
+  const rollbackContracts = new Set<string>();
+  for (const validatorPath of [
+    "tests/acceptance/validate-installation.rb",
+    "scripts/validate-installation.rb",
+  ]) {
+    const validator = readText(safeTarget(root, validatorPath));
+    if (validator === null) continue;
+    const contract = validatorHindsightImageAssertion(validator);
+    if (contract !== null) rollbackContracts.add(contract.image);
+  }
+  if (rollbackContracts.size !== 1 || !rollbackContracts.has(rollbackImage)) {
+    throw new Error(
+      "an installation validator must bind the exact current Hindsight image for rollback",
+    );
+  }
 }
 
 function replaceBuildImage(
@@ -620,6 +1146,7 @@ function deploymentUpgradeActions(
 ): PlanAction[] {
   if (release.schemaVersion !== 2) return [];
   const scaffold = organizationScaffold(releaseRoot, name, name, release);
+  const deploymentContract = runtimeDeploymentContract(releaseRoot, release);
   return deploymentPaths.flatMap((path) => {
     const target = safeTarget(root, path);
     const existing = readText(target);
@@ -629,13 +1156,29 @@ function deploymentUpgradeActions(
     }
     const previousImage =
       path === "deploy/hindsight.fly.toml"
-        ? HINDSIGHT_IMAGE
+        ? buildImage(existing, path)
         : previous.images[firstPartyImageRole(path)!]?.reference;
+    if (
+      path === "deploy/hindsight.fly.toml" &&
+      previousImage !== HINDSIGHT_IMAGE &&
+      previousImage !== PREVIOUS_HINDSIGHT_IMAGE
+    ) {
+      throw new Error(
+        `Cannot prove ownership of preexisting deployment image at ${path}`,
+      );
+    }
     if (!previousImage) {
       if (buildImage(existing, path) === nextImage) return [];
       throw new Error(
         `Cannot prove ownership of preexisting deployment image at ${path}`,
       );
+    }
+    if (
+      path === "deploy/hindsight.fly.toml" &&
+      deploymentContract !== null &&
+      deploymentContract >= 3
+    ) {
+      assertHindsightUpgradeProfile(existing, path, name, root, previousImage);
     }
     const updated = replaceBuildImage(existing, path, previousImage, nextImage);
     return updated === existing
@@ -822,6 +1365,18 @@ export function planUpgrade(options: {
     previous,
     release,
   );
+  if ((runtimeDeploymentContract(options.releaseRoot, release) ?? 0) >= 3) {
+    assertSubscriptionFlyBoundary(
+      options.root,
+      Object.fromEntries(
+        deployment.flatMap((entry) =>
+          entry.content === null
+            ? []
+            : [[entry.path as DeploymentPath, entry.content]],
+        ),
+      ),
+    );
+  }
 
   for (const [path, expected] of Object.entries(previous.managedFiles)) {
     const observed = fileDigest(safeTarget(options.root, path));
@@ -960,6 +1515,113 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
   return entry.path === "aubos.lock.json" || entry.path.startsWith("host/");
 }
 
+function plannedDeploymentContent(
+  root: string,
+  plan: DistributionPlan,
+  path: DeploymentPath | "host/aubos-runtime.json",
+): string {
+  const actions = plan.actions.filter((entry) => entry.path === path);
+  if (actions.length > 1) {
+    throw new Error(`Plan contains duplicate actions for ${path}`);
+  }
+  const planned = actions[0]?.content;
+  if (planned === null) {
+    throw new Error(`Contract-3 apply cannot delete ${path}`);
+  }
+  if (planned !== undefined) return planned;
+  const current = readText(safeTarget(root, path));
+  if (current === null) {
+    throw new Error(`Contract-3 apply requires ${path}`);
+  }
+  return current;
+}
+
+function assertPlannedHindsightValidatorContract(
+  root: string,
+  plan: DistributionPlan,
+): void {
+  let validatorCount = 0;
+  for (const path of [
+    "tests/acceptance/validate-installation.rb",
+    "scripts/validate-installation.rb",
+  ]) {
+    const action = plan.actions.find((entry) => entry.path === path);
+    const content = action ? action.content : readText(safeTarget(root, path));
+    if (content === null) continue;
+    validatorCount += 1;
+    if (validatorHindsightImageAssertion(content)?.image !== HINDSIGHT_IMAGE) {
+      throw new Error(
+        `Contract-3 apply requires the planned validator at ${path} to bind the current Hindsight image`,
+      );
+    }
+  }
+  if (validatorCount === 0) {
+    throw new Error(
+      "Contract-3 apply requires a planned validator that binds the current Hindsight image",
+    );
+  }
+}
+
+function assertApplyDeploymentPreconditions(
+  root: string,
+  plan: DistributionPlan,
+): void {
+  if (plan.operation !== "upgrade") return;
+  const host = plannedDeploymentContent(root, plan, "host/aubos-runtime.json");
+  const hostContract = JSON.parse(host) as { deploymentContract?: unknown };
+  if (
+    typeof hostContract.deploymentContract !== "number" ||
+    hostContract.deploymentContract < 3
+  ) {
+    return;
+  }
+
+  const apiPath = "deploy/api.fly.toml";
+  const workerPath = "deploy/worker.fly.toml";
+  const hindsightPath = "deploy/hindsight.fly.toml";
+  const api = plannedDeploymentContent(root, plan, apiPath);
+  const worker = plannedDeploymentContent(root, plan, workerPath);
+  const hindsight = plannedDeploymentContent(root, plan, hindsightPath);
+  if (buildImage(hindsight, hindsightPath) !== HINDSIGHT_IMAGE) {
+    throw new Error(
+      "Contract-3 apply requires the current immutable Hindsight image",
+    );
+  }
+  const desiredActions = plan.actions.filter(
+    (entry) => entry.path === "aubos.yaml",
+  );
+  if (desiredActions.length !== 1 || desiredActions[0]!.content === null) {
+    throw new Error("Contract-3 upgrade requires one desired-version action");
+  }
+  const desired = installationManifestSchema.parse(
+    parseYaml(desiredActions[0]!.content),
+  );
+  assertPlannedHindsightValidatorContract(root, plan);
+  assertHindsightRuntimeProfile(
+    hindsight,
+    hindsightPath,
+    desired.metadata.name,
+    worker,
+    workerPath,
+  );
+  assertSubscriptionFlyBoundary(root, {
+    [apiPath]: api,
+    [workerPath]: worker,
+    [hindsightPath]: hindsight,
+  });
+
+  const currentHindsight = readText(safeTarget(root, hindsightPath));
+  if (
+    currentHindsight !== null &&
+    buildImage(currentHindsight, hindsightPath) !== HINDSIGHT_IMAGE
+  ) {
+    assertHindsightRollbackContract(
+      root,
+      buildImage(currentHindsight, hindsightPath),
+    );
+  }
+}
+
 function verifyActionContent(entry: PlanAction): void {
   const expectedPreimage =
     entry.preimageContent === null ? null : sha256(entry.preimageContent);
@@ -1051,13 +1713,44 @@ function verifyJournalMatchesPlan(
       );
     }
   }
-  let sawPending = false;
+  if (journal.status === "applying") {
+    let sawPending = false;
+    for (const entry of journal.actions) {
+      if (entry.state === "rolled-back") {
+        throw new Error("Applying journal cannot contain rolled-back actions");
+      }
+      if (entry.state === "pending") sawPending = true;
+      if (sawPending && entry.state === "applied") {
+        throw new Error("Journal applied states must form a completed prefix");
+      }
+    }
+    return;
+  }
+  if (journal.status === "applied") {
+    if (journal.actions.some((entry) => entry.state === "pending")) {
+      throw new Error("Applied journal cannot contain pending actions");
+    }
+    return;
+  }
   for (const entry of journal.actions) {
-    if (entry.state === "pending") sawPending = true;
-    if (sawPending && entry.state === "applied") {
-      throw new Error("Journal applied states must form a completed prefix");
+    const expectedState = rollbackManagedAction(entry)
+      ? "rolled-back"
+      : "applied";
+    if (entry.state !== expectedState) {
+      throw new Error(
+        `Rolled-back journal has invalid state at ${entry.path}: expected ${expectedState}`,
+      );
     }
   }
+}
+
+function rollbackManagedAction(entry: PlanAction): boolean {
+  return (
+    entry.ownership === "aubos" ||
+    entry.ownership === "aubos-image" ||
+    entry.ownership === "aubos-validator" ||
+    entry.ownership === "aubos-version"
+  );
 }
 
 export function applyPlan(options: {
@@ -1071,9 +1764,14 @@ export function applyPlan(options: {
     safeTarget(options.root, `.aubos/plans/${options.planHash}.json`);
   const plan = verifyStoredPlan(planPath, options.planHash, options.cliVersion);
   plan.actions.forEach(verifyActionContent);
+  const actionPaths = new Set(plan.actions.map((entry) => entry.path));
+  if (actionPaths.size !== plan.actions.length) {
+    throw new Error("Plan contains duplicate action paths");
+  }
   if (plan.actions.some((entry) => !allowedAction(plan, entry))) {
     throw new Error("Plan contains an action outside AubOS ownership rules");
   }
+  assertApplyDeploymentPreconditions(options.root, plan);
   const loaded = loadOrCreateJournal(options.root, plan, options.planHash);
   const journal = loaded.journal;
   verifyJournalMatchesPlan(journal, plan, options.planHash);
@@ -1084,18 +1782,28 @@ export function applyPlan(options: {
       "A rolled-back plan cannot be applied again; create a new plan",
     );
   }
+  if (journal.actions.some((entry) => entry.state === "rolled-back")) {
+    throw new Error(
+      "Rollback is in progress; resume rollback instead of apply",
+    );
+  }
 
   for (const entry of journal.actions) {
     const target = safeTarget(options.root, entry.path);
     const observed = fileDigest(target);
     if (entry.state === "applied") {
       if (entry.ownership === "organization") continue;
-      if (observed !== entry.postimage) {
+      if (!entryStillApplied(options.root, plan, entry)) {
         throw new Error(`Applied file changed since receipt: ${entry.path}`);
       }
       continue;
     }
-    if (loaded.existed && observed === entry.postimage) {
+    if (
+      loaded.existed &&
+      (observed === entry.postimage ||
+        (entry.ownership !== "organization" &&
+          entryStillApplied(options.root, plan, entry)))
+    ) {
       entry.state = "applied";
       continue;
     }
@@ -1110,6 +1818,7 @@ export function applyPlan(options: {
     (entry) => entry.state === "applied",
   );
   if (alreadyApplied && journal.status === "applied") {
+    validateInstallation(options.root);
     return { status: "already-applied", journalPath: receiptPath };
   }
 
@@ -1124,9 +1833,84 @@ export function applyPlan(options: {
     entry.state = "applied";
     writeJson(receiptPath, journal);
   }
+  validateInstallation(options.root);
   journal.status = "applied";
   writeJson(receiptPath, journal);
   return { status: "applied", journalPath: receiptPath };
+}
+
+function rollbackEntryAlreadyRestored(
+  root: string,
+  plan: DistributionPlan,
+  entry: Journal["actions"][number],
+): boolean {
+  const target = safeTarget(root, entry.path);
+  const current = readText(target);
+  if (current === null && entry.preimageContent === null) return true;
+  if (entry.ownership === "aubos-image") {
+    return (
+      current !== null &&
+      entry.preimageContent !== null &&
+      buildImage(current, entry.path) ===
+        buildImage(entry.preimageContent, entry.path)
+    );
+  }
+  if (entry.ownership === "aubos-version") {
+    return (
+      current !== null &&
+      plan.fromVersion !== null &&
+      installationManifestSchema.parse(parseYaml(current)).spec.release
+        .version === plan.fromVersion
+    );
+  }
+  if (entry.ownership === "aubos-validator") {
+    if (current === null || entry.preimageContent === null) return false;
+    const currentContract = validatorContractFragments(current);
+    const preimageContract = validatorContractFragments(entry.preimageContent);
+    return (
+      currentContract.migration === preimageContract.migration &&
+      currentContract.images === preimageContract.images &&
+      currentContract.hindsight === preimageContract.hindsight
+    );
+  }
+  return fileDigest(target) === entry.preimage;
+}
+
+function entryStillApplied(
+  root: string,
+  plan: DistributionPlan,
+  entry: Journal["actions"][number],
+): boolean {
+  const target = safeTarget(root, entry.path);
+  const current = readText(target);
+  if (entry.ownership === "aubos-image") {
+    if (entry.preimageContent === null) {
+      return fileDigest(target) === entry.postimage;
+    }
+    return (
+      current !== null &&
+      entry.content !== null &&
+      buildImage(current, entry.path) === buildImage(entry.content, entry.path)
+    );
+  }
+  if (entry.ownership === "aubos-version") {
+    return (
+      current !== null &&
+      installationManifestSchema.parse(parseYaml(current)).spec.release
+        .version === plan.release.version
+    );
+  }
+  if (entry.ownership === "aubos-validator") {
+    if (current === null || entry.content === null) return false;
+    const currentContract = validatorContractFragments(current);
+    const appliedContract = validatorContractFragments(entry.content);
+    return (
+      currentContract.migration === appliedContract.migration &&
+      currentContract.images === appliedContract.images &&
+      currentContract.hindsight === appliedContract.hindsight
+    );
+  }
+  return fileDigest(target) === entry.postimage;
 }
 
 export function rollbackPlan(options: {
@@ -1146,56 +1930,50 @@ export function rollbackPlan(options: {
   const path = journalPath(options.root, options.planHash);
   const journal = journalSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   verifyJournalMatchesPlan(journal, plan, options.planHash);
+  const managed = journal.actions.filter(rollbackManagedAction);
   if (journal.status === "rolled-back") {
+    for (const entry of managed) {
+      if (!rollbackEntryAlreadyRestored(options.root, plan, entry)) {
+        throw new Error(
+          `Rolled-back file changed since receipt: ${entry.path}`,
+        );
+      }
+    }
     return { status: "already-rolled-back", restored: [] };
   }
-  if (journal.status !== "applied") {
+  const recoveringFailedPostWriteApply =
+    journal.status === "applying" &&
+    journal.actions.every((entry) => entry.state === "applied");
+  if (journal.status !== "applied" && !recoveringFailedPostWriteApply) {
     throw new Error("Only a completely applied plan can be rolled back");
   }
-  const managed = journal.actions.filter(
-    (entry) =>
-      (entry.ownership === "aubos" ||
-        entry.ownership === "aubos-image" ||
-        entry.ownership === "aubos-validator" ||
-        entry.ownership === "aubos-version") &&
-      entry.state === "applied",
-  );
-
   for (const entry of managed) {
-    const target = safeTarget(options.root, entry.path);
-    const observed = fileDigest(target);
-    const imageFieldMatches =
-      entry.ownership === "aubos-image" &&
-      entry.preimageContent !== null &&
-      entry.content !== null &&
-      readText(target) !== null &&
-      buildImage(readText(target)!, entry.path) ===
-        buildImage(entry.content, entry.path);
-    const versionFieldMatches =
-      entry.ownership === "aubos-version" &&
-      readText(target) !== null &&
-      installationManifestSchema.parse(parseYaml(readText(target)!)).spec
-        .release.version === plan.release.version;
-    const validatorFieldsMatch =
-      entry.ownership === "aubos-validator" &&
-      entry.content !== null &&
-      readText(target) !== null &&
-      validatorContractFragments(readText(target)!).migration ===
-        validatorContractFragments(entry.content).migration &&
-      validatorContractFragments(readText(target)!).images ===
-        validatorContractFragments(entry.content).images;
-    if (
-      !imageFieldMatches &&
-      !versionFieldMatches &&
-      !validatorFieldsMatch &&
-      observed !== entry.postimage
-    ) {
+    const restored = rollbackEntryAlreadyRestored(options.root, plan, entry);
+    const applied = entryStillApplied(options.root, plan, entry);
+    if (entry.state === "rolled-back" && !restored) {
+      throw new Error(`Rolled-back file changed since receipt: ${entry.path}`);
+    }
+    if (entry.state === "applied" && !restored && !applied) {
       throw new Error(`Rollback postimage conflict at ${entry.path}`);
     }
   }
 
+  if (recoveringFailedPostWriteApply) {
+    // An apply can lose its response after writing every action but before
+    // post-write validation completes. Move that fully written journal into
+    // the same crash-recoverable rollback state only after conflict preflight.
+    journal.status = "applied";
+    writeJson(path, journal);
+  }
+
   const restored: string[] = [];
   for (const entry of [...managed].reverse()) {
+    if (entry.state === "rolled-back") continue;
+    if (rollbackEntryAlreadyRestored(options.root, plan, entry)) {
+      entry.state = "rolled-back";
+      writeJson(path, journal);
+      continue;
+    }
     const target = safeTarget(options.root, entry.path);
     if (entry.preimageContent === null) {
       if (existsSync(target)) unlinkSync(target);
@@ -1277,6 +2055,7 @@ export function validateInstallation(root: string): void {
     throw new Error(`Unexpected runtime image set: ${imageNames.join(", ")}`);
   }
   let validatorCount = 0;
+  const validatorHindsightImages = new Set<string>();
   for (const validatorPath of [
     "tests/acceptance/validate-installation.rb",
     "scripts/validate-installation.rb",
@@ -1298,9 +2077,15 @@ export function validateInstallation(root: string): void {
     ) {
       throw new Error(`Validator release contract drift at ${validatorPath}`);
     }
+    if (contract.hindsightImage !== null) {
+      validatorHindsightImages.add(contract.hindsightImage);
+    }
   }
   if (validatorCount === 0) {
     throw new Error(`Installation has no recognized Ruby validation contract`);
+  }
+  if (validatorHindsightImages.size > 1) {
+    throw new Error(`Installation validators disagree on the Hindsight image`);
   }
   for (const [path, expected] of Object.entries(lock.managedFiles)) {
     const observed = fileDigest(safeTarget(root, path));
@@ -1311,16 +2096,38 @@ export function validateInstallation(root: string): void {
     }
   }
   if (lock.images.web) {
+    const hostContract = JSON.parse(
+      readFileSync(safeTarget(root, "host/aubos-runtime.json"), "utf8"),
+    ) as { deploymentContract?: unknown };
+    const usesSubscriptionMemoryProfile =
+      typeof hostContract.deploymentContract === "number" &&
+      hostContract.deploymentContract >= 3;
+    const validatorHindsightImage = [...validatorHindsightImages][0];
+    if (
+      usesSubscriptionMemoryProfile &&
+      validatorHindsightImage !== undefined &&
+      validatorHindsightImage !== HINDSIGHT_IMAGE
+    ) {
+      throw new Error(
+        "Contract-3 installations must bind the current Hindsight image",
+      );
+    }
+    const expectedHindsightImage = usesSubscriptionMemoryProfile
+      ? HINDSIGHT_IMAGE
+      : (validatorHindsightImage ?? HINDSIGHT_IMAGE);
+    const requiresSubscriptionMemoryProfile = usesSubscriptionMemoryProfile;
     for (const path of deploymentPaths) {
       const content = readFileSync(safeTarget(root, path), "utf8");
       const observed = buildImage(content, path);
       const expected =
         path === "deploy/hindsight.fly.toml"
-          ? HINDSIGHT_IMAGE
-          : lock.images[firstPartyImageRole(path)!]?.reference;
-      if (!expected || observed !== expected) {
+          ? [expectedHindsightImage]
+          : [lock.images[firstPartyImageRole(path)!]?.reference].filter(
+              (reference): reference is string => Boolean(reference),
+            );
+      if (!expected.includes(observed)) {
         throw new Error(
-          `Deployment image validation failed at ${path}: expected ${expected ?? "missing"}, observed ${observed}`,
+          `Deployment image validation failed at ${path}: expected ${expected.join(" or ") || "missing"}, observed ${observed}`,
         );
       }
       if (/^\s*dockerfile\s*=/m.test(content)) {
@@ -1331,6 +2138,7 @@ export function validateInstallation(root: string): void {
           content,
           "HINDSIGHT_API_WORKER_ID",
           path,
+          "env",
         );
         const expectedWorkerId = `${manifest.metadata.name}-memory`;
         if (workerId !== expectedWorkerId || workerId.length < 8) {
@@ -1338,7 +2146,18 @@ export function validateInstallation(root: string): void {
             `Invalid Hindsight worker ID at ${path}: expected ${expectedWorkerId}`,
           );
         }
+        if (requiresSubscriptionMemoryProfile) {
+          const workerPath = "deploy/worker.fly.toml";
+          assertHindsightRuntimeProfile(
+            content,
+            path,
+            manifest.metadata.name,
+            readFileSync(safeTarget(root, workerPath), "utf8"),
+            workerPath,
+          );
+        }
       }
     }
+    assertSubscriptionFlyBoundary(root);
   }
 }

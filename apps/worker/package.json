@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@aubos/contracts": "*",
-    "@aubos/workers": "*"
+    "@aubos/workers": "*",
+    "@openai/codex": "0.151.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

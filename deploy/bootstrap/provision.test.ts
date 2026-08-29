@@ -20,6 +20,18 @@ function environment(): NodeJS.ProcessEnv {
   };
 }
 
+function codexEnvironment(): NodeJS.ProcessEnv {
+  return {
+    AUBOS_BOOTSTRAP_AUTH_USER_ID: authUserId,
+    AUBOS_WORKER_PROVIDER: "codex-subscription",
+    AUBOS_WORKER_MODEL: "gpt-5.6-terra",
+    AUBOS_CODEX_MODEL: "gpt-5.6-terra",
+    AUBOS_CODEX_REASONING_EFFORT: "high",
+    AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
+    AUBOS_CODEX_CLASSIFICATION_CEILING: "internal",
+  };
+}
+
 describe("first-install bootstrap", () => {
   it("produces a deterministic, secret-free, recommendation-only plan", async () => {
     const first = buildBootstrapPlan(await readBootstrapConfig(environment()));
@@ -45,7 +57,7 @@ describe("first-install bootstrap", () => {
         ...environment(),
         AUBOS_WORKER_PROVIDER: "synthetic",
       }),
-    ).rejects.toThrow("exactly openai-responses");
+    ).rejects.toThrow("openai-responses or codex-subscription");
     await expect(
       readBootstrapConfig({
         ...environment(),
@@ -58,6 +70,28 @@ describe("first-install bootstrap", () => {
         AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION: "restricted",
       }),
     ).rejects.toThrow("exceeds");
+  });
+
+  it("binds a subscription worker to the owner-delegated billing realm", async () => {
+    const config = await readBootstrapConfig(codexEnvironment());
+    expect(config).toMatchObject({
+      provider: "codex-subscription",
+      billingRealm: "owner-delegated",
+      model: "gpt-5.6-terra",
+    });
+    expect(buildBootstrapPlan(config)).toMatchObject({
+      executiveBinding: {
+        provider: "codex-subscription",
+        billingRealm: "owner-delegated",
+        model: "gpt-5.6-terra",
+      },
+    });
+    await expect(
+      readBootstrapConfig({
+        ...codexEnvironment(),
+        AUBOS_CODEX_REASONING_EFFORT: "unbounded",
+      }),
+    ).rejects.toThrow("AUBOS_CODEX_REASONING_EFFORT must be");
   });
 
   it("requires bootstrap and runtime database secrets only for apply", () => {

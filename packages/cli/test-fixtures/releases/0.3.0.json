@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "status": "candidate",
+  "version": "0.3.0",
+  "sourceCommit": "dddddddddddddddddddddddddddddddddddddddd",
+  "createdAt": "2026-08-29T12:00:00.000Z",
+  "cliVersion": "0.3.0",
+  "contracts": {
+    "host": 1,
+    "module": 1,
+    "worker": 1
+  },
+  "coreMigrationHead": "20260828000400_runtime_authority",
+  "images": {
+    "control-plane": {
+      "reference": "registry.invalid/aubos-fixture/control-plane@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "web": {
+      "reference": "registry.invalid/aubos-fixture/web@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "worker": {
+      "reference": "registry.invalid/aubos-fixture/worker@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    }
+  },
+  "managedFiles": [
+    {
+      "path": "host/aubos-runtime.json",
+      "template": "templates/releases/0.3.0/host/aubos-runtime.json",
+      "digest": "sha256:7efca405a23c02aaa70bd3a85f32060e4fed20711b0879577252b0928428bb5c"
+    }
+  ]
+}

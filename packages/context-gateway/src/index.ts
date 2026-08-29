@@ -1,18 +1,21 @@
 import { createHash } from "node:crypto";
 
-import type {
-  AdmissionState,
-  InstallationRealm,
-  RetrievalReceipt,
-  RetrievedContext,
-  SourceBoundary,
-  SourceCitation,
-  SourceRevision,
+import {
+  deriveDataClassification,
+  retrievedContextSchema,
+  type AdmissionState,
+  type InstallationRealm,
+  type RetrievalReceipt,
+  type RetrievedContext,
+  type SourceBoundary,
+  type SourceCitation,
+  type SourceRevision,
 } from "@aubos/contracts";
-import type {
-  HindsightAdapter,
-  HindsightBank,
-  HindsightMemory,
+import {
+  installationHindsightBank,
+  type HindsightAdapter,
+  type HindsightBank,
+  type HindsightMemory,
 } from "@aubos/memory";
 
 export type AdmitSourceInput = Omit<
@@ -99,6 +102,7 @@ export class ContextGateway {
         {
           id: `source:${input.id}`,
           text: input.text,
+          classification: input.classification,
           citations: structuredClone(input.citations),
           sourceRevisionIds: [input.id],
           invalidatedAt: null,
@@ -157,6 +161,9 @@ export class ContextGateway {
     const citations = uniqueCitations(
       sources.flatMap((source) => source.citations),
     );
+    const classification = deriveDataClassification(
+      sources.map((source) => source.classification),
+    );
     const lineage: ConsolidationLineage = {
       derivedMemoryId: input.derivedMemoryId,
       installationId: input.installationId,
@@ -174,6 +181,7 @@ export class ContextGateway {
       {
         id: input.derivedMemoryId,
         text: input.text,
+        classification,
         citations,
         sourceRevisionIds: [...input.sourceRevisionIds],
         invalidatedAt: null,
@@ -190,6 +198,14 @@ export class ContextGateway {
     this.#assertRealm(input.installationId, input.installationRealm);
     const bank = this.#bank(input.installationId, input.installationRealm);
     const memories = await this.#hindsight.retrieve(bank, input.query);
+    const admittedMemories = memories.flatMap((memory) => {
+      const context = this.#toUntrustedContext(
+        input.installationId,
+        input.installationRealm,
+        memory,
+      );
+      return context ? [{ memory, context }] : [];
+    });
     this.#receiptSequence += 1;
     const receipt: RetrievalReceipt = {
       id: deterministicUuid(
@@ -198,15 +214,17 @@ export class ContextGateway {
       installationId: input.installationId,
       bankId: bank.id,
       queryHash: sha256(input.query),
-      resultIds: memories.map((memory) => memory.id),
+      resultIds: admittedMemories.map(({ memory }) => memory.id),
       sourceRevisionIds: [
-        ...new Set(memories.flatMap((memory) => memory.sourceRevisionIds)),
+        ...new Set(
+          admittedMemories.flatMap(({ memory }) => memory.sourceRevisionIds),
+        ),
       ],
       retrievedAt: this.#clock.now(),
     };
     this.#receipts.push(receipt);
     return {
-      context: memories.map(toUntrustedContext),
+      context: admittedMemories.map(({ context }) => context),
       receipt: structuredClone(receipt),
     };
   }
@@ -272,11 +290,7 @@ export class ContextGateway {
   }
 
   #bank(installationId: string, realm: InstallationRealm): HindsightBank {
-    return {
-      id: `${realm}:${installationId}:default`,
-      installationId,
-      realm,
-    };
+    return installationHindsightBank(installationId, realm);
   }
 
   #sourceKey(installationId: string, sourceRevisionId: string): string {
@@ -285,6 +299,49 @@ export class ContextGateway {
 
   #lineageKey(installationId: string, derivedMemoryId: string): string {
     return `${installationId}\u0000${derivedMemoryId}`;
+  }
+
+  #toUntrustedContext(
+    installationId: string,
+    realm: InstallationRealm,
+    memory: HindsightMemory,
+  ): RetrievedContext | null {
+    if (memory.sourceRevisionIds.length === 0) return null;
+    const sources = memory.sourceRevisionIds.map((sourceRevisionId) =>
+      this.#sources.get(this.#sourceKey(installationId, sourceRevisionId)),
+    );
+    if (
+      sources.some(
+        (source) =>
+          !source ||
+          source.admissionState !== "admitted" ||
+          source.installationRealm !== realm ||
+          this.#deletedSources.has(this.#sourceKey(installationId, source.id)),
+      )
+    ) {
+      return null;
+    }
+    const activeSources = sources.filter(
+      (source): source is AdmitSourceInput & SourceRevision => Boolean(source),
+    );
+    const citationRevisionIds = memory.citations.map(
+      (citation) => citation.sourceRevisionId,
+    );
+    if (!sameStringSet(memory.sourceRevisionIds, citationRevisionIds)) {
+      return null;
+    }
+    const classification = deriveDataClassification(
+      activeSources.map((source) => source.classification),
+    );
+    if (memory.classification !== classification) return null;
+    const parsed = retrievedContextSchema.safeParse({
+      text: memory.text,
+      trust: "untrusted",
+      derived: true,
+      classification,
+      citations: memory.citations,
+    });
+    return parsed.success ? parsed.data : null;
   }
 
   #assertRealm(installationId: string, realm: InstallationRealm): void {
@@ -318,15 +375,6 @@ function stripContent(
   return structuredClone(revision);
 }
 
-function toUntrustedContext(memory: HindsightMemory): RetrievedContext {
-  return {
-    text: memory.text,
-    trust: "untrusted",
-    derived: true,
-    citations: structuredClone(memory.citations),
-  };
-}
-
 function uniqueCitations(citations: SourceCitation[]): SourceCitation[] {
   const seen = new Set<string>();
   return citations.filter((citation) => {
@@ -335,6 +383,15 @@ function uniqueCitations(citations: SourceCitation[]): SourceCitation[] {
     seen.add(key);
     return true;
   });
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return (
+    leftSet.size === rightSet.size &&
+    [...leftSet].every((value) => rightSet.has(value))
+  );
 }
 
 function sha256(value: string): string {

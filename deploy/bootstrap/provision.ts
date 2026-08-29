@@ -26,7 +26,8 @@ export interface BootstrapConfig {
   installationName: string;
   ownerDisplayName: string;
   workerName: string;
-  provider: "openai-responses";
+  provider: "openai-responses" | "codex-subscription";
+  billingRealm: "organization" | "owner-delegated";
   model: string;
   classificationCeiling: Classification;
   evidenceClassification: Classification;
@@ -182,27 +183,49 @@ export async function readBootstrapConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<BootstrapConfig> {
   const provider = required(env, "AUBOS_WORKER_PROVIDER");
-  if (provider !== "openai-responses") {
+  if (provider !== "openai-responses" && provider !== "codex-subscription") {
     throw new Error(
-      "AUBOS_WORKER_PROVIDER must be exactly openai-responses for the first installation",
+      "AUBOS_WORKER_PROVIDER must be openai-responses or codex-subscription for the first installation",
     );
   }
   const model = required(env, "AUBOS_WORKER_MODEL");
-  if (model !== required(env, "AUBOS_OPENAI_MODEL")) {
-    throw new Error("AUBOS_WORKER_MODEL must exactly match AUBOS_OPENAI_MODEL");
+  const providerModelName =
+    provider === "openai-responses"
+      ? "AUBOS_OPENAI_MODEL"
+      : "AUBOS_CODEX_MODEL";
+  if (model !== required(env, providerModelName)) {
+    throw new Error(
+      `AUBOS_WORKER_MODEL must exactly match ${providerModelName}`,
+    );
   }
   const classificationCeiling = exactClassification(
     optional(env, "AUBOS_WORKER_CLASSIFICATION_CEILING", "internal"),
     "AUBOS_WORKER_CLASSIFICATION_CEILING",
   );
-  const openAiCeiling = exactClassification(
-    optional(env, "AUBOS_OPENAI_CLASSIFICATION_CEILING", "internal"),
-    "AUBOS_OPENAI_CLASSIFICATION_CEILING",
+  const providerCeilingName =
+    provider === "openai-responses"
+      ? "AUBOS_OPENAI_CLASSIFICATION_CEILING"
+      : "AUBOS_CODEX_CLASSIFICATION_CEILING";
+  const providerCeiling = exactClassification(
+    optional(env, providerCeilingName, "internal"),
+    providerCeilingName,
   );
-  if (classificationCeiling !== openAiCeiling) {
+  if (classificationCeiling !== providerCeiling) {
     throw new Error(
-      "AUBOS_WORKER_CLASSIFICATION_CEILING must exactly match AUBOS_OPENAI_CLASSIFICATION_CEILING",
+      `AUBOS_WORKER_CLASSIFICATION_CEILING must exactly match ${providerCeilingName}`,
     );
+  }
+  if (provider === "codex-subscription") {
+    const reasoningEffort = required(env, "AUBOS_CODEX_REASONING_EFFORT");
+    if (
+      !["low", "medium", "high", "xhigh", "max", "ultra"].includes(
+        reasoningEffort,
+      )
+    ) {
+      throw new Error(
+        "AUBOS_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
+      );
+    }
   }
   const evidenceClassification = exactClassification(
     optional(env, "AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION", "internal"),
@@ -242,6 +265,8 @@ export async function readBootstrapConfig(
       "Executive Recommendation Worker",
     ),
     provider,
+    billingRealm:
+      provider === "codex-subscription" ? "owner-delegated" : "organization",
     model,
     classificationCeiling,
     evidenceClassification,
@@ -344,6 +369,7 @@ export function buildBootstrapPlan(
     executiveBinding: {
       workerId: ids.workerId,
       provider: config.provider,
+      billingRealm: config.billingRealm,
       model: config.model,
       classificationCeiling: config.classificationCeiling,
       roleId: ids.roleId,
@@ -639,14 +665,15 @@ export async function provisionInstallation(
     `insert into public.workers
        (id, installation_id, name, provider, billing_realm, host, runtime, model,
         advertised_capabilities, data_classification_ceiling, isolation, network_policy, health)
-     values ($1, $2, $3, $4, 'organization', 'fly.io', 'openai-responses', $5,
-             array['executive.propose'], $6, 'separate-service', 'private-api-only', 'offline')
+     values ($1, $2, $3, $4, $5, 'fly.io', $4, $6,
+             array['executive.propose'], $7, 'separate-service', 'private-api-only', 'offline')
      on conflict do nothing`,
     [
       ids.workerId,
       ids.installationId,
       config.workerName,
       config.provider,
+      config.billingRealm,
       config.model,
       config.classificationCeiling,
     ],
@@ -665,9 +692,9 @@ export async function provisionInstallation(
       installation_id: ids.installationId,
       name: config.workerName,
       provider: config.provider,
-      billing_realm: "organization",
+      billing_realm: config.billingRealm,
       host: "fly.io",
-      runtime: "openai-responses",
+      runtime: config.provider,
       model: config.model,
       advertised_capabilities: ["executive.propose"],
       data_classification_ceiling: config.classificationCeiling,
