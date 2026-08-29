@@ -103,8 +103,14 @@ describe("immutable release contracts", () => {
       join(process.cwd(), ".github/workflows/release.yml"),
       "utf8",
     );
+    const ciWorkflow = readFileSync(
+      join(process.cwd(), ".github/workflows/ci.yml"),
+      "utf8",
+    );
     const actions = [
-      ...`${buildWorkflow}\n${releaseWorkflow}`.matchAll(/uses:\s+([^\s#]+)/g),
+      ...`${buildWorkflow}\n${releaseWorkflow}\n${ciWorkflow}`.matchAll(
+        /uses:\s+([^\s#]+)/g,
+      ),
     ].map((match) => match[1]!);
 
     expect(actions.length).toBeGreaterThan(0);
