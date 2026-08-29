@@ -1,0 +1,125 @@
+name: Build immutable release images
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact source commit on the default branch
+        required: true
+        type: string
+      version:
+        description: SemVer release candidate version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-images-${{ inputs.source_commit }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+      - name: Verify immutable build inputs
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$SOURCE_COMMIT" = "$(git rev-parse HEAD)"
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]
+          git merge-base --is-ancestor "$SOURCE_COMMIT" "origin/${{ github.event.repository.default_branch }}"
+          test -f deploy/docker/control-plane.Dockerfile
+          test -f deploy/docker/worker.Dockerfile
+      - name: Resolve image repositories
+        id: images
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "control=ghcr.io/$owner/aubos-control-plane" >> "$GITHUB_OUTPUT"
+          echo "worker=ghcr.io/$owner/aubos-worker" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish control plane
+        id: control
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/docker/control-plane.Dockerfile
+          push: true
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.source_commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.version }}
+          tags: |
+            ${{ steps.images.outputs.control }}:${{ inputs.version }}
+            ${{ steps.images.outputs.control }}:source-${{ inputs.source_commit }}
+      - name: Generate control plane SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.images.outputs.control }}@${{ steps.control.outputs.digest }}
+          output-file: control-plane.spdx.json
+          artifact-name: control-plane-sbom
+          upload-release-assets: false
+      - name: Build and publish worker
+        id: worker
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/docker/worker.Dockerfile
+          push: true
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.source_commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.version }}
+          tags: |
+            ${{ steps.images.outputs.worker }}:${{ inputs.version }}
+            ${{ steps.images.outputs.worker }}:source-${{ inputs.source_commit }}
+      - name: Generate worker SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.images.outputs.worker }}@${{ steps.worker.outputs.digest }}
+          output-file: worker.spdx.json
+          artifact-name: worker-sbom
+          upload-release-assets: false
+      - name: Record externally consumable image digests
+        env:
+          CONTROL_IMAGE: ${{ steps.images.outputs.control }}
+          CONTROL_DIGEST: ${{ steps.control.outputs.digest }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          VERSION: ${{ inputs.version }}
+          WORKER_IMAGE: ${{ steps.images.outputs.worker }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+        run: |
+          jq -n \
+            --arg sourceCommit "$SOURCE_COMMIT" \
+            --arg version "$VERSION" \
+            --arg control "$CONTROL_IMAGE@$CONTROL_DIGEST" \
+            --arg worker "$WORKER_IMAGE@$WORKER_DIGEST" \
+            '{sourceCommit: $sourceCommit, version: $version, images: {"control-plane": $control, worker: $worker}}' \
+            > image-digests.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aubos-${{ inputs.version }}-image-digests
+          path: |
+            image-digests.json
+            control-plane.spdx.json
+            worker.spdx.json
+          if-no-files-found: error

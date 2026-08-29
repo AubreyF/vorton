@@ -1,55 +1,101 @@
-name: Release candidate verification
+name: Publish immutable release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Exact manifest version to verify
-        required: true
-        type: string
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
+  packages: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  verify:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run format:check
       - name: Resolve release version
         id: version
         env:
-          EVENT_NAME: ${{ github.event_name }}
           TAG_NAME: ${{ github.ref_name }}
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$EVENT_NAME" = "push" ]; then
-            echo "value=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Verify candidate manifest
-        if: github.event_name == 'workflow_dispatch'
-        run: npx tsx release/validate-manifest.ts --version "${{ steps.version.outputs.value }}"
-      - name: Verify immutable tagged release
-        if: github.event_name == 'push'
-        run: |
-          source_commit=$(git rev-parse "$GITHUB_SHA^")
-          npx tsx release/validate-manifest.ts --version "${{ steps.version.outputs.value }}" --released --source-commit "$source_commit"
-      - name: Assemble release contract artifact
-        run: tar -czf "aubos-${{ steps.version.outputs.value }}-contracts.tgz" release schemas deploy templates
-      - uses: actions/upload-artifact@v4
+          version=${TAG_NAME#v}
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run check
+      - run: npm run format:check
+      - name: Verify tagged release manifest and source parent
+        run: >-
+          npm run release:validate --
+          --version "${{ steps.version.outputs.value }}"
+          --released
+          --repository-owner "${{ github.repository_owner }}"
+          --release-commit "$GITHUB_SHA"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          name: aubos-${{ steps.version.outputs.value }}-contracts
-          path: aubos-${{ steps.version.outputs.value }}-contracts.tgz
-          if-no-files-found: error
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify published image references
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST: release/manifests/${{ steps.version.outputs.value }}.json
+        run: |
+          test "$(jq -r '.images | keys | join(",")' "$MANIFEST")" = "control-plane,worker"
+          source_commit=$(jq -r '.sourceCommit' "$MANIFEST")
+          while IFS= read -r reference; do
+            docker buildx imagetools inspect "$reference" >/dev/null
+            labels=$(docker buildx imagetools inspect "$reference" --format '{{json .Image.config.Labels}}')
+            test "$(jq -r '."org.opencontainers.image.revision"' <<<"$labels")" = "$source_commit"
+            docker buildx imagetools inspect "$reference" --format '{{json .Provenance}}' \
+              | jq -e 'type == "object" and length > 0' >/dev/null
+            docker buildx imagetools inspect "$reference" --format '{{json .SBOM}}' \
+              | jq -e 'type == "object" and length > 0' >/dev/null
+          done < <(jq -r '.images[].reference' "$MANIFEST")
+      - name: Assemble deterministic release contract artifact
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          artifact="aubos-$VERSION-contracts.tgz"
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+            -cf - release schemas deploy templates | gzip -n > "$artifact"
+          sha256sum "$artifact" > "$artifact.sha256"
+      - name: Generate release SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          file: aubos-${{ steps.version.outputs.value }}-contracts.tgz
+          output-file: aubos-${{ steps.version.outputs.value }}.spdx.json
+          artifact-name: aubos-${{ steps.version.outputs.value }}-sbom
+          upload-release-assets: false
+      - name: Create GitHub Release from tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          {
+            echo '(AI Generated).'
+            echo
+            echo "Immutable AubOS $VERSION release contracts and software bill of materials."
+            echo
+            echo 'Runtime images are identified only by the digest-pinned GHCR references in the release manifest.'
+          } > release-notes.md
+          gh release create "$TAG_NAME" \
+            "aubos-$VERSION-contracts.tgz" \
+            "aubos-$VERSION-contracts.tgz.sha256" \
+            "aubos-$VERSION.spdx.json" \
+            --verify-tag \
+            --title "AubOS $TAG_NAME" \
+            --notes-file release-notes.md

@@ -5,7 +5,6 @@
   "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "createdAt": "2026-08-28T00:00:00.000Z",
   "cliVersion": "0.1.0",
-  "sdkVersion": "0.1.0",
   "contracts": {
     "host": 1,
     "module": 1,

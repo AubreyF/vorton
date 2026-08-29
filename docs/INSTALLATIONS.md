@@ -23,7 +23,7 @@ my-organization/
   .github/workflows/
 ```
 
-`aubos.yaml` is human-authored desired state. `aubos.lock.json` is generated exact state. It records the AubOS version, source commit, OCI digests, CLI and SDK versions, host contract, module and worker protocols, core migration head, managed-file hashes, and last successful upgrade edge.
+`aubos.yaml` is human-authored desired state. `aubos.lock.json` is generated exact state. It records the AubOS version, source commit, OCI digests, CLI version, host contract, module and worker protocols, core migration head, managed-file hashes, and last successful upgrade edge.
 
 The updater may modify only AubOS-managed host adapters and the lock file. Organization identity, roles, policy, branding, modules, tools, deployment configuration, acceptance tests, and organization migrations are organization-owned. Generated plans, journals, and local receipts live under ignored `.aubos/`.
 
@@ -84,7 +84,7 @@ Organizations that modify AubOS core become distributors. They maintain a separa
 
 ## Release and deployment identity
 
-`release/manifests/<version>.json` binds a release version to a source commit, CLI and SDK versions, protocol contracts, migration head, managed templates, and digest-pinned OCI references. Checked-in Wave 1 manifests are candidates, not published releases. A release uses a dedicated manifest commit because a file cannot contain the hash of its own commit. The release workflow refuses a tag until its manifest is explicitly marked `released` and its source commit equals the tagged manifest commit's first parent.
+`release/manifests/<version>.json` binds a release version to a source commit, CLI version, protocol contracts, migration head, managed templates, and digest-pinned OCI references. Candidate manifests contain no fictional image identities. A release uses a dedicated manifest commit because a file cannot contain the hash of its own commit. That commit may change only the release manifest. The release workflow refuses a tag until its manifest is explicitly marked `released`, its source commit equals the tagged manifest commit's only parent, both first-party GHCR images resolve by digest, and every source-bound field matches the source tree. See [Immutable releases](RELEASES.md).
 
 Fly configuration remains organization-owned. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
 
