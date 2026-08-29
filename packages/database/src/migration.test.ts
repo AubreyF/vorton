@@ -6,6 +6,10 @@ const migrationUrl = new URL(
   "../../../supabase/migrations/20260828000100_kernel.sql",
   import.meta.url,
 );
+const executiveMigrationUrl = new URL(
+  "../../../supabase/migrations/20260828000300_executive.sql",
+  import.meta.url,
+);
 const memoryMigrationUrl = new URL(
   "../../../supabase/migrations/20260828000200_memory_conversations.sql",
   import.meta.url,
@@ -53,6 +57,26 @@ describe("kernel migration contract", () => {
     const sql = await readFile(migrationUrl, "utf8");
     expect(sql).not.toContain("raw_user_meta_data");
     expect(sql).toContain("revoke all on function public.provision_person");
+  });
+});
+
+describe("executive migration contract", () => {
+  it("stores provider job identity without giving model output authority", async () => {
+    const sql = await readFile(executiveMigrationUrl, "utf8");
+    expect(sql).toContain(
+      "alter type public.record_kind add value if not exists 'review'",
+    );
+    expect(sql).toContain(
+      "alter table public.worker_runs enable row level security",
+    );
+    expect(sql).toContain(
+      "public.worker_has_capability('executive.propose', 'recommend', work_id)",
+    );
+    expect(sql).toContain("not background or store");
+    expect(sql).toContain(
+      "Model output grants no database or external action authority",
+    );
+    expect(sql).not.toContain("grant update on public.work to aubos_worker");
   });
 });
 

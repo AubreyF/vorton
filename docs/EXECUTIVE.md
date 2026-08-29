@@ -39,7 +39,17 @@ The first FreedOS executive copilot supports:
 - outcome review against the approved intent; and
 - candidate learnings that remain quarantined until promoted.
 
-The initial worker route uses OpenAI Codex. Provider identity, model, billing boundary, host, and capabilities remain visible on every run. A future provider can implement the worker protocol without becoming a new authority source.
+The initial worker route uses the OpenAI Responses API. Provider identity, configured model, billing boundary, host, and capabilities remain visible on every run. A future provider can implement the worker protocol without becoming a new authority source.
+
+## Wave 2 implementation
+
+`@aubos/executive` coordinates the append-only path. It accepts Evidence, records a structured Proposal from a worker, requires a human Review and Decision, records explicit Approval, and creates governed Work only after the approval, Policy, capability grant, capability, and mode agree. Receipts cite the accepted Work. Outcomes compare the receipt with the approved intent. Learnings enter quarantine as candidates and gain no authority from repetition.
+
+`@aubos/workers` defines the provider boundary. The deterministic fake adapter covers tests without credentials. The OpenAI adapter uses the Responses API and Structured Outputs. `AUBOS_OPENAI_MODEL` is required. `AUBOS_OPENAI_STORE_RESPONSES` defaults to `false`. `AUBOS_OPENAI_CLASSIFICATION_CEILING` defaults to `internal`, and the adapter rejects Evidence above that ceiling. Background retrieval requires explicit response storage because AubOS does not retrieve stateless responses. Request metadata contains installation ID, Work ID, worker ID, role content hash, and role version. It contains no person, email, account, or role name.
+
+The OpenAI adapter sends no tools and exposes no database client or external executor. Its output can become a Proposal record. It cannot create a Decision, Approval, capability grant, Work, Receipt, Outcome, or admitted learning. The provider request shape follows the official [Responses create API](https://developers.openai.com/api/reference/cli/resources/responses/methods/create).
+
+Synthetic role files live under `packages/executive/roles`. They define methods and review standards. Loading or assigning one changes competence instructions only.
 
 ## Completion evidence
 

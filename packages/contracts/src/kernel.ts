@@ -3,6 +3,7 @@ import { z } from "zod";
 export const recordKindSchema = z.enum([
   "evidence",
   "proposal",
+  "review",
   "decision",
   "approval",
   "receipt",

@@ -34,4 +34,14 @@ describe("synthetic control-plane adapter", () => {
     });
     expect(snapshot.work[0]).toEqual(created);
   });
+
+  it("exposes executive stage and authority separately", async () => {
+    const snapshot =
+      await createSyntheticControlPlaneDataSource().getSnapshot();
+    expect(snapshot.executiveWorkflows[0]).toMatchObject({
+      stage: "review",
+      authority: "none",
+      provider: "deterministic-fake",
+    });
+  });
 });
