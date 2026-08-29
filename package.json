@@ -9,7 +9,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "modules/*"
+    "modules/*",
+    "examples/tools/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
