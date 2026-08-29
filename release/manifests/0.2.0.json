@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "status": "candidate",
   "version": "0.2.0",
-  "sourceCommit": "6e3d8f195f79d4e2dd9132bd9e9dfacdadc7d199",
+  "sourceCommit": "6ccfb09986b944e815ee36ad217b15c79229abe8",
   "createdAt": "2026-08-28T01:00:00.000Z",
   "cliVersion": "0.2.0",
   "sdkVersion": "0.2.0",
