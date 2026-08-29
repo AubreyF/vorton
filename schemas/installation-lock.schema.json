@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aubos.dev/schemas/installation-lock-v1.json",
+  "title": "AubOS installation exact state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "release",
+    "images",
+    "contracts",
+    "coreMigrationHead",
+    "managedFiles",
+    "lastUpgradeEdge"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sourceCommit", "manifestDigest"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference", "digest"],
+        "properties": {
+          "reference": { "type": "string", "pattern": "@sha256:[a-f0-9]{64}$" },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "module", "worker"],
+      "properties": {
+        "host": { "type": "integer", "minimum": 1 },
+        "module": { "type": "integer", "minimum": 1 },
+        "worker": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "coreMigrationHead": { "type": "string", "minLength": 1 },
+    "managedFiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[a-f0-9]{64}$"
+      }
+    },
+    "lastUpgradeEdge": { "type": ["string", "null"] }
+  }
+}

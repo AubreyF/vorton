@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aubos.dev/schemas/release-manifest-v1.json",
+  "title": "AubOS release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "version",
+    "sourceCommit",
+    "createdAt",
+    "cliVersion",
+    "sdkVersion",
+    "contracts",
+    "coreMigrationHead",
+    "images",
+    "managedFiles"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["candidate", "released"] },
+    "version": { "type": "string", "minLength": 1 },
+    "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "cliVersion": { "type": "string", "minLength": 1 },
+    "sdkVersion": { "type": "string", "minLength": 1 },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "module", "worker"],
+      "properties": {
+        "host": { "type": "integer", "minimum": 1 },
+        "module": { "type": "integer", "minimum": 1 },
+        "worker": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "coreMigrationHead": { "type": "string", "minLength": 1 },
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference", "digest"],
+        "properties": {
+          "reference": { "type": "string", "pattern": "@sha256:[a-f0-9]{64}$" },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "managedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "template", "digest"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          },
+          "template": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        }
+      }
+    }
+  }
+}
