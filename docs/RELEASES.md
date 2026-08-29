@@ -26,7 +26,7 @@ gh workflow run build-release-images.yml \
   -f version=0.1.0
 ```
 
-The workflow builds both images from the same checkout, publishes them to GHCR, generates SPDX JSON SBOMs, and creates GitHub provenance and SBOM attestations. Its `aubos-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
+The workflow builds both images from the same checkout, publishes them to GHCR, generates SPDX JSON SBOMs, and creates GitHub provenance and SBOM attestations. Every workflow action is pinned to an exact commit. Its `aubos-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
 
 Download the artifact outside the repository and inspect it:
 
@@ -76,7 +76,7 @@ git tag -a v0.1.0 -m "AubOS v0.1.0"
 git push origin v0.1.0
 ```
 
-The tag workflow revalidates the source parent, migration head, CLI version, managed templates, and manifest-only diff. It asks GHCR to resolve every digest-pinned image, creates a deterministic contract archive, generates its SBOM, creates GitHub attestations, and creates the GitHub Release from the tag. Any mismatch stops publication.
+The tag workflow revalidates the source parent, migration head, CLI version, managed templates, and manifest-only diff. It asks GHCR to resolve every digest-pinned image, then verifies provenance and SPDX attestations from the designated image-build workflow against the manifest's exact source commit. It creates a deterministic contract archive, generates its SBOM, creates GitHub attestations, and creates the GitHub Release from the tag. Any mismatch stops publication.
 
 ## Prepare the upgrade-proof release
 
