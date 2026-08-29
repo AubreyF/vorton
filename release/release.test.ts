@@ -149,7 +149,11 @@ describe("immutable release contracts", () => {
     expect(buildWorkflow).toContain("org.opencontainers.image.revision");
     expect(buildWorkflow).toContain("provenance: mode=max");
     expect(buildWorkflow).toContain("sbom: true");
-    expect(releaseWorkflow).toContain(".Image.config.Labels");
+    expect(releaseWorkflow).toContain("workflow_dispatch:");
+    expect(releaseWorkflow).toContain(
+      'git show-ref --verify "refs/tags/$TAG_NAME"',
+    );
+    expect(releaseWorkflow).toContain(".Image.Config.Labels");
     expect(releaseWorkflow).toContain("{{json .Provenance}}");
     expect(releaseWorkflow).toContain("{{json .SBOM}}");
     expect(releaseWorkflow).toContain(
