@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  executiveRecommendationSchema,
   installationLockSchema,
   recordActorSchema,
   recordInputSchema,
@@ -118,5 +119,33 @@ describe("installation contracts", () => {
         classification: "synthetic",
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts recommendations without mistaking them for authority", () => {
+    const result = executiveRecommendationSchema.safeParse({
+      summary: "Test a synthetic launch sequence.",
+      evidenceRecordIds: ["7fb46f09-3894-4c24-933c-77c7a403341c"],
+      alternatives: [
+        {
+          title: "Run the simulation",
+          description: "Use the offline fixture.",
+          expectedOutcome: "A comparable receipt exists.",
+          risks: ["The fixture may be incomplete."],
+        },
+      ],
+      recommendedAction: {
+        title: "Run offline simulation",
+        description: "Execute the synthetic launch fixture.",
+        capability: "moonbase.simulation.run",
+        mode: "modify",
+        externalEffect: false,
+      },
+      confidence: 0.72,
+      uncertainties: ["No live telemetry is connected."],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).not.toHaveProperty("policyId");
+    expect(result.data).not.toHaveProperty("capabilityGrantId");
   });
 });

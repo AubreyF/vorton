@@ -30,7 +30,13 @@ export type WorkSummary = {
 export type RecordSummary = {
   id: string;
   kind:
-    "evidence" | "proposal" | "decision" | "approval" | "receipt" | "outcome";
+    | "evidence"
+    | "proposal"
+    | "review"
+    | "decision"
+    | "approval"
+    | "receipt"
+    | "outcome";
   title: string;
   source: string;
   recordedAt: string;
@@ -44,6 +50,27 @@ export type ModuleSummary = {
   countLabel: string;
 };
 
+export type ExecutiveWorkflowSummary = {
+  id: string;
+  objective: string;
+  stage:
+    | "evidence"
+    | "proposal"
+    | "review"
+    | "decision"
+    | "approval"
+    | "work"
+    | "receipt"
+    | "outcome"
+    | "candidate-learning";
+  role: string;
+  worker: string;
+  provider: string;
+  model: string;
+  authority: "none" | "awaiting-approval" | "governed-work";
+  recordIds: string[];
+};
+
 export type ControlPlaneSnapshot = {
   installation: {
     name: string;
@@ -55,6 +82,7 @@ export type ControlPlaneSnapshot = {
   workers: WorkerSummary[];
   work: WorkSummary[];
   records: RecordSummary[];
+  executiveWorkflows: ExecutiveWorkflowSummary[];
   modules: ModuleSummary[];
   installedTools: [];
 };
@@ -73,7 +101,7 @@ const snapshot: ControlPlaneSnapshot = {
     name: "Moonbase Lab",
     mode: "synthetic",
     region: "Local",
-    release: "wave-1",
+    release: "wave-2",
   },
   people: [
     {
@@ -196,6 +224,19 @@ const snapshot: ControlPlaneSnapshot = {
       title: "Landing records catalogued",
       source: "WORK-101",
       recordedAt: "Yesterday",
+    },
+  ],
+  executiveWorkflows: [
+    {
+      id: "EXEC-201",
+      objective: "Reconcile launch readiness evidence",
+      stage: "review",
+      role: "Strategic reviewer v1",
+      worker: "Relay Seven",
+      provider: "deterministic-fake",
+      model: "synthetic-executive-v1",
+      authority: "none",
+      recordIds: ["REC-417"],
     },
   ],
   modules: [

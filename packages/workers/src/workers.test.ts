@@ -1,0 +1,139 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { FakeExecutiveWorkerAdapter, OpenAIResponsesAdapter } from "./index.js";
+
+const evidenceRecordId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
+const roleId = "d37f356b-6297-4cd1-902d-c2755423a612";
+const request = {
+  installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+  workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
+  role: {
+    roleId,
+    name: "Synthetic reviewer",
+    version: 1,
+    contentSha256: "a".repeat(64),
+    skillMarkdown: "# Synthetic reviewer\n\nRecommend. Never execute.",
+  },
+  objective: "Assess the moonbase fixture",
+  evidence: [
+    {
+      recordId: evidenceRecordId,
+      summary: "Synthetic pressure reading",
+      sourceUri: null,
+      classification: "synthetic" as const,
+    },
+  ],
+  background: false,
+};
+
+describe("executive worker providers", () => {
+  it("produces deterministic recommendations without an API key", async () => {
+    const adapter = new FakeExecutiveWorkerAdapter();
+    const first = await adapter.submit(request);
+    const second = await adapter.submit(request);
+
+    expect(first.jobId).toBe("fake-job-0001");
+    expect(second.jobId).toBe("fake-job-0002");
+    expect(first.store).toBe(false);
+    expect(first.recommendation?.recommendedAction.capability).toBe(
+      "executive.synthetic.check",
+    );
+  });
+
+  it("requires model selection through configuration", () => {
+    expect(
+      () => new OpenAIResponsesAdapter({ model: "", apiKey: "synthetic" }),
+    ).toThrow("model selection is required");
+  });
+
+  it("defaults OpenAI requests to store false and sends no personal identifier", async () => {
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        return new Response(
+          JSON.stringify({
+            id: "resp_synthetic",
+            model: "configured-model",
+            status: "completed",
+            output_text: JSON.stringify({
+              summary: "Review the synthetic evidence.",
+              evidenceRecordIds: [evidenceRecordId],
+              alternatives: [
+                {
+                  title: "Inspect",
+                  description: "Inspect locally.",
+                  expectedOutcome: "A receipt exists.",
+                  risks: [],
+                },
+              ],
+              recommendedAction: {
+                title: "Inspect fixture",
+                description: "Inspect locally.",
+                capability: "executive.synthetic.check",
+                mode: "diagnose",
+                externalEffect: false,
+              },
+              confidence: 0.8,
+              uncertainties: [],
+            }),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    );
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    const job = await adapter.submit(request);
+
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(body.store).toBe(false);
+    expect(body.model).toBe("configured-model");
+    expect(body.tools).toEqual([]);
+    expect(body).not.toHaveProperty("user");
+    expect(body.metadata).toEqual({
+      installation_id: request.installationId,
+      work_id: request.workId,
+      worker_id: request.workerId,
+      role_sha256: request.role.contentSha256,
+      role_version: "1",
+    });
+    expect(job.recommendation?.summary).toContain("synthetic evidence");
+  });
+
+  it("requires an explicit privacy exception for retrievable background jobs", async () => {
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch: vi.fn() as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(
+      adapter.submit({ ...request, background: true }),
+    ).rejects.toThrow("privacy default is store:false");
+  });
+
+  it("rejects Evidence above the configured provider ceiling", async () => {
+    const fetch = vi.fn() as unknown as typeof globalThis.fetch;
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch,
+      dataClassificationCeiling: "internal",
+    });
+
+    await expect(
+      adapter.submit({
+        ...request,
+        evidence: [{ ...request.evidence[0]!, classification: "restricted" }],
+      }),
+    ).rejects.toThrow("exceeds the worker provider ceiling");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
