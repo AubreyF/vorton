@@ -148,7 +148,19 @@ describe("installation distribution", () => {
     applyPlan({ root, planHash: upgraded.hash });
     expect(
       readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
-    ).toContain('"readinessPath": "/api/ready"');
+    ).toContain('"readinessPath": "/readyz"');
+    expect(
+      readFileSync(
+        join(root, "tests/acceptance/validate-installation.rb"),
+        "utf8",
+      ),
+    ).toContain("Runtime image is not digest-pinned");
+    expect(
+      readFileSync(
+        join(root, ".github/workflows/aubos-installation.yml"),
+        "utf8",
+      ),
+    ).toContain("ruby tests/acceptance/validate-installation.rb");
 
     const rolledBack = rollbackPlan({ root, planHash: upgraded.hash });
     expect(rolledBack.restored.sort()).toEqual(
