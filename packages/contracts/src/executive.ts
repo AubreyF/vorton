@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { capabilityModeSchema, dataClassificationSchema } from "./kernel.js";
+import { retrievedContextSchema } from "./memory.js";
 
 const uuid = z.string().uuid();
 
@@ -71,6 +72,7 @@ export const executiveWorkerJobRequestSchema = z.object({
   role: executiveRoleSchema,
   objective: z.string().trim().min(1),
   evidence: z.array(executiveEvidenceSchema).min(1),
+  derivedContext: z.array(retrievedContextSchema).optional(),
   background: z.boolean().default(false),
 });
 

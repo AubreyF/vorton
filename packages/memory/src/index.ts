@@ -80,3 +80,5 @@ export class InMemoryHindsightAdapter implements HindsightAdapter {
     return `${bank.realm}\u0000${bank.installationId}\u0000${bank.id}`;
   }
 }
+
+export * from "./http.js";

@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "release:validate": "tsx release/validate-manifest.ts",
+    "runtime:validate-env": "tsx deploy/fly/runtime/validate-environment.ts",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

@@ -1,0 +1,28 @@
+{
+  "name": "@aubos/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=dist/main.cjs",
+    "start": "node dist/main.cjs",
+    "dev": "tsx src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aubos/contracts": "*",
+    "@aubos/database": "*",
+    "@aubos/executive": "*",
+    "@aubos/memory": "*",
+    "@aubos/workers": "*",
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}
