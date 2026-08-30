@@ -203,7 +203,9 @@ export function CouncilSurface({
     <section className="council-module">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">Vorton / Command Bridge / Council</p>
+          <p className="eyebrow">
+            {installationName} / Command Bridge / Council
+          </p>
           <IntroHeading>Executive council</IntroHeading>
           <p className="lede">
             Five role skills examine one governed agenda independently, review

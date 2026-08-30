@@ -32,13 +32,18 @@ async function waitForPageStability(shell: HTMLElement) {
   }
 }
 
-function exportFileStem() {
+function exportFileStem(installationName: string) {
+  const installation =
+    installationName
+      .replace(/[^a-z0-9-]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "installation";
   const route =
     window.location.hash
       .replace(/^#/, "")
       .replace(/[^a-z0-9-]+/gi, "-")
       .toLowerCase() || "command-bridge";
-  return `vorton-${route}-${new Date().toISOString().slice(0, 10)}`;
+  return `${installation}-${route}-${new Date().toISOString().slice(0, 10)}`;
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -61,7 +66,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
 
 async function capturePage() {
   const shell = document.querySelector<HTMLElement>(".dashboard-shell");
-  if (!shell) throw new Error("The Vorton page shell is unavailable.");
+  if (!shell) throw new Error("The installation page shell is unavailable.");
 
   document
     .querySelectorAll<HTMLDetailsElement>(".topbar-actions details[open]")
@@ -158,7 +163,11 @@ async function savePdf(canvas: HTMLCanvasElement, filename: string) {
   pdf.save(`${filename}.pdf`);
 }
 
-export function ExportControls() {
+export function ExportControls({
+  installationName,
+}: {
+  installationName: string;
+}) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
   const tooltipId = useId();
@@ -197,7 +206,7 @@ export function ExportControls() {
       detailsRef.current?.removeAttribute("open");
       try {
         const { canvas } = await capturePage();
-        const filename = exportFileStem();
+        const filename = exportFileStem(installationName);
         if (format === "png") {
           triggerDownload(
             await canvasToBlob(canvas, "image/png"),
@@ -216,7 +225,7 @@ export function ExportControls() {
         summaryRef.current?.focus({ preventScroll: true });
       }
     },
-    [exporting],
+    [exporting, installationName],
   );
 
   const status = exporting

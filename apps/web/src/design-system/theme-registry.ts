@@ -150,8 +150,7 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
     id: "starship-light",
     name: "Starship",
     tagline: "Bright command deck",
-    description:
-      "The original Vorton command interface in its daylight palette.",
+    description: "The original command interface in its daylight palette.",
     previewGradient:
       "radial-gradient(circle at 71% 22%, #faffff 0 7%, rgb(139 234 255 / 0.34) 8% 13%, transparent 14%), radial-gradient(ellipse 82% 58% at 50% 112%, #77f1ff 0%, #3a8ee8 30%, #3644b8 68%, #211c72 100%), linear-gradient(180deg, #fbffff 0%, #e9f8ff 35%, #c9e6ff 68%, #aabcf6 100%)",
     previewDisplayFont: "var(--font-barlow-condensed), sans-serif",
@@ -164,8 +163,7 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
     id: "starship-dark",
     name: "Dark Star",
     tagline: "Night command deck",
-    description:
-      "The original Vorton command interface in its low-light palette.",
+    description: "The original command interface in its low-light palette.",
     previewGradient:
       "radial-gradient(circle at 72% 28%, #d8f7ff 0 4%, transparent 5%), linear-gradient(145deg, #07090d 0%, #171a24 54%, #28405e 100%)",
     previewDisplayFont: "var(--font-barlow-condensed), sans-serif",

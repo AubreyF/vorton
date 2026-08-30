@@ -62,6 +62,7 @@ describe("database executive request resolver", () => {
       [
         {
           id: input.installationId,
+          slug: "synthetic-installation",
           display_name: "Synthetic installation",
           person_kind: "owner",
         },
@@ -115,6 +116,7 @@ describe("database executive request resolver", () => {
       installations: [
         {
           id: input.installationId,
+          slug: "synthetic-installation",
           personKind: "owner",
           workItems: [
             {

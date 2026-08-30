@@ -56,6 +56,7 @@ async function mount() {
     import.meta.env.DEV &&
     new URLSearchParams(window.location.search).has("preview")
   ) {
+    document.title = "FreedOS";
     const { PreviewRuntime } = await import("./preview-runtime.js");
     content = (
       <PreviewRuntime>
@@ -65,6 +66,13 @@ async function mount() {
   } else {
     try {
       const config = readBrowserRuntimeConfig();
+      document.title = config.installationName;
+      document
+        .querySelector('meta[name="description"]')
+        ?.setAttribute(
+          "content",
+          `${config.installationName} governed control plane`,
+        );
       content = (
         <BrowserRuntime config={config}>
           <AuthenticApp />
@@ -73,6 +81,7 @@ async function mount() {
     } catch (error) {
       content = (
         <RuntimeState
+          installationName="Installation"
           title="Runtime configuration failed"
           detail={
             error instanceof Error

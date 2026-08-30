@@ -19,6 +19,10 @@ require_value() {
 validate_https_origin() {
   variable_name="$1"
   eval "variable_value=\${$variable_name}"
+  case "$variable_value" in
+    *[!A-Za-z0-9./:-]*) \
+      fail "$variable_name contains a character that is not valid in an HTTPS origin" ;;
+  esac
   printf '%s' "$variable_value" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$' || \
     fail "$variable_name must be an HTTPS origin without credentials, a path, query, or hash"
   case "$variable_value" in
@@ -28,6 +32,10 @@ validate_https_origin() {
 
 validate_public_supabase_key() {
   key="$VORTON_PUBLIC_SUPABASE_ANON_KEY"
+  case "$key" in
+    *[!A-Za-z0-9._-]*) \
+      fail "VORTON_PUBLIC_SUPABASE_ANON_KEY contains an invalid character" ;;
+  esac
   case "$key" in
     sb_secret_*) fail "VORTON_PUBLIC_SUPABASE_ANON_KEY must never contain a Supabase secret key" ;;
     sb_publishable_[A-Za-z0-9_-]*)
@@ -53,15 +61,38 @@ validate_public_supabase_key() {
   esac
 }
 
+validate_installation_name() {
+  name="$VORTON_PUBLIC_INSTALLATION_NAME"
+  [ -n "$(printf '%s' "$name" | tr -d '[:space:]')" ] || \
+    fail "VORTON_PUBLIC_INSTALLATION_NAME must contain a visible character"
+}
+
+validate_installation_slug() {
+  slug="$VORTON_PUBLIC_INSTALLATION_SLUG"
+  case "$slug" in
+    [a-z]*) ;;
+    *) fail "VORTON_PUBLIC_INSTALLATION_SLUG must begin with a lowercase letter" ;;
+  esac
+  case "$slug" in
+    *[!a-z0-9-]*) \
+      fail "VORTON_PUBLIC_INSTALLATION_SLUG may contain only lowercase letters, numbers, and hyphens" ;;
+  esac
+}
+
+require_value VORTON_PUBLIC_INSTALLATION_SLUG
+require_value VORTON_PUBLIC_INSTALLATION_NAME
 require_value VORTON_PUBLIC_SUPABASE_URL
 require_value VORTON_PUBLIC_SUPABASE_ANON_KEY
 require_value VORTON_PUBLIC_API_URL
+validate_installation_slug
+validate_installation_name
 validate_https_origin VORTON_PUBLIC_SUPABASE_URL
 validate_https_origin VORTON_PUBLIC_API_URL
 validate_public_supabase_key
 
 supabase_url="${VORTON_PUBLIC_SUPABASE_URL%/}"
 api_url="${VORTON_PUBLIC_API_URL%/}"
+installation_name_base64="$(printf '%s' "$VORTON_PUBLIC_INSTALLATION_NAME" | base64 | tr -d '\n')"
 
 mkdir -p "$web_root" "$(dirname "$nginx_output")"
 umask 022
@@ -70,18 +101,32 @@ nginx_tmp="${nginx_output}.tmp.$$"
 trap 'rm -f "$runtime_tmp" "$nginx_tmp"' EXIT HUP INT TERM
 
 {
-  printf '%s\n' 'globalThis.__VORTON_RUNTIME_CONFIG__ = Object.freeze({'
-  printf '  supabaseUrl: "%s",\n' "$supabase_url"
-  printf '  supabaseAnonKey: "%s",\n' "$VORTON_PUBLIC_SUPABASE_ANON_KEY"
-  printf '  apiUrl: "%s"\n' "$api_url"
-  printf '%s\n' '});'
+  printf '%s\n' '(function () {'
+  printf '  const installationNameBase64 = "%s";\n' "$installation_name_base64"
+  printf '%s\n' '  const installationName = new TextDecoder("utf-8", { fatal: true }).decode('
+  printf '%s\n' '    Uint8Array.from(atob(installationNameBase64), function (character) {'
+  printf '%s\n' '      return character.charCodeAt(0);'
+  printf '%s\n' '    }),'
+  printf '%s\n' '  );'
+  printf '%s\n' '  globalThis.__VORTON_RUNTIME_CONFIG__ = Object.freeze({'
+  printf '  installationSlug: "%s",\n' "$VORTON_PUBLIC_INSTALLATION_SLUG"
+  printf '%s\n' '    installationNameBase64: installationNameBase64,'
+  printf '    supabaseUrl: "%s",\n' "$supabase_url"
+  printf '    supabaseAnonKey: "%s",\n' "$VORTON_PUBLIC_SUPABASE_ANON_KEY"
+  printf '    apiUrl: "%s"\n' "$api_url"
+  printf '%s\n' '  });'
+  printf '%s\n' '  document.title = installationName;'
+  printf '%s\n' '  const description = document.querySelector("meta[name=description]");'
+  printf '%s\n' '  if (description) description.setAttribute("content", installationName + " governed control plane");'
+  printf '%s\n' '})();'
 } > "$runtime_tmp"
-mv "$runtime_tmp" "$web_root/runtime-config.js"
 
 sed \
   -e "s|@@VORTON_SUPABASE_ORIGIN@@|$supabase_url|g" \
   -e "s|@@VORTON_API_ORIGIN@@|$api_url|g" \
   "$nginx_template" > "$nginx_tmp"
+
+mv "$runtime_tmp" "$web_root/runtime-config.js"
 mv "$nginx_tmp" "$nginx_output"
 
 trap - EXIT HUP INT TERM
