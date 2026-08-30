@@ -508,3 +508,147 @@
     animation-iteration-count: 1 !important;
   }
 }
+.runtime-gate {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(24px, 5vw, 72px);
+  overflow: hidden;
+  place-items: center;
+  isolation: isolate;
+}
+
+.runtime-gate::before,
+.runtime-gate::after {
+  position: fixed;
+  z-index: -1;
+  border-radius: 50%;
+  content: "";
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.runtime-gate::before {
+  top: -18rem;
+  right: -12rem;
+  width: 44rem;
+  height: 44rem;
+  background: radial-gradient(
+    circle,
+    rgb(var(--theme-accent-primary-rgb) / 0.18),
+    transparent 68%
+  );
+}
+
+.runtime-gate::after {
+  bottom: -22rem;
+  left: -16rem;
+  width: 52rem;
+  height: 52rem;
+  background: radial-gradient(
+    circle,
+    rgb(var(--theme-accent-secondary-rgb) / 0.14),
+    transparent 70%
+  );
+}
+
+.runtime-gate form,
+.runtime-gate section {
+  display: grid;
+  width: min(31rem, 100%);
+  gap: 1.25rem;
+  padding: clamp(2rem, 5vw, 3.75rem);
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-card-radius);
+  background: var(--vorton-card);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: var(--vorton-header-backdrop);
+  backdrop-filter: var(--vorton-header-backdrop);
+}
+
+.runtime-gate form::before,
+.runtime-gate section::before {
+  display: grid;
+  width: fit-content;
+  min-width: 5.5rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.85rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-control-radius);
+  background: var(--vorton-logo-background);
+  color: var(--vorton-logo-text);
+  content: "Vorton";
+  font-family: var(--vorton-font-display);
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+.runtime-gate h1,
+.runtime-gate p {
+  margin: 0;
+}
+
+.runtime-gate h1 {
+  font-family: var(--vorton-font-display);
+  font-size: clamp(2.75rem, 8vw, 5rem);
+  font-weight: var(--vorton-heading-font-weight, 500);
+  letter-spacing: var(--vorton-heading-letter-spacing, -0.045em);
+  line-height: 0.92;
+}
+
+.runtime-gate > form > p:not(.eyebrow, .runtime-gate__error),
+.runtime-gate > section > p:not(.eyebrow) {
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.runtime-gate label {
+  display: grid;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.runtime-gate input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-control-radius);
+  background: var(--vorton-input-background, var(--surface-strong));
+  color: var(--ink);
+  font-size: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.runtime-gate button {
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--blue) 55%, var(--line));
+  border-radius: var(--vorton-control-radius);
+  background: var(--blue);
+  color: var(--vorton-button-text, white);
+  cursor: pointer;
+  font-weight: 700;
+  transition:
+    transform var(--vorton-ui-duration) var(--vorton-ui-easing),
+    filter var(--vorton-ui-duration) var(--vorton-ui-easing);
+}
+
+.runtime-gate button:hover {
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+}
+
+.runtime-gate__error {
+  color: var(--red);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}

@@ -10,7 +10,7 @@ The existing Freed Linux pilot remains independent while it proves the first tic
 
 ## Consequences
 
-- AubTown and FreedTown remain transitional implementation identifiers.
+- Legacy factory prototype names remain historical implementation details.
 - Factory can span any number of workers and hosts through the worker protocol.
 - Research and other non-code workers use the same kernel without being mislabeled as Factory executors.
 - The initial integration cannot delay, replace, or mutate the active Freed pilot.
