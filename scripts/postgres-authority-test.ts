@@ -15,6 +15,15 @@ import { promisify } from "node:util";
 
 import { Client } from "pg";
 
+import {
+  executiveWorkerJobSchema,
+  type ExecutiveWorkerJobRequest,
+} from "@vorton/contracts";
+import { Database } from "@vorton/database";
+import type { ExecutiveWorkerProvider } from "@vorton/workers";
+
+import { DatabaseExecutiveCouncilResolver } from "../apps/api/src/council-resolver.js";
+
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(__dirname, "..");
 const migrationDirectory = resolve(repositoryRoot, "supabase/migrations");
@@ -877,6 +886,81 @@ async function proveCouncilBoundary(
   );
 }
 
+async function proveCouncilResolverFrozenEvidenceRead(
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+): Promise<void> {
+  let sequence = 0;
+  const provider: ExecutiveWorkerProvider = {
+    provider: "openai-responses",
+    model: "synthetic-model",
+    dataClassificationCeiling: "synthetic",
+    storesResponses: false,
+    async submit(request: ExecutiveWorkerJobRequest) {
+      sequence += 1;
+      return executiveWorkerJobSchema.parse({
+        jobId: `postgres-council-job-${String(sequence).padStart(2, "0")}`,
+        provider: this.provider,
+        model: this.model,
+        status: "completed",
+        store: false,
+        background: false,
+        installationId: request.installationId,
+        workId: request.workId,
+        workerId: request.workerId,
+        recommendation: {
+          summary: "Synthetic PostgreSQL council recommendation.",
+          evidenceRecordIds: request.evidence.map((item) => item.recordId),
+          alternatives: [
+            {
+              title: "Remain bounded",
+              description: "Use only the supplied synthetic evidence.",
+              expectedOutcome: "A durable advisory record.",
+              risks: ["Synthetic evidence can omit a material condition."],
+            },
+          ],
+          recommendedAction: {
+            title: "Open owner review",
+            description: "Preserve owner authority.",
+            capability: "executive.review",
+            mode: "recommend",
+            externalEffect: false,
+          },
+          confidence: 0.7,
+          uncertainties: ["No outside sources were consulted."],
+        },
+      });
+    },
+    retrieve(job) {
+      return Promise.resolve(job);
+    },
+  };
+  const database = new Database({
+    connectionString: runtimeDatabaseUrl,
+    contextSigningSecret: contextSecret,
+  });
+  const resolver = new DatabaseExecutiveCouncilResolver(database, provider);
+  const requester = {
+    installationId: bootstrap.installationId,
+    authUserId: ownerAuthUserId,
+  };
+  try {
+    await resolver.install(bootstrap.workId, requester);
+    const advanced = await resolver.advance(bootstrap.workId, requester);
+    requireCondition(
+      advanced.counts.total === 1,
+      "Real PostgreSQL council advance did not persist its first record",
+    );
+    const reread = await resolver.get(bootstrap.workId, requester);
+    requireCondition(
+      reread.counts.total === 1,
+      "Real PostgreSQL council frozen-evidence read lost its durable record",
+    );
+  } finally {
+    await database.close();
+  }
+}
+
 async function main(): Promise<void> {
   const externalDatabaseUrl =
     process.env.VORTON_AUTHORITY_TEST_DATABASE_URL?.trim();
@@ -901,6 +985,7 @@ async function main(): Promise<void> {
       create schema auth;
       create role anon nologin noinherit;
       create role authenticated nologin noinherit;
+      grant usage on schema extensions to anon, authenticated;
       create table auth.users (
         id uuid primary key,
         email text unique
@@ -942,6 +1027,7 @@ async function main(): Promise<void> {
     const ownerPersonId = await seedAuthorityFixtures(admin, bootstrap);
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
+    await proveCouncilResolverFrozenEvidenceRead(runtimeDatabaseUrl, bootstrap);
     await proveCouncilBoundary(admin, runtimeDatabaseUrl, bootstrap);
 
     console.log(
@@ -967,6 +1053,7 @@ async function main(): Promise<void> {
             councilAttemptFenced: true,
             councilStorageDenied: true,
             councilWorkRevisionBound: true,
+            councilFrozenEvidenceReadBound: true,
           },
         },
         null,

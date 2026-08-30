@@ -138,6 +138,32 @@ describe("executive council route and surface", () => {
     expect(html).not.toContain("Council record is complete");
   });
 
+  it("does not fabricate an empty council when the authoritative read fails", () => {
+    const html = renderToStaticMarkup(
+      <CouncilSurface
+        installationName="FreedOS"
+        installationKind="owner"
+        workItems={workItems}
+        selectedWorkId={workItems[0]!.id}
+        evidence={evidence}
+        council={undefined}
+        loading={false}
+        running={false}
+        failure="The runtime could not complete the request"
+        onSelectWork={() => undefined}
+        onConvene={() => undefined}
+      />,
+    );
+    expect(html).toContain("Council state unavailable");
+    expect(html).toContain("Council state was not loaded");
+    expect(html).toContain("This does not mean the council is empty");
+    expect(html).not.toContain("Role skill · not installed");
+    expect(html).not.toContain("No worker assigned");
+    expect(html).not.toContain('aria-label="Council progress"');
+    expect(html).not.toContain("Install and convene council");
+    expect(html).not.toContain("Synthesis is withheld");
+  });
+
   it("states the authority boundary and exposes accessible governed controls", () => {
     const html = renderCouncil();
     expect(html).toContain("0 external actions authorized");
