@@ -17,7 +17,6 @@ const primarySections = [
   ["goals", "Goals"],
   ["tasks", "Tasks"],
   ["tools", "Tools"],
-  ["conversations", "Conversations"],
   ["factory", "Factory"],
   ["admin", "Admin"],
 ] as const;
@@ -32,9 +31,15 @@ const secondarySections: Record<SectionId, readonly string[]> = {
   goals: ["Active", "Guardrails", "Execution", "Calendar"],
   tasks: ["Priority", "Blocked", "All open", "History"],
   tools: ["Catalog", "moonbase-triage"],
-  conversations: ["Inbox", "Meet", "Omi", "Sources"],
   factory: ["Tickets", "Workers", "Pull requests", "Receipts"],
-  admin: ["People", "Workers", "Policy", "Records", "Sources"],
+  admin: ["People", "Workers", "Policy", "Records", "Conversations", "Sources"],
+};
+
+const legacySectionRoutes: Record<
+  string,
+  { section: SectionId; subsection: string }
+> = {
+  conversations: { section: "admin", subsection: "Conversations" },
 };
 
 export const commandBridgeSections = [
@@ -65,14 +70,19 @@ export const commandBridgeSections = [
 ] as const satisfies readonly SectionNavigationItem[];
 
 export function sectionFromHash(hash: string): SectionId {
-  const value = hash.slice(1).split("/")[0];
+  const value = hash.slice(1).split("/")[0] ?? "";
+  const legacyRoute = legacySectionRoutes[value];
+  if (legacyRoute) return legacyRoute.section;
   return primarySections.some(([id]) => id === value)
     ? (value as SectionId)
     : "command";
 }
 
 export function subsectionFromHash(section: SectionId, hash: string): string {
-  const requested = decodeURIComponent(hash.slice(1).split("/")[1] ?? "");
+  const [requestedSection = "", encodedSubsection] = hash.slice(1).split("/");
+  const legacyRoute = legacySectionRoutes[requestedSection];
+  if (legacyRoute?.section === section) return legacyRoute.subsection;
+  const requested = decodeURIComponent(encodedSubsection ?? "");
   return secondarySections[section].includes(requested)
     ? requested
     : secondarySections[section][0]!;
@@ -191,6 +201,7 @@ export function AuthenticApp() {
           <ModuleFoundation
             installationName={installationName}
             section={section}
+            view={subsection}
           />
         )}
       </main>
@@ -909,21 +920,27 @@ function CommandLane({
 function ModuleFoundation({
   installationName,
   section,
+  view,
 }: {
   installationName: string;
   section: Exclude<SectionId, "command">;
+  view: string;
 }) {
-  const label = primarySections.find(([id]) => id === section)?.[1] ?? section;
+  const sectionLabel =
+    primarySections.find(([id]) => id === section)?.[1] ?? section;
+  const pageLabel = section === "admin" ? view : sectionLabel;
   return (
     <section className="module-foundation">
       <p className="eyebrow">
-        {installationName} / {label}
+        {installationName} / {sectionLabel}
+        {section === "admin" ? ` / ${view}` : ""}
       </p>
-      <h1>{label}</h1>
+      <h1>{pageLabel}</h1>
       <p className="lede">
-        This module is being translated into {installationName} from the proven
-        personal interface. The previous generic preview has been removed rather
-        than presented as finished product.
+        This {section === "admin" ? "Admin area" : "module"} is being translated
+        into {installationName} from the proven personal interface. The previous
+        generic preview has been removed rather than presented as finished
+        product.
       </p>
       <div className="directional-empty-state">
         <h2>The interface migration is in progress</h2>

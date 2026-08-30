@@ -77,6 +77,14 @@ describe("executive council route and surface", () => {
       "moonbase-triage",
     );
     expect(subsectionFromHash("tools", "#tools/unknown")).toBe("Catalog");
+    expect(sectionFromHash("#admin/Conversations")).toBe("admin");
+    expect(subsectionFromHash("admin", "#admin/Conversations")).toBe(
+      "Conversations",
+    );
+    expect(sectionFromHash("#conversations/Inbox")).toBe("admin");
+    expect(subsectionFromHash("admin", "#conversations/Inbox")).toBe(
+      "Conversations",
+    );
     expect(sectionFromHash("#finance/Cash%20flow")).toBe("command");
     expect(commandSectionIdFromSubsection("Council")).toBe("command-council");
     expect(commandSectionIdFromSubsection("unknown")).toBe("command-briefing");

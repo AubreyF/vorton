@@ -1,6 +1,6 @@
 # Conversation ingestion
 
-Conversations gives personal and organizational installations one provider-neutral transcript model. Initial adapters support Google Meet and Omi through scheduled, read-only polling.
+The Admin module's Conversations area gives personal and organizational installations one provider-neutral transcript model. Initial adapters support Google Meet and Omi through scheduled, read-only polling.
 
 ## Canonical transcript revision
 

@@ -52,8 +52,7 @@ Role-based memory filtering is a future enforcement layer. The first release inc
 - Goals tracks desired outcomes and their evidence.
 - Tasks is the personal label and view over kernel Work.
 - Tools lets an installation define and preview its own tools.
-- Conversations ingests provider-neutral transcript revisions from adapters such as Google Meet and Omi.
-- Admin manages people, access, policies, integrations, and observed deployment state.
+- Admin manages people, access, policies, conversations, integrations, and observed deployment state. Its Conversations area ingests provider-neutral transcript revisions from adapters such as Google Meet and Omi.
 - Factory coordinates software production through kernel Work and external repository connectors.
 
 The upstream Tools module starts empty. It ships scaffolding and one uninstalled, offline example named Moonbase Triage. No personal tools, data, configuration, or assets are copied into Vorton.
