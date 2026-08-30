@@ -65,6 +65,9 @@ export function ExecutiveCouncil({
     let current = true;
     setLoading(true);
     setFailure(undefined);
+    setCouncil((existing) =>
+      existing?.work.id === selectedWorkId ? existing : undefined,
+    );
     void runtime
       .getExecutiveCouncil(selectedWorkId, installation.id)
       .then((state) => {
@@ -72,7 +75,6 @@ export function ExecutiveCouncil({
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setCouncil(undefined);
         setFailure(
           error instanceof Error
             ? error.message
@@ -198,6 +200,7 @@ export function CouncilSurface({
         ? "Resume council"
         : "Install and convene council";
   const IntroHeading = embedded ? "h2" : "h1";
+  const councilUnavailable = Boolean(failure && !council);
 
   return (
     <section className="council-module">
@@ -302,134 +305,170 @@ export function CouncilSurface({
         </details>
       </section>
 
-      <section
-        className="council-roster chart-panel"
-        aria-labelledby="roster-heading"
-      >
-        <header className="section-heading">
-          <div>
-            <p className="eyebrow">Council roster</p>
-            <h2 id="roster-heading">Role skills and assigned workers</h2>
-          </div>
-          <span className="status-pill status-good">
-            {installedRoles.length || 5} roles
-          </span>
-        </header>
-        <p className="council-roster-note">
-          A role is a versioned skill. A worker may inherit that skill for this
-          council without becoming the office or receiving its own authority.
-        </p>
-        <div className="compact-list council-role-list">
-          {(installedRoles.length > 0
-            ? installedRoles
-            : EXECUTIVE_COUNCIL_ROLES.map((name) => ({
-                roleId: name,
-                workerId: "",
-                name,
-                version: 0,
-                status: "awaiting_proposal" as const,
-                proposal: null,
-                review: null,
-              }))
-          ).map((role) => (
-            <article key={role.roleId}>
-              <div>
-                <p className="eyebrow">
-                  Role skill ·{" "}
-                  {role.version > 0 ? `v${role.version}` : "not installed"}
-                </p>
-                <h3>{role.name}</h3>
-                <p>
-                  {role.workerId
-                    ? `Assigned worker ${shortUtilityId(role.workerId)}`
-                    : "No worker assigned"}
-                </p>
-              </div>
-              <div className="right-meta">
-                <span className={`status-pill ${roleStatusTone(role.status)}`}>
-                  {formatCouncilStatus(role.status)}
-                </span>
-                {role.workerId && <code>{role.workerId}</code>}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="council-controls checkpoint-panel" aria-live="polite">
-        <div className="checkpoint-heading">
-          <div>
-            <p className="eyebrow">Council protocol</p>
-            <h2>{progressHeading(council, failure)}</h2>
-            <p className="checkpoint-summary">
-              Each advance performs one model call and writes one durable
-              advisory record. Reloading this page resumes from the next
-              unrecorded step.
-            </p>
-          </div>
-          <span className="status-pill status-watch">
-            {completed} / {required} records
-          </span>
-        </div>
-        <progress
-          aria-label="Council progress"
-          max={required}
-          value={completed}
+      {councilUnavailable ? (
+        <section
+          className="council-controls checkpoint-panel"
+          aria-live="assertive"
         >
-          {completed} of {required}
-        </progress>
-        {council?.nextStep && (
-          <p className="council-next-step">
-            Next: {formatCouncilStatus(council.nextStep.phase)} by{" "}
-            {council.nextStep.roleName}
-          </p>
-        )}
-        {failure && (
+          <div className="checkpoint-heading">
+            <div>
+              <p className="eyebrow">Council protocol</p>
+              <h2>Council state unavailable</h2>
+              <p className="checkpoint-summary">
+                The runtime could not read the durable council record. No role,
+                worker assignment, progress count, or result is shown until the
+                authoritative state can be loaded.
+              </p>
+            </div>
+            <span className="status-pill status-watch">Read failed</span>
+          </div>
           <div className="council-failure" role="alert">
-            <strong>Council paused</strong>
+            <strong>Council state was not loaded</strong>
             <p>{failure}</p>
             <p>
-              Completed recommendations and reviews remain visible. No failed
-              role is presented as agreement.
+              This does not mean the council is empty or uninstalled. Reload
+              after the runtime is healthy.
             </p>
           </div>
-        )}
-        <button
-          className="primary-button council-convene-button"
-          type="button"
-          disabled={
-            loading ||
-            running ||
-            !selectedWork ||
-            council?.phase === "complete" ||
-            installationKind !== "owner"
-          }
-          onClick={onConvene}
-        >
-          {loading ? "Loading council" : actionLabel}
-        </button>
-      </section>
+        </section>
+      ) : (
+        <>
+          <section
+            className="council-roster chart-panel"
+            aria-labelledby="roster-heading"
+          >
+            <header className="section-heading">
+              <div>
+                <p className="eyebrow">Council roster</p>
+                <h2 id="roster-heading">Role skills and assigned workers</h2>
+              </div>
+              <span className="status-pill status-good">
+                {installedRoles.length || 5} roles
+              </span>
+            </header>
+            <p className="council-roster-note">
+              A role is a versioned skill. A worker may inherit that skill for
+              this council without becoming the office or receiving its own
+              authority.
+            </p>
+            <div className="compact-list council-role-list">
+              {(installedRoles.length > 0
+                ? installedRoles
+                : EXECUTIVE_COUNCIL_ROLES.map((name) => ({
+                    roleId: name,
+                    workerId: "",
+                    name,
+                    version: 0,
+                    status: "awaiting_proposal" as const,
+                    proposal: null,
+                    review: null,
+                  }))
+              ).map((role) => (
+                <article key={role.roleId}>
+                  <div>
+                    <p className="eyebrow">
+                      Role skill ·{" "}
+                      {role.version > 0 ? `v${role.version}` : "not installed"}
+                    </p>
+                    <h3>{role.name}</h3>
+                    <p>
+                      {role.workerId
+                        ? `Assigned worker ${shortUtilityId(role.workerId)}`
+                        : "No worker assigned"}
+                    </p>
+                  </div>
+                  <div className="right-meta">
+                    <span
+                      className={`status-pill ${roleStatusTone(role.status)}`}
+                    >
+                      {formatCouncilStatus(role.status)}
+                    </span>
+                    {role.workerId && <code>{role.workerId}</code>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
-      <CouncilResults council={council} />
+          <section
+            className="council-controls checkpoint-panel"
+            aria-live="polite"
+          >
+            <div className="checkpoint-heading">
+              <div>
+                <p className="eyebrow">Council protocol</p>
+                <h2>{progressHeading(council, failure)}</h2>
+                <p className="checkpoint-summary">
+                  Each advance performs one model call and writes one durable
+                  advisory record. Reloading this page resumes from the next
+                  unrecorded step.
+                </p>
+              </div>
+              <span className="status-pill status-watch">
+                {completed} / {required} records
+              </span>
+            </div>
+            <progress
+              aria-label="Council progress"
+              max={required}
+              value={completed}
+            >
+              {completed} of {required}
+            </progress>
+            {council?.nextStep && (
+              <p className="council-next-step">
+                Next: {formatCouncilStatus(council.nextStep.phase)} by{" "}
+                {council.nextStep.roleName}
+              </p>
+            )}
+            {failure && (
+              <div className="council-failure" role="alert">
+                <strong>Council paused</strong>
+                <p>{failure}</p>
+                <p>
+                  Completed recommendations and reviews remain visible. No
+                  failed role is presented as agreement.
+                </p>
+              </div>
+            )}
+            <button
+              className="primary-button council-convene-button"
+              type="button"
+              disabled={
+                loading ||
+                running ||
+                !selectedWork ||
+                council?.phase === "complete" ||
+                installationKind !== "owner"
+              }
+              onClick={onConvene}
+            >
+              {loading ? "Loading council" : actionLabel}
+            </button>
+          </section>
 
-      <section className="council-owner-review checkpoint-panel">
-        <div>
-          <p className="eyebrow">Owner checkpoint</p>
-          <h2>Human review remains separate</h2>
-          <p className="checkpoint-summary">
-            The council can recommend and synthesize. It cannot approve,
-            publish, spend, execute, or grant capabilities.
-          </p>
-        </div>
-        <button
-          className="primary-button"
-          type="button"
-          disabled
-          title="Owner review is not yet available in this interface"
-        >
-          Review synthesis
-        </button>
-      </section>
+          <CouncilResults council={council} />
+
+          <section className="council-owner-review checkpoint-panel">
+            <div>
+              <p className="eyebrow">Owner checkpoint</p>
+              <h2>Human review remains separate</h2>
+              <p className="checkpoint-summary">
+                The council can recommend and synthesize. It cannot approve,
+                publish, spend, execute, or grant capabilities.
+              </p>
+            </div>
+            <button
+              className="primary-button"
+              type="button"
+              disabled
+              title="Owner review is not yet available in this interface"
+            >
+              Review synthesis
+            </button>
+          </section>
+        </>
+      )}
     </section>
   );
 }

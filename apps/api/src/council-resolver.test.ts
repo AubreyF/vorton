@@ -149,7 +149,9 @@ class CouncilDatabaseFixture {
         normalized.includes("from public.records") &&
         normalized.includes("kind = 'evidence'")
       ) {
-        const requestedIds = values[2] as string[] | undefined;
+        const requestedIds = normalized.includes("id = any($2::uuid[])")
+          ? (values[1] as string[] | undefined)
+          : undefined;
         rows =
           values[0] === installationId &&
           (!requestedIds || requestedIds.includes(evidenceId))
@@ -674,6 +676,13 @@ describe("database executive council resolver", () => {
         statement.includes("work_id is null"),
     );
     expect(evidenceQuery).toContain("work_id is null or work_id = $2");
+    const frozenEvidenceQuery = fixture.database.statements.find(
+      (statement) =>
+        statement.includes("kind = 'evidence'") &&
+        statement.includes("id = any("),
+    );
+    expect(frozenEvidenceQuery).toContain("id = any($2::uuid[])");
+    expect(frozenEvidenceQuery).not.toContain("$3");
     expect(fixture.provider.requests[0]?.evidence).toEqual([
       expect.objectContaining({ recordId: evidenceId }),
     ]);

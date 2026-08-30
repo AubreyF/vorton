@@ -14,6 +14,9 @@ FROM node:22.20.0-bookworm-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c
 ENV NODE_ENV=production
 ENV VORTON_CODEX_PATH=/usr/local/bin/codex
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /src/apps/worker/dist/main.cjs ./main.cjs
 COPY --from=build /src/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
 COPY --from=build /src/node_modules/@openai/codex-linux-*/vendor /usr/local/lib/node_modules/@openai/codex/vendor

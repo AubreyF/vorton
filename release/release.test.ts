@@ -112,6 +112,19 @@ afterEach(() => {
 });
 
 describe("immutable release contracts", () => {
+  it("keeps the worker TLS trust store in every release image", () => {
+    const workerDockerfile = readFileSync(
+      join(process.cwd(), "deploy/docker/worker.Dockerfile"),
+      "utf8",
+    );
+    expect(workerDockerfile).toMatch(
+      /apt-get install[^\n]*--yes ca-certificates/,
+    );
+    expect(workerDockerfile.indexOf("ca-certificates")).toBeLessThan(
+      workerDockerfile.indexOf("codex --version"),
+    );
+  });
+
   it("pins workflow dependencies and verifies private-repository image evidence", () => {
     const buildWorkflow = readFileSync(
       join(process.cwd(), ".github/workflows/build-release-images.yml"),
