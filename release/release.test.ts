@@ -335,14 +335,17 @@ describe("immutable release contracts", () => {
     const installation = join(root, "installation");
     const extractionManifest = join(root, "extraction-release.json");
     mkdirSync(installation);
-    const hostTemplate = "templates/releases/0.3.0/host/aubos-runtime.json";
+    const cliPackage = JSON.parse(
+      readFileSync(join(process.cwd(), "packages/cli/package.json"), "utf8"),
+    ) as { version: string };
+    const hostTemplate = `templates/releases/${cliPackage.version}/host/aubos-runtime.json`;
     const extractionRelease = {
       schemaVersion: 2,
       status: "released",
-      version: "0.3.0",
+      version: cliPackage.version,
       sourceCommit: "c".repeat(40),
       createdAt: "2026-08-28T12:00:00.000Z",
-      cliVersion: "0.3.0",
+      cliVersion: cliPackage.version,
       contracts: { host: 1, module: 1, worker: 1 },
       coreMigrationHead: "20260828000400_runtime_authority",
       images: {
@@ -434,7 +437,7 @@ describe("immutable release contracts", () => {
       mismatch = String((error as { stderr?: Buffer }).stderr ?? error);
     }
     expect(mismatch).toContain(
-      "requires AubOS CLI 9.9.9, but the running CLI is 0.3.0",
+      `requires AubOS CLI 9.9.9, but the running CLI is ${cliPackage.version}`,
     );
 
     execFileSync(
