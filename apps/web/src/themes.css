@@ -9,6 +9,12 @@
   --font-manrope: "Manrope";
   --font-space-grotesk: "Space Grotesk";
   --vorton-font-utility: var(--font-geist-mono), ui-monospace, monospace;
+  --vorton-button-primary-background: var(--vorton-text);
+  --vorton-button-primary-background-hover: var(--vorton-text);
+  --vorton-button-primary-border: var(--vorton-text);
+  --vorton-button-primary-text: var(--vorton-background);
+  --vorton-button-primary-shadow: none;
+  --vorton-button-primary-shadow-hover: none;
 }
 
 :root,
@@ -386,12 +392,14 @@
   --vorton-metric-value: var(--theme-metric-value);
   --vorton-control-accent: var(--theme-control-accent);
   --vorton-control-accent-rgb: var(--theme-control-accent-rgb);
-  --vorton-button-primary-background: var(--theme-button-primary-background);
+  --vorton-button-primary-background: var(--theme-text-primary);
+  --vorton-button-primary-background-hover: var(--theme-text-primary);
+  --vorton-button-primary-border: var(--theme-text-primary);
   --vorton-button-primary-shadow: var(--theme-button-primary-shadow);
   --vorton-button-primary-shadow-hover: var(
     --theme-button-primary-shadow-hover
   );
-  --vorton-button-primary-text: var(--theme-button-primary-text);
+  --vorton-button-primary-text: var(--theme-bg-root);
   --vorton-button-secondary-background: var(
     --theme-button-secondary-background
   );

@@ -223,8 +223,9 @@ summary {
   padding: 0 12px;
   place-items: center;
   border-radius: var(--vorton-control-radius);
-  background: var(--vorton-logo-background);
-  color: var(--vorton-logo-text);
+  background: var(--vorton-button-primary-background);
+  box-shadow: inset 0 -3px 0 var(--blue);
+  color: var(--vorton-button-primary-text);
   font-family: var(--vorton-font-display);
   font-size: 1rem;
   font-weight: 700;
@@ -1221,7 +1222,7 @@ h3 {
   padding: 8px 0;
   border: 0;
   background: transparent;
-  color: var(--green);
+  color: var(--ink);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 500;
@@ -1363,15 +1364,26 @@ h3 {
   min-height: 44px;
   margin-top: 20px;
   padding: 11px 14px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--vorton-button-primary-border);
   border-radius: 7px;
-  background: var(--ink);
-  color: var(--surface);
+  background: var(--vorton-button-primary-background);
+  box-shadow: var(--vorton-button-primary-shadow);
+  color: var(--vorton-button-primary-text);
   cursor: pointer;
   font-weight: 500;
+  transition:
+    filter var(--vorton-ui-duration) var(--vorton-ui-easing),
+    box-shadow var(--vorton-ui-duration) var(--vorton-ui-easing);
 }
-.primary-button:hover {
-  background: var(--green);
+.primary-button:hover:not(:disabled) {
+  background: var(--vorton-button-primary-background-hover);
+  box-shadow: var(--vorton-button-primary-shadow-hover);
+  filter: brightness(1.06) saturate(1.04);
+}
+.primary-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+  opacity: 0.72;
 }
 
 .scenario-layout {
@@ -2089,8 +2101,8 @@ details > summary {
   font-size: 0.75rem;
 }
 .segmented-control button[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--surface);
+  background: var(--vorton-button-primary-background);
+  color: var(--vorton-button-primary-text);
 }
 .comparison-grid,
 .readiness-grid {
@@ -2254,15 +2266,21 @@ details > summary {
 .ratification-button {
   min-height: 44px;
   padding: 10px 13px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--vorton-button-primary-border);
   border-radius: 7px;
-  background: var(--ink);
-  color: var(--surface);
+  background: var(--vorton-button-primary-background);
+  box-shadow: var(--vorton-button-primary-shadow);
+  color: var(--vorton-button-primary-text);
   cursor: pointer;
   font-weight: 500;
+  transition:
+    filter var(--vorton-ui-duration) var(--vorton-ui-easing),
+    box-shadow var(--vorton-ui-duration) var(--vorton-ui-easing);
 }
 .ratification-button:hover:not(:disabled) {
-  background: var(--green);
+  background: var(--vorton-button-primary-background-hover);
+  box-shadow: var(--vorton-button-primary-shadow-hover);
+  filter: brightness(1.06) saturate(1.04);
 }
 .ratification-button:disabled {
   border-color: var(--line);
