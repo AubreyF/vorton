@@ -22,6 +22,10 @@ const runtimeAuthorityMigrationUrl = new URL(
   "../../../supabase/migrations/20260828000400_runtime_authority.sql",
   import.meta.url,
 );
+const executiveCouncilMigrationUrl = new URL(
+  "../../../supabase/migrations/20260828000500_executive_council.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -103,6 +107,42 @@ describe("runtime authority migration contract", () => {
     expect(sql).toContain(
       "revoke all on aubos_private.runtime_context_keys from public, anon, authenticated, aubos_worker",
     );
+  });
+});
+
+describe("executive council migration contract", () => {
+  it("allows only capability-scoped worker proposals and reviews", async () => {
+    const sql = await readFile(executiveCouncilMigrationUrl, "utf8");
+    expect(sql).toContain("kind not in ('approval', 'decision')");
+    expect(sql).toContain(
+      "public.worker_has_capability('executive.propose', 'recommend', work_id)",
+    );
+    expect(sql).toContain(
+      "public.worker_has_capability('executive.review', 'recommend', work_id)",
+    );
+    expect(sql).toContain("public.worker_has_assigned_role");
+    expect(sql).not.toContain("grant update on public.work to aubos_worker");
+  });
+
+  it("fences one contribution and one completed run per phase and role", async () => {
+    const sql = await readFile(executiveCouncilMigrationUrl, "utf8");
+    expect(sql).toContain("records_council_phase_role_fence");
+    expect(sql).toContain("worker_runs_council_active_phase_role_fence");
+    expect(sql).toContain("vorton.executive-council.v1");
+    expect(sql).toContain("payload ->> 'authority' = 'none'");
+    expect(sql).toContain("metadata ->> 'authority' = 'none'");
+    expect(sql).toContain("and not store");
+    expect(sql).toContain("and not background");
+    expect(sql).toContain("public.council_work_revision_matches");
+    expect(sql).toContain("public.council_completed_run_matches");
+    expect(sql).toContain(
+      "run.metadata -> 'input_record_ids' = target_input_record_ids",
+    );
+    expect(sql).toContain(
+      "run.metadata ->> 'work_input_sha256' = target_work_input_sha256",
+    );
+    expect(sql).toContain("'acceptanceCriteria', work_row.acceptance_criteria");
+    expect(sql).toContain("status in ('queued', 'in_progress', 'completed')");
   });
 });
 

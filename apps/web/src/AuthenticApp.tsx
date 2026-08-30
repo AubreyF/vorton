@@ -9,6 +9,7 @@ import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { ExportControls } from "./design-system/export-controls.js";
+import { ExecutiveCouncil } from "./executive-council.js";
 import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
 
 const primarySections = [
@@ -28,7 +29,7 @@ type Installation = RuntimeBootstrap["installations"][number];
 type WorkItem = Installation["workItems"][number];
 
 const secondarySections: Record<SectionId, readonly string[]> = {
-  command: ["Briefing", "Evidence", "Decisions", "Activity"],
+  command: ["Briefing", "Council", "Decisions", "Activity"],
   opportunities: ["Workbench", "Selected", "Signals", "Pipeline"],
   goals: ["Active", "Guardrails", "Execution", "Calendar"],
   tasks: ["Priority", "Blocked", "All open", "History"],
@@ -39,20 +40,26 @@ const secondarySections: Record<SectionId, readonly string[]> = {
   admin: ["People", "Workers", "Policy", "Records", "Sources"],
 };
 
-function initialSection(): SectionId {
-  const value = window.location.hash.slice(1).split("/")[0];
+export function sectionFromHash(hash: string): SectionId {
+  const value = hash.slice(1).split("/")[0];
   return primarySections.some(([id]) => id === value)
     ? (value as SectionId)
     : "command";
 }
 
-function initialSubsection(section: SectionId): string {
-  const requested = decodeURIComponent(
-    window.location.hash.slice(1).split("/")[1] ?? "",
-  );
+export function subsectionFromHash(section: SectionId, hash: string): string {
+  const requested = decodeURIComponent(hash.slice(1).split("/")[1] ?? "");
   return secondarySections[section].includes(requested)
     ? requested
     : secondarySections[section][0]!;
+}
+
+function initialSection(): SectionId {
+  return sectionFromHash(window.location.hash);
+}
+
+function initialSubsection(section: SectionId): string {
+  return subsectionFromHash(section, window.location.hash);
 }
 
 export function AuthenticApp() {
@@ -139,7 +146,9 @@ export function AuthenticApp() {
         installation={runtime.bootstrap.installations[0]?.displayName}
       />
       <main id="dashboard-content" className="view-frame" tabIndex={-1}>
-        {section === "command" ? (
+        {section === "command" && subsection === "Council" ? (
+          <ExecutiveCouncil installation={runtime.bootstrap.installations[0]} />
+        ) : section === "command" ? (
           <CommandBridge installationName={installationName} />
         ) : section === "tasks" ? (
           <WorkModule

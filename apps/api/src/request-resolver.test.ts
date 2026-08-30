@@ -139,6 +139,9 @@ describe("database executive request resolver", () => {
     expect(database.statements[0]).toContain("person.auth_user_id = $1");
     expect(database.statements[1]).toContain("from public.work work");
     expect(database.statements[2]).toContain("executive.propose");
+    expect(database.statements[2]).toContain(
+      "policy.definition ->> 'protocol' is distinct from $4",
+    );
   });
 
   for (const condition of [
@@ -160,6 +163,9 @@ describe("database executive request resolver", () => {
       );
       expect(database.statements[0]).toContain("worker_role_assignments");
       expect(database.statements[0]).toContain("executive.propose");
+      expect(database.statements[0]).toContain(
+        "policy.definition ->> 'protocol' is distinct from $7",
+      );
       expect(database.statements[0]).toContain("work.installation_id = $1");
     });
   }

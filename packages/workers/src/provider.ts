@@ -12,6 +12,8 @@ export interface ExecutiveWorkerProvider {
   readonly provider: string;
   readonly model: string;
   readonly dataClassificationCeiling: DataClassification;
+  /** True only when the provider retains submitted prompts or responses. */
+  readonly storesResponses: boolean;
   submit(request: ExecutiveWorkerJobRequest): Promise<ExecutiveWorkerJob>;
   retrieve(job: ExecutiveWorkerJob): Promise<ExecutiveWorkerJob>;
 }

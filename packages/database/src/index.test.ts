@@ -41,6 +41,12 @@ describe("database authority context", () => {
       (item) => item.text === "set local role authenticated",
     );
     expect(envelopeIndex).toBeGreaterThan(-1);
+    expect(statements[envelopeIndex]?.text).toContain(
+      "set_config('aubos.installation_id', $2, true)",
+    );
+    expect(statements[envelopeIndex]?.text).toContain(
+      "set_config('vorton.installation_id', $2, true)",
+    );
     expect(roleIndex).toBeGreaterThan(envelopeIndex);
     expect(statements[envelopeIndex]?.values?.[4]).toBe(
       createHmac("sha256", secret)

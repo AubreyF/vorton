@@ -3,6 +3,7 @@ import { DatabaseExecutiveAuthorityVerifier } from "@vorton/executive";
 import { HttpHindsightAdapter } from "@vorton/memory";
 
 import { createSupabaseIdentityVerifier } from "./auth.js";
+import { DatabaseExecutiveCouncilResolver } from "./council-resolver.js";
 import { DatabaseExecutiveLedger } from "./database-ledger.js";
 import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import { readApiEnvironment } from "./env.js";
@@ -61,6 +62,7 @@ const server = createApiServer({
       ),
   ),
   workerRuns: new DatabaseWorkerRunRecorder(database),
+  councilResolver: new DatabaseExecutiveCouncilResolver(database, worker),
   release: env.release,
   allowedOrigin: env.allowedOrigin,
 });

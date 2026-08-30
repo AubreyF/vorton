@@ -9,6 +9,7 @@ import {
   type SourceCitation,
 } from "@vorton/contracts";
 import type { Database, PersonContext } from "@vorton/database";
+import { executiveCouncilProtocol } from "@vorton/executive";
 import {
   installationHindsightBank,
   type HindsightAdapter,
@@ -196,16 +197,25 @@ export class DatabaseExecutiveRequestResolver {
             and grant_row.capability = 'executive.propose' and grant_row.mode = 'recommend'
             and (grant_row.work_id is null or grant_row.work_id = work.id)
             and (grant_row.expires_at is null or grant_row.expires_at > now())
+           join public.policies policy
+             on policy.installation_id = grant_row.installation_id
+            and policy.id = grant_row.policy_id
           where work.installation_id = any($1::uuid[])
             and work.state in ('proposed', 'ready', 'review')
             and worker.provider = $2 and worker.model = $3
+            and policy.definition ->> 'protocol' is distinct from $4
             and not exists (
               select 1 from public.capability_grant_revocations revocation
                where revocation.installation_id = grant_row.installation_id
                  and revocation.grant_id = grant_row.id
             )
           order by work.priority desc, work.created_at, worker.name, role.name`,
-          [installationIds, this.provider, this.model],
+          [
+            installationIds,
+            this.provider,
+            this.model,
+            executiveCouncilProtocol,
+          ],
         );
         const evidence = await transaction.query<BootstrapEvidenceRow>(
           `select installation_id, work_id, id, summary, source_uri, classification
@@ -303,9 +313,13 @@ export class DatabaseExecutiveRequestResolver {
             and grant_row.mode = 'recommend'
             and (grant_row.work_id is null or grant_row.work_id = work.id)
             and (grant_row.expires_at is null or grant_row.expires_at > now())
+           join public.policies policy
+             on policy.installation_id = grant_row.installation_id
+            and policy.id = grant_row.policy_id
           where work.installation_id = $1 and work.id = $2
             and work.state in ('proposed', 'ready', 'review')
             and worker.provider = $5 and worker.model = $6
+            and policy.definition ->> 'protocol' is distinct from $7
             and not exists (
               select 1 from public.capability_grant_revocations revocation
                where revocation.installation_id = grant_row.installation_id
@@ -318,6 +332,7 @@ export class DatabaseExecutiveRequestResolver {
             input.roleId,
             this.provider,
             this.model,
+            executiveCouncilProtocol,
           ],
         );
         const row = binding.rows[0];

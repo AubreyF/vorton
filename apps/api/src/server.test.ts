@@ -52,6 +52,32 @@ async function runtime() {
       }) => Promise<unknown>,
     ) => operation({ query: async () => ({ rows: [], rowCount: 1 }) }),
   } as unknown as Database;
+  const councilCalls: Array<{
+    operation: "get" | "install" | "advance";
+    workId: string;
+    requester: { installationId: string; authUserId: string };
+  }> = [];
+  const councilState = {
+    protocol: "vorton.executive-council.v1",
+    installationId,
+    work: {
+      id: workId,
+      title: "Assess fixture",
+      requestedOutcome: "Reach a grounded recommendation",
+      acceptanceCriteria: ["Preserve dissent"],
+      state: "ready",
+    },
+    authority: "none",
+    phase: "proposal",
+    nextStep: {
+      phase: "proposal",
+      roleId,
+      roleName: "Chief Executive Officer",
+    },
+    counts: { proposals: 0, reviews: 0, syntheses: 0, total: 0, required: 11 },
+    roles: [],
+    synthesis: null,
+  };
   const server = createApiServer({
     database,
     ledger,
@@ -144,13 +170,53 @@ async function runtime() {
       }),
     } as never,
     workerRuns: { record: async () => "synthetic-run" } as never,
+    councilResolver: {
+      get: async (
+        resolvedWorkId: string,
+        requester: { installationId: string; authUserId: string },
+      ) => {
+        councilCalls.push({
+          operation: "get",
+          workId: resolvedWorkId,
+          requester,
+        });
+        return councilState;
+      },
+      install: async (
+        resolvedWorkId: string,
+        requester: { installationId: string; authUserId: string },
+      ) => {
+        councilCalls.push({
+          operation: "install",
+          workId: resolvedWorkId,
+          requester,
+        });
+        return councilState;
+      },
+      advance: async (
+        resolvedWorkId: string,
+        requester: { installationId: string; authUserId: string },
+      ) => {
+        councilCalls.push({
+          operation: "advance",
+          workId: resolvedWorkId,
+          requester,
+        });
+        return councilState;
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
-  return { baseUrl: `http://127.0.0.1:${String(port)}`, ledger, evidence };
+  return {
+    baseUrl: `http://127.0.0.1:${String(port)}`,
+    ledger,
+    evidence,
+    councilCalls,
+  };
 }
 
 function proposal(evidenceId: string) {
@@ -322,5 +388,78 @@ describe("control-plane API", () => {
     });
     expect(denied.status).toBe(403);
     expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("exposes server-resolved council read, install, and one-step advance routes", async () => {
+    const { baseUrl, councilCalls } = await runtime();
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      "content-type": "application/json",
+    };
+    const read = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}?installationId=${installationId}`,
+      { headers },
+    );
+    expect(read.status).toBe(200);
+    await expect(read.json()).resolves.toMatchObject({
+      protocol: "vorton.executive-council.v1",
+      authority: "none",
+      counts: { required: 11 },
+    });
+    const install = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}/install`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ installationId }),
+      },
+    );
+    expect(install.status).toBe(201);
+    const advance = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}/advance`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ installationId }),
+      },
+    );
+    expect(advance.status).toBe(200);
+    expect(councilCalls).toEqual([
+      {
+        operation: "get",
+        workId,
+        requester: { installationId, authUserId },
+      },
+      {
+        operation: "install",
+        workId,
+        requester: { installationId, authUserId },
+      },
+      {
+        operation: "advance",
+        workId,
+        requester: { installationId, authUserId },
+      },
+    ]);
+  });
+
+  it("rejects client-supplied council roles, evidence, or peer context", async () => {
+    const { baseUrl, councilCalls } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}/advance`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          installationId,
+          peerContext: [{ authority: "forged" }],
+        }),
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(councilCalls).toEqual([]);
   });
 });

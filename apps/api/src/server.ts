@@ -14,6 +14,13 @@ import {
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
 import { AuthenticationError, type IdentityVerifier } from "./auth.js";
+import {
+  ExecutiveCouncilConflictError,
+  ExecutiveCouncilInputError,
+  ExecutiveCouncilResolutionError,
+  parseCouncilInstallationInput,
+  type DatabaseExecutiveCouncilResolver,
+} from "./council-resolver.js";
 import type { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import {
   ExecutiveRequestInputError,
@@ -30,6 +37,7 @@ export interface ApiServerDependencies {
   worker: ExecutiveWorkerProvider;
   requestResolver: DatabaseExecutiveRequestResolver;
   workerRuns: DatabaseWorkerRunRecorder;
+  councilResolver: DatabaseExecutiveCouncilResolver;
   release: string;
   allowedOrigin: string;
 }
@@ -199,6 +207,52 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         );
         return;
       }
+      const councilRoute = url.pathname.match(
+        /^\/v1\/executive\/councils\/([0-9a-f-]+)(?:\/(install|advance))?$/i,
+      );
+      if (councilRoute?.[1]) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        const workId = councilRoute[1];
+        if (request.method === "GET" && !councilRoute[2]) {
+          const queryKeys = [...url.searchParams.keys()];
+          if (queryKeys.length !== 1 || queryKeys[0] !== "installationId") {
+            throw new ExecutiveCouncilInputError(
+              "Council reads require only installationId",
+            );
+          }
+          const parsed = parseCouncilInstallationInput({
+            installationId: url.searchParams.get("installationId"),
+          });
+          send(
+            200,
+            await dependencies.councilResolver.get(workId, {
+              installationId: parsed.installationId,
+              authUserId: identity.authUserId,
+            }),
+          );
+          return;
+        }
+        if (
+          request.method === "POST" &&
+          (councilRoute[2] === "install" || councilRoute[2] === "advance")
+        ) {
+          const parsed = parseCouncilInstallationInput(
+            objectBody(await readJson(request)),
+          );
+          const requester = {
+            installationId: parsed.installationId,
+            authUserId: identity.authUserId,
+          };
+          const result =
+            councilRoute[2] === "install"
+              ? await dependencies.councilResolver.install(workId, requester)
+              : await dependencies.councilResolver.advance(workId, requester);
+          send(councilRoute[2] === "install" ? 201 : 200, result);
+          return;
+        }
+      }
       if (
         request.method === "POST" &&
         url.pathname === "/v1/executive/proposals"
@@ -364,6 +418,39 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           response,
           400,
           { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ExecutiveCouncilInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ExecutiveCouncilResolutionError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ExecutiveCouncilConflictError) {
+        json(
+          response,
+          409,
+          { error: { code: "council_conflict", message: error.message } },
           request.headers.origin === dependencies.allowedOrigin
             ? dependencies.allowedOrigin
             : undefined,

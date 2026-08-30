@@ -26,6 +26,7 @@ describe("stateless worker boundary", () => {
         provider: "openai-responses",
         model: "synthetic-model",
         dataClassificationCeiling: "synthetic",
+        storesResponses: false,
         submit: vi.fn(),
         retrieve,
       },

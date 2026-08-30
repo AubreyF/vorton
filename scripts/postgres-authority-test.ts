@@ -324,6 +324,30 @@ async function expectRuntimeDenied(
   throw new Error(`${label} unexpectedly succeeded`);
 }
 
+async function expectRuntimeSqlState(
+  databaseUrl: string,
+  role: "authenticated" | "aubos_worker",
+  setup: (client: Client) => Promise<void>,
+  sql: string,
+  values: unknown[],
+  expectedCode: string,
+  label: string,
+): Promise<void> {
+  try {
+    await inRuntimeTransaction(databaseUrl, role, setup, (client) =>
+      client.query(sql, values),
+    );
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    requireCondition(
+      code === expectedCode,
+      `${label} failed with SQLSTATE ${code ?? "unknown"}, not ${expectedCode}`,
+    );
+    return;
+  }
+  throw new Error(`${label} unexpectedly succeeded`);
+}
+
 async function seedAuthorityFixtures(
   admin: Client,
   bootstrap: BootstrapResult,
@@ -622,6 +646,237 @@ async function proveWorkerBoundary(
   }
 }
 
+async function proveCouncilBoundary(
+  admin: Client,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+): Promise<void> {
+  const credentialId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
+  const signedWorker = (client: Client): Promise<void> =>
+    setSignedContext(
+      client,
+      "worker",
+      bootstrap.installationId,
+      bootstrap.workerId,
+      credentialId,
+    );
+  const work = await admin.query<{
+    input_sha256: string;
+    state: string;
+    updated_at: string;
+  }>(
+    `select state,
+            to_char(updated_at at time zone 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at,
+            encode(extensions.digest(convert_to(jsonb_build_object(
+              'id', id,
+              'title', title,
+              'requestedOutcome', requested_outcome,
+              'acceptanceCriteria', acceptance_criteria,
+              'state', state::text
+            )::text, 'UTF8'), 'sha256'), 'hex') as input_sha256
+       from public.work where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, bootstrap.workId],
+  );
+  const updatedAt = work.rows[0]?.updated_at;
+  requireCondition(updatedAt, "Council proof Work revision is missing");
+  requireCondition(work.rows[0]?.state, "Council proof Work state is missing");
+  const inputSha256 = work.rows[0]?.input_sha256;
+  requireCondition(inputSha256, "Council proof Work input hash is missing");
+  const inputRecordIds = [bootstrap.workId];
+  const runMetadata = {
+    council_protocol: "vorton.executive-council.v1",
+    council_phase: "proposal",
+    council_role_id: bootstrap.roleId,
+    input_record_ids: inputRecordIds,
+    work_updated_at: updatedAt,
+    work_input_sha256: inputSha256,
+    authority: "none",
+  };
+  const recordPayload = {
+    councilProtocol: "vorton.executive-council.v1",
+    councilPhase: "proposal",
+    councilRoleId: bootstrap.roleId,
+    inputRecordIds,
+    evidenceRecordIds: inputRecordIds,
+    peerRecordIds: [],
+    workUpdatedAt: updatedAt,
+    workInputSha256: inputSha256,
+    authority: "none",
+    providerJob: {
+      id: "synthetic-council-job",
+      provider: "synthetic",
+      model: "synthetic-model",
+      store: false,
+      background: false,
+    },
+    recommendation: {},
+  };
+
+  await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorker,
+    async (client) => {
+      const revision = await client.query<{
+        installation_id: string | null;
+        matches: boolean;
+      }>(
+        `select public.current_installation_id()::text as installation_id,
+                public.council_work_revision_matches($1, $2::timestamptz, $3) as matches`,
+        [bootstrap.workId, updatedAt, inputSha256],
+      );
+      requireCondition(
+        revision.rows[0]?.matches,
+        `Signed council worker ${revision.rows[0]?.installation_id ?? "without installation"} could not resolve the frozen Work revision in ${work.rows[0]!.state} state`,
+      );
+      await client.query(
+        `insert into public.worker_runs
+           (installation_id, work_id, worker_id, role_id, provider, model,
+            provider_job_id, status, store, background, metadata)
+         values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
+                 'synthetic-council-job', 'completed', false, false, $5::jsonb)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workId,
+          bootstrap.workerId,
+          bootstrap.roleId,
+          JSON.stringify(runMetadata),
+        ],
+      );
+      await client.query(
+        `insert into public.worker_runs
+           (installation_id, work_id, worker_id, role_id, provider, model,
+            provider_job_id, status, store, background, metadata)
+         values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
+                 'synthetic-synthesis-job', 'completed', false, false, $5::jsonb)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workId,
+          bootstrap.workerId,
+          bootstrap.roleId,
+          JSON.stringify({ ...runMetadata, council_phase: "synthesis" }),
+        ],
+      );
+      await client.query(
+        `insert into public.records
+           (installation_id, work_id, kind, summary, payload, classification,
+            actor_worker_id)
+         values ($1, $2, 'proposal', 'Synthetic council proposal.', $3::jsonb,
+                 'synthetic', $4)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workId,
+          JSON.stringify(recordPayload),
+          bootstrap.workerId,
+        ],
+      );
+    },
+  );
+
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorker,
+    `insert into public.worker_runs
+       (installation_id, work_id, worker_id, role_id, provider, model,
+        provider_job_id, status, store, background, metadata)
+     values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
+             'duplicate-council-job', 'queued', false, false, $5::jsonb)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workId,
+      bootstrap.workerId,
+      bootstrap.roleId,
+      JSON.stringify(runMetadata),
+    ],
+    "23505",
+    "Concurrent council phase and role attempt",
+  );
+
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorker,
+    `insert into public.worker_runs
+       (installation_id, work_id, worker_id, role_id, provider, model,
+        provider_job_id, status, store, background, metadata)
+     values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
+             'stored-council-job', 'failed', true, false, $5::jsonb)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workId,
+      bootstrap.workerId,
+      bootstrap.roleId,
+      JSON.stringify(runMetadata),
+    ],
+    "23514",
+    "Stored council attempt",
+  );
+
+  const synthesisPayload = {
+    ...recordPayload,
+    councilPhase: "synthesis",
+    providerJob: {
+      ...recordPayload.providerJob,
+      id: "synthetic-synthesis-job",
+    },
+  };
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorker,
+    `insert into public.records
+       (installation_id, work_id, kind, summary, payload, classification,
+        actor_worker_id)
+     values ($1, $2, 'proposal', 'Forged council inputs.', $3::jsonb,
+             'synthetic', $4)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workId,
+      JSON.stringify({
+        ...synthesisPayload,
+        inputRecordIds: [otherWorkId],
+        evidenceRecordIds: [otherWorkId],
+      }),
+      bootstrap.workerId,
+    ],
+    "Forged council run inputs",
+  );
+
+  await admin.query(
+    "update public.work set title = title || ' changed' where installation_id = $1 and id = $2",
+    [bootstrap.installationId, bootstrap.workId],
+  );
+  const mutatedRevision = await admin.query<{ updated_at: string }>(
+    `select to_char(updated_at at time zone 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at
+       from public.work where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, bootstrap.workId],
+  );
+  requireCondition(
+    mutatedRevision.rows[0]?.updated_at === updatedAt,
+    "Same-state Work mutation unexpectedly changed the timestamp fixture",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorker,
+    `insert into public.records
+       (installation_id, work_id, kind, summary, payload, classification,
+        actor_worker_id)
+     values ($1, $2, 'proposal', 'Stale council synthesis.', $3::jsonb,
+             'synthetic', $4)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workId,
+      JSON.stringify(synthesisPayload),
+      bootstrap.workerId,
+    ],
+    "Stale council Work revision",
+  );
+}
+
 async function main(): Promise<void> {
   const externalDatabaseUrl =
     process.env.VORTON_AUTHORITY_TEST_DATABASE_URL?.trim();
@@ -687,6 +942,7 @@ async function main(): Promise<void> {
     const ownerPersonId = await seedAuthorityFixtures(admin, bootstrap);
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
+    await proveCouncilBoundary(admin, runtimeDatabaseUrl, bootstrap);
 
     console.log(
       JSON.stringify(
@@ -708,6 +964,9 @@ async function main(): Promise<void> {
             signedPersonInstallationScoped: true,
             signedWorkerProposalAndRunScoped: true,
             workerHumanAuthorityDenied: true,
+            councilAttemptFenced: true,
+            councilStorageDenied: true,
+            councilWorkRevisionBound: true,
           },
         },
         null,

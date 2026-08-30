@@ -14,11 +14,13 @@ export const executiveRecommendationJsonSchema = {
     evidenceRecordIds: {
       type: "array",
       minItems: 1,
+      maxItems: 100,
       items: { type: "string", format: "uuid" },
     },
     alternatives: {
       type: "array",
       minItems: 1,
+      maxItems: 10,
       items: {
         type: "object",
         additionalProperties: false,
@@ -29,6 +31,7 @@ export const executiveRecommendationJsonSchema = {
           expectedOutcome: { type: "string", minLength: 1 },
           risks: {
             type: "array",
+            maxItems: 20,
             items: { type: "string", minLength: 1 },
           },
         },
@@ -66,6 +69,7 @@ export const executiveRecommendationJsonSchema = {
     confidence: { type: "number", minimum: 0, maximum: 1 },
     uncertainties: {
       type: "array",
+      maxItems: 20,
       items: { type: "string", minLength: 1 },
     },
   },

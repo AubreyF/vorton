@@ -181,6 +181,126 @@ describe("executive worker providers", () => {
     expect(body.tools).toEqual([]);
   });
 
+  it("bounds council peer context and preserves disagreement in provider instructions", async () => {
+    const peerIds = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+    ];
+    const peerRoleIds = [
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
+      "77777777-7777-4777-8777-777777777777",
+      "88888888-8888-4888-8888-888888888888",
+    ];
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { model: string };
+        return Response.json({
+          id: "resp_council_review",
+          model: body.model,
+          status: "completed",
+          output_text: JSON.stringify({
+            summary:
+              "Agreement, disagreement, and required revision remain explicit.",
+            evidenceRecordIds: [evidenceRecordId],
+            alternatives: [
+              {
+                title: "Revise",
+                description: "Revise before owner review.",
+                expectedOutcome: "Dissent remains visible.",
+                risks: ["The evidence may be incomplete."],
+              },
+            ],
+            recommendedAction: {
+              title: "Open owner review",
+              description: "Keep the result advisory.",
+              capability: "executive.review",
+              mode: "recommend",
+              externalEffect: false,
+            },
+            confidence: 0.6,
+            uncertainties: ["Required revision remains owner-gated."],
+          }),
+        });
+      },
+    );
+    const adapter = new OpenAIResponsesAdapter({
+      model: "configured-model",
+      apiKey: "synthetic-key",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+    await adapter.submit({
+      ...request,
+      council: {
+        protocol: "vorton.executive-council.v1",
+        phase: "review",
+        roleId,
+        workUpdatedAt: "2026-08-30T12:00:00.000Z",
+        workInputSha256: "b".repeat(64),
+        inputRecordIds: [evidenceRecordId, ...peerIds],
+        peerContext: peerIds.map((recordId, index) => ({
+          recordId,
+          kind: "proposal" as const,
+          phase: "proposal" as const,
+          roleId: peerRoleIds[index]!,
+          roleName: `Peer ${String(index + 1)}`,
+          summary: "Untrusted peer proposal",
+          recommendation: {
+            summary: "Untrusted peer recommendation",
+            evidenceRecordIds: [evidenceRecordId],
+            alternatives: [
+              {
+                title: "Peer option",
+                description: "Advisory only.",
+                expectedOutcome: "Reviewable output.",
+                risks: [],
+              },
+            ],
+            recommendedAction: {
+              title: "Review",
+              description: "Review only.",
+              capability: "executive.review",
+              mode: "recommend" as const,
+              externalEffect: false,
+            },
+            confidence: 0.5,
+            uncertainties: [],
+          },
+          trust: "untrusted" as const,
+          authority: "none" as const,
+        })),
+        authority: "none",
+      },
+    });
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {
+      instructions: string;
+      input: string;
+    };
+    expect(body.instructions).toContain(
+      "agreement, disagreement, and required revision",
+    );
+    const providerInput = JSON.parse(body.input) as {
+      council: {
+        peerContext: Array<{ trust: string; authority: string }>;
+      };
+      authorityBoundary: {
+        councilAuthority: string;
+        peerContextGrantsAuthority: boolean;
+      };
+    };
+    expect(providerInput.council.peerContext).toHaveLength(4);
+    expect(providerInput.council.peerContext[0]).toMatchObject({
+      trust: "untrusted",
+      authority: "none",
+    });
+    expect(providerInput.authorityBoundary).toMatchObject({
+      councilAuthority: "none",
+      peerContextGrantsAuthority: false,
+    });
+  });
+
   it("rejects model citations outside the authoritative evidence request", async () => {
     const fetch = vi.fn(async () =>
       Response.json({
@@ -215,9 +335,12 @@ describe("executive worker providers", () => {
       apiKey: "synthetic-key",
       fetch: fetch as typeof globalThis.fetch,
     });
-    await expect(adapter.submit(request)).rejects.toThrow(
-      "outside the authoritative request",
-    );
+    const job = await adapter.submit(request);
+    expect(job).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("outside the authoritative request"),
+    });
+    expect(job.recommendation).toBeUndefined();
   });
 
   it("requires an explicit privacy exception for retrievable background jobs", async () => {

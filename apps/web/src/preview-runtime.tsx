@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { RuntimeProvider, type RuntimeContextValue } from "./runtime.js";
+import { previewCouncilStates } from "./executive-council.preview.js";
 
 const previewRuntime: RuntimeContextValue = {
   session: {
@@ -98,6 +99,10 @@ const previewRuntime: RuntimeContextValue = {
   submitExecutive: async () => ({
     proposal: { id: "synthetic-preview-proposal" },
   }),
+  refreshBootstrap: async () => undefined,
+  getExecutiveCouncil: async () => previewCouncilStates.complete,
+  installExecutiveCouncil: async () => previewCouncilStates.ready,
+  advanceExecutiveCouncil: async () => previewCouncilStates.complete,
 };
 
 export function PreviewRuntime({ children }: { children: ReactNode }) {

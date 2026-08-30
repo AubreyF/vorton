@@ -39,6 +39,24 @@ The first FreedOS executive copilot supports:
 - outcome review against the approved intent; and
 - candidate learnings that remain quarantined until promoted.
 
+## Executive council
+
+The council is a governed deliberation protocol, not a collection of permanent AI personalities. One existing Work item supplies the objective and evidence for one council run. Five versioned roles participate:
+
+- Chief Executive Officer;
+- Chief Marketing Officer;
+- Chief Technology Officer;
+- Chief Operating Officer; and
+- Chief Financial Officer.
+
+The protocol records five independent proposals, five peer reviews, and one Chief Executive Officer synthesis. Independent proposals receive no peer output. Each review receives the other four proposals as explicitly untrusted advisory context. The synthesis receives all proposals and reviews through the same boundary. Peer output never becomes source evidence, and a worker may cite only the original evidence Records.
+
+Each contribution is durable before the next model call begins. The API advances at most one contribution per request, so a browser reload or process restart resumes from the Records already present. A database uniqueness fence permits one contribution for each Work, protocol phase, and role. Provider output and the corresponding worker run are recorded atomically.
+
+The full protocol uses eleven serialized model calls because the private subscription worker owns one authentication cache. Parallel calls against that cache are forbidden. A partial run remains visible and resumable. Synthesis is withheld until all ten prerequisite contributions exist.
+
+The final synthesis has `authority: none`. It cannot create a Decision, Approval, capability grant, new Work item, tool call, publication, or external effect. The owner reviews it through the existing executive workflow and supplies any later authority explicitly.
+
 The default private-pilot route uses the Codex CLI with owner-delegated ChatGPT subscription authentication. Provider identity, configured model, billing boundary, host, and capabilities remain visible on every run. The OpenAI Responses API remains an optional usage-billed adapter for installations that select it explicitly. Neither provider becomes a new authority source.
 
 ## Wave 2 implementation
