@@ -1,9 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  moonbaseIncidents,
-  triageMoonbaseIncidents,
-  type TriagedIncident,
-} from "@vorton/example-moonbase-triage";
 import { factoryModuleManifest } from "@vorton/factory";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { AccountMenu } from "./design-system/account-menu.js";
@@ -14,6 +9,7 @@ import {
 } from "./design-system/section-navigator.js";
 import { ExecutiveCouncil } from "./executive-council.js";
 import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
+import { ToolsView } from "./tools/tools-view.js";
 
 const primarySections = [
   ["command", "Command Bridge"],
@@ -37,7 +33,7 @@ const secondarySections: Record<SectionId, readonly string[]> = {
   goals: ["Active", "Guardrails", "Execution", "Calendar"],
   tasks: ["Priority", "Blocked", "All open", "History"],
   finance: ["Cash flow", "Runway", "Debt", "Capital", "Tax", "Risk"],
-  tools: ["Catalog", "Build", "Runs"],
+  tools: ["Catalog", "moonbase-triage"],
   conversations: ["Inbox", "Meet", "Omi", "Sources"],
   factory: ["Tickets", "Workers", "Pull requests", "Receipts"],
   admin: ["People", "Workers", "Policy", "Records", "Sources"],
@@ -129,7 +125,7 @@ export function AuthenticApp() {
 
   return (
     <div
-      className={`dashboard-shell ${section === "command" ? "single-level-navigation" : ""}`}
+      className={`dashboard-shell ${section === "command" || section === "tools" ? "single-level-navigation" : ""}`}
     >
       <BackgroundAtmosphere />
       <a className="skip-link" href="#dashboard-content">
@@ -159,7 +155,7 @@ export function AuthenticApp() {
           />
         </div>
       </header>
-      {section !== "command" && (
+      {section !== "command" && section !== "tools" && (
         <SecondaryNavigation
           section={section}
           subsection={subsection}
@@ -183,7 +179,11 @@ export function AuthenticApp() {
             view={subsection}
           />
         ) : section === "tools" ? (
-          <ToolLab installationName={installationName} view={subsection} />
+          <ToolsView
+            installationName={installationName}
+            view={subsection}
+            navigate={navigateSubsection}
+          />
         ) : section === "factory" ? (
           <FactoryModule
             installationName={installationName}
@@ -285,142 +285,6 @@ function FactoryModule({
           will not infer execution state from stale or synthetic evidence.
         </p>
       </div>
-    </section>
-  );
-}
-
-function ToolLab({
-  installationName,
-  view,
-}: {
-  installationName: string;
-  view: string;
-}) {
-  const [result, setResult] = useState<readonly TriagedIncident[]>();
-
-  if (view === "Build") {
-    return (
-      <section className="tool-lab">
-        <p className="eyebrow">{installationName} / Tool Lab</p>
-        <h1>Build</h1>
-        <p className="lede">
-          Tools begin as explicit contracts: inputs, outputs, data access,
-          network policy, capabilities, tests, and installation state.
-        </p>
-        <div className="tool-contract-guide">
-          <h2>A tool earns installation</h2>
-          <ol>
-            <li>Declare the smallest useful capability.</li>
-            <li>Name every source of data and network access.</li>
-            <li>Prove deterministic behavior with synthetic fixtures.</li>
-            <li>Review the contract before granting installation authority.</li>
-          </ol>
-        </div>
-      </section>
-    );
-  }
-
-  if (view === "Runs") {
-    return (
-      <section className="tool-lab">
-        <p className="eyebrow">{installationName} / Tool Lab</p>
-        <h1>Runs</h1>
-        <p className="lede">
-          Installed tool executions will appear here with their inputs, outputs,
-          capability boundary, and receipt.
-        </p>
-        <div className="directional-empty-state">
-          <h2>No tool has run</h2>
-          <p>
-            The catalog starts blank. Previewing an example does not install it
-            and does not create an organizational execution record.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="tool-lab">
-      <header className="module-intro">
-        <div>
-          <p className="eyebrow">{installationName} / Tool Lab</p>
-          <h1>Tools</h1>
-          <p className="lede">
-            Your installed catalog is empty. Explore a bounded example, then
-            build only what this installation actually needs.
-          </p>
-        </div>
-        <div className="catalog-count">
-          <strong>0</strong>
-          <span>Installed tools</span>
-        </div>
-      </header>
-
-      <article className="tool-preview-card">
-        <header>
-          <div>
-            <p className="eyebrow">Example · uninstalled</p>
-            <h2>Moonbase Triage</h2>
-            <p>
-              Sort synthetic lunar incidents with fixed, offline urgency and
-              impact rules.
-            </p>
-          </div>
-          <span className="tool-version">v0.1.0</span>
-        </header>
-        <dl className="tool-boundaries">
-          <div>
-            <dt>Network</dt>
-            <dd>Deny all</dd>
-          </div>
-          <div>
-            <dt>Data</dt>
-            <dd>Bundled synthetic fixtures</dd>
-          </div>
-          <div>
-            <dt>Capability</dt>
-            <dd>Preview only</dd>
-          </div>
-          <div>
-            <dt>Installation</dt>
-            <dd>Not installed</dd>
-          </div>
-        </dl>
-        <div className="tool-preview-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() =>
-              setResult(triageMoonbaseIncidents(moonbaseIncidents))
-            }
-          >
-            Run synthetic preview
-          </button>
-          <p>
-            Runs in this browser. Reads no {installationName} data. Creates no
-            authority or installation record.
-          </p>
-        </div>
-        {result && (
-          <div className="triage-result" role="status">
-            <header>
-              <p className="eyebrow">Deterministic result</p>
-              <span>{result.length} incidents</span>
-            </header>
-            <ol>
-              {result.map((incident) => (
-                <li key={incident.id}>
-                  <span>{incident.id}</span>
-                  <strong>{incident.summary}</strong>
-                  <small>{incident.system}</small>
-                  <b>{incident.lane}</b>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-      </article>
     </section>
   );
 }
