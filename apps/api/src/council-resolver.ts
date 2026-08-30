@@ -568,7 +568,7 @@ export class DatabaseExecutiveCouncilResolver {
           ? `select id, summary, source_uri, classification
                from public.records
               where installation_id = $1 and kind = 'evidence'
-                and id = any($3::uuid[])
+                and id = any($2::uuid[])
               order by id`
           : `select id, summary, source_uri, classification
                from public.records
@@ -577,7 +577,7 @@ export class DatabaseExecutiveCouncilResolver {
               order by created_at desc, id desc
               limit 20`,
         frozenEvidence
-          ? [requester.installationId, workId, frozenEvidence]
+          ? [requester.installationId, frozenEvidence]
           : [requester.installationId, workId],
       );
       if (
