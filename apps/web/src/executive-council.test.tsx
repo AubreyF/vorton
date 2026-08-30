@@ -77,6 +77,7 @@ describe("executive council route and surface", () => {
       "moonbase-triage",
     );
     expect(subsectionFromHash("tools", "#tools/unknown")).toBe("Catalog");
+    expect(sectionFromHash("#finance/Cash%20flow")).toBe("command");
     expect(commandSectionIdFromSubsection("Council")).toBe("command-council");
     expect(commandSectionIdFromSubsection("unknown")).toBe("command-briefing");
   });

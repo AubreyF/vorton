@@ -273,14 +273,6 @@ const snapshot: ControlPlaneSnapshot = {
       countLabel: "6 yours",
     },
     {
-      id: "finance",
-      name: "Finance",
-      description:
-        "Model resources and costs without weakening approval boundaries.",
-      state: "quiet",
-      countLabel: "No connection",
-    },
-    {
       id: "tools",
       name: "Tools",
       description:
