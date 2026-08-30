@@ -154,9 +154,8 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
       "The original Vorton command interface in its daylight palette.",
     previewGradient:
       "radial-gradient(circle at 71% 22%, #faffff 0 7%, rgb(139 234 255 / 0.34) 8% 13%, transparent 14%), radial-gradient(ellipse 82% 58% at 50% 112%, #77f1ff 0%, #3a8ee8 30%, #3644b8 68%, #211c72 100%), linear-gradient(180deg, #fbffff 0%, #e9f8ff 35%, #c9e6ff 68%, #aabcf6 100%)",
-    previewDisplayFont:
-      'var(--font-barlow-condensed), "Barlow Condensed", sans-serif',
-    previewBodyFont: 'var(--font-barlow), "Barlow", sans-serif',
+    previewDisplayFont: "var(--font-barlow-condensed), sans-serif",
+    previewBodyFont: "var(--font-barlow), sans-serif",
     surface: "light",
     mode: "starship",
     effects: "restrained",
@@ -169,9 +168,8 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
       "The original Vorton command interface in its low-light palette.",
     previewGradient:
       "radial-gradient(circle at 72% 28%, #d8f7ff 0 4%, transparent 5%), linear-gradient(145deg, #07090d 0%, #171a24 54%, #28405e 100%)",
-    previewDisplayFont:
-      'var(--font-barlow-condensed), "Barlow Condensed", sans-serif',
-    previewBodyFont: 'var(--font-barlow), "Barlow", sans-serif',
+    previewDisplayFont: "var(--font-barlow-condensed), sans-serif",
+    previewBodyFont: "var(--font-barlow), sans-serif",
     surface: "dark",
     mode: "starship",
     effects: "restrained",
@@ -186,7 +184,7 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
     previewDisplayFont:
       '"Baskerville", "Hoefler Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif',
     previewBodyFont:
-      '"Manrope", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      'var(--font-manrope), "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
     surface: "light",
     mode: "freed",
     effects: "restrained",
@@ -260,8 +258,9 @@ export const APPEARANCE_DEFINITIONS: readonly AppearanceDefinition[] = [
       "Blue, purple, and cyan. Wired hot, moving fast, and ready to defend a sovereign protopia.",
     previewGradient: "linear-gradient(135deg, #3b82f6, #8b5cf6 55%, #06b6d4)",
     previewDisplayFont:
-      'var(--font-space-grotesk), "Space Grotesk", "Manrope", system-ui, sans-serif',
-    previewBodyFont: '"Manrope", system-ui, -apple-system, sans-serif',
+      "var(--font-space-grotesk), var(--font-manrope), system-ui, sans-serif",
+    previewBodyFont:
+      "var(--font-manrope), system-ui, -apple-system, sans-serif",
     surface: "dark",
     mode: "freed",
     effects: "dramatic",

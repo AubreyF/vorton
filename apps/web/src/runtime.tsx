@@ -9,9 +9,10 @@ import {
   type ReactNode,
   useContext,
   useEffect,
-  useMemo,
   useState,
 } from "react";
+import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
+import { AppearanceTileStrip } from "./design-system/theme-controls.js";
 
 export interface BrowserRuntimeConfig {
   supabaseUrl: string;
@@ -72,6 +73,21 @@ export interface RuntimeContextValue {
 }
 
 const RuntimeContext = createContext<RuntimeContextValue | null>(null);
+let browserRuntimeClient: { key: string; client: SupabaseClient } | undefined;
+
+function getBrowserRuntimeClient(config: BrowserRuntimeConfig) {
+  const key = `${config.supabaseUrl}\n${config.supabaseAnonKey}`;
+  if (browserRuntimeClient?.key === key) return browserRuntimeClient.client;
+  const client = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+  browserRuntimeClient = { key, client };
+  return client;
+}
 
 export function RuntimeProvider({
   value,
@@ -153,17 +169,7 @@ export function BrowserRuntime({
   config: BrowserRuntimeConfig;
   children: ReactNode;
 }) {
-  const client = useMemo(
-    () =>
-      createClient(config.supabaseUrl, config.supabaseAnonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-        },
-      }),
-    [config],
-  );
+  const client = getBrowserRuntimeClient(config);
   const [session, setSession] = useState<Session | null>();
   const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>();
   const [runtimeError, setRuntimeError] = useState<string>();
@@ -290,6 +296,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
   }
   return (
     <main className="runtime-gate">
+      <BackgroundAtmosphere />
       <form onSubmit={(event) => void submit(event)}>
         <p className="eyebrow">Vorton / Control plane</p>
         <h1>Sign in</h1>
@@ -302,6 +309,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
           <input
             type="email"
             required
+            autoComplete="username"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
@@ -311,6 +319,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
           <input
             type="password"
             required
+            autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
@@ -322,6 +331,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
         )}
         <button type="submit">Sign in</button>
       </form>
+      <AppearanceTileStrip className="login-theme-switcher" />
     </main>
   );
 }
@@ -335,6 +345,7 @@ export function RuntimeState({
 }) {
   return (
     <main className="runtime-gate">
+      <BackgroundAtmosphere />
       <section>
         <p className="eyebrow">Vorton / Runtime</p>
         <h1>{title}</h1>

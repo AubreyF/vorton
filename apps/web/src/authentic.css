@@ -335,7 +335,7 @@ summary {
 .interface-zoom-heading-row > p {
   margin: 3px 8px 7px;
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -377,7 +377,7 @@ summary {
   line-height: 1.15;
 }
 .export-option-detail {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
   line-height: 1.35;
 }
@@ -501,6 +501,50 @@ summary {
   width: 20px;
   height: 20px;
 }
+.appearance-tile-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--vorton-control-radius) + 4px);
+  background: color-mix(in srgb, var(--vorton-card-solid) 86%, transparent);
+  box-shadow: var(--vorton-card-shadow);
+  -webkit-backdrop-filter: var(--vorton-header-backdrop);
+  backdrop-filter: var(--vorton-header-backdrop);
+}
+.appearance-tile {
+  position: relative;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--vorton-control-radius);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.appearance-tile:hover {
+  border-color: var(--line);
+  background: var(--vorton-control-hover);
+}
+.appearance-tile[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--blue) 60%, var(--line));
+  background: var(--blue-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+.appearance-tile .appearance-option-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: calc(var(--vorton-control-radius) * 0.48);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.08),
+    0 2px 6px rgb(0 0 0 / 0.14);
+}
 .interface-zoom-section {
   margin-top: 10px;
   padding-top: 10px;
@@ -518,7 +562,7 @@ summary {
 .interface-zoom-value {
   margin-right: 8px;
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -885,27 +929,27 @@ h1 {
   max-width: 850px;
   margin: 6px 0 12px;
   font-size: clamp(2rem, 4.5vw, 4.4rem);
-  font-weight: 400;
-  letter-spacing: -0.055em;
+  font-weight: var(--vorton-heading-font-weight, 400);
+  letter-spacing: var(--vorton-heading-letter-spacing, -0.045em);
   line-height: 0.98;
 }
 h2 {
   margin: 5px 0 10px;
   font-size: clamp(1.15rem, 2vw, 1.65rem);
-  font-weight: 500;
-  letter-spacing: -0.025em;
+  font-weight: var(--vorton-heading-subhead-weight, 500);
+  letter-spacing: var(--vorton-heading-subhead-letter-spacing, -0.025em);
   line-height: 1.15;
 }
 h3 {
   margin: 0;
   font-size: 0.96rem;
-  font-weight: 500;
+  font-weight: var(--vorton-heading-subhead-weight, 500);
   line-height: 1.35;
 }
 .eyebrow {
   margin: 0;
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.1em;
@@ -985,7 +1029,7 @@ h3 {
 }
 .metric-value {
   margin: 12px 0 7px;
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: clamp(1.45rem, 2.7vw, 2.4rem);
   letter-spacing: -0.05em;
 }
@@ -1089,7 +1133,7 @@ h3 {
   font-size: 0.67rem;
 }
 .delta-row strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.82rem;
   font-weight: 500;
 }
@@ -1130,7 +1174,7 @@ h3 {
 }
 .executive-brief-item strong {
   overflow-wrap: anywhere;
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 1rem;
   font-weight: 500;
 }
@@ -1209,7 +1253,7 @@ h3 {
   border-radius: 6px;
   background: var(--paper);
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.7rem;
   font-weight: 500;
 }
@@ -1310,7 +1354,7 @@ h3 {
   font-size: 0.78rem;
 }
 .mini-metrics strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.83rem;
   font-weight: 500;
 }
@@ -1458,7 +1502,7 @@ input[type="range"] {
   font-size: 0.8rem;
 }
 .runway-number strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: clamp(2.2rem, 7vw, 5.6rem);
   font-weight: 400;
   letter-spacing: -0.07em;
@@ -1515,7 +1559,7 @@ input[type="range"] {
   font-size: 0.7rem;
 }
 .result-grid strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.9rem;
   font-weight: 500;
 }
@@ -1587,7 +1631,7 @@ input[type="range"] {
   background: var(--green);
 }
 .bar-row > strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.72rem;
   font-weight: 500;
   text-align: right;
@@ -1742,7 +1786,7 @@ details > summary {
   font-size: 0.65rem;
 }
 .balance-row > strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.76rem;
   font-weight: 500;
   text-align: right;
@@ -1788,7 +1832,7 @@ details > summary {
 .meta-line,
 .decision-list details span {
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.65rem !important;
 }
 
@@ -1807,7 +1851,7 @@ details > summary {
 }
 .pipeline-zero {
   margin: 18px 0 0;
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 4rem;
   letter-spacing: -0.08em;
 }
@@ -1827,7 +1871,7 @@ details > summary {
 }
 .calendar-list time {
   color: var(--red);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.7rem;
   font-weight: 500;
 }
@@ -1852,7 +1896,7 @@ details > summary {
   display: grid;
 }
 .energy-row strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 1.25rem;
   font-weight: 500;
 }
@@ -1889,12 +1933,12 @@ details > summary {
   border-radius: 99px;
   background: var(--paper);
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
 }
 .score-row .row-title-line > strong {
   color: var(--green);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.76rem;
   font-weight: 500;
 }
@@ -1967,11 +2011,11 @@ details > summary {
 .right-meta time,
 .right-meta span {
   color: var(--ink-soft);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.65rem;
 }
 .right-meta strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.72rem;
   font-weight: 500;
 }
@@ -2019,7 +2063,7 @@ details > summary {
 }
 .paired-bars strong,
 .category-bars strong {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.66rem;
   font-weight: 500;
   text-align: right;
@@ -2076,7 +2120,7 @@ details > summary {
 .inline-value {
   margin: 12px 0 0 !important;
   color: var(--ink) !important;
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 1.2rem !important;
 }
 
@@ -2137,7 +2181,7 @@ details > summary {
 }
 .timeline-list time {
   color: var(--red);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--vorton-font-utility);
   font-size: 0.68rem;
 }
 .timeline-list p {
