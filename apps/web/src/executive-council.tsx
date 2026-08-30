@@ -29,14 +29,17 @@ interface CouncilSurfaceProps {
   loading: boolean;
   running: boolean;
   failure?: string;
+  embedded?: boolean;
   onSelectWork(workId: string): void;
   onConvene(): void;
 }
 
 export function ExecutiveCouncil({
   installation,
+  embedded = false,
 }: {
   installation?: Installation;
+  embedded?: boolean;
 }) {
   const runtime = useBrowserRuntime();
   const workItems = useMemo(
@@ -130,6 +133,7 @@ export function ExecutiveCouncil({
       loading={loading}
       running={running}
       failure={failure}
+      embedded={embedded}
       onSelectWork={setSelectedWorkId}
       onConvene={() => void convene()}
     />
@@ -173,6 +177,7 @@ export function CouncilSurface({
   loading,
   running,
   failure,
+  embedded = false,
   onSelectWork,
   onConvene,
 }: CouncilSurfaceProps) {
@@ -192,13 +197,14 @@ export function CouncilSurface({
       : council
         ? "Resume council"
         : "Install and convene council";
+  const IntroHeading = embedded ? "h2" : "h1";
 
   return (
     <section className="council-module">
       <header className="module-intro">
         <div>
           <p className="eyebrow">Vorton / Command Bridge / Council</p>
-          <h1>Executive council</h1>
+          <IntroHeading>Executive council</IntroHeading>
           <p className="lede">
             Five role skills examine one governed agenda independently, review
             one another, and prepare a synthesis for owner judgment.

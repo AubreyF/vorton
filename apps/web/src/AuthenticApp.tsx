@@ -9,6 +9,10 @@ import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { ExportControls } from "./design-system/export-controls.js";
+import {
+  SectionNavigator,
+  type SectionNavigationItem,
+} from "./design-system/section-navigator.js";
 import { ExecutiveCouncil } from "./executive-council.js";
 import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
 
@@ -39,6 +43,33 @@ const secondarySections: Record<SectionId, readonly string[]> = {
   factory: ["Tickets", "Workers", "Pull requests", "Receipts"],
   admin: ["People", "Workers", "Policy", "Records", "Sources"],
 };
+
+export const commandBridgeSections = [
+  {
+    id: "command-briefing",
+    label: "Briefing",
+    route: "Briefing",
+    detail: "What matters now",
+  },
+  {
+    id: "command-council",
+    label: "Council",
+    route: "Council",
+    detail: "Executive recommendations",
+  },
+  {
+    id: "command-decisions",
+    label: "Decisions",
+    route: "Decisions",
+    detail: "Owner judgment",
+  },
+  {
+    id: "command-activity",
+    label: "Activity",
+    route: "Activity",
+    detail: "Governed change",
+  },
+] as const satisfies readonly SectionNavigationItem[];
 
 export function sectionFromHash(hash: string): SectionId {
   const value = hash.slice(1).split("/")[0];
@@ -98,7 +129,9 @@ export function AuthenticApp() {
   }
 
   return (
-    <div className="dashboard-shell">
+    <div
+      className={`dashboard-shell ${section === "command" ? "single-level-navigation" : ""}`}
+    >
       <BackgroundAtmosphere />
       <a className="skip-link" href="#dashboard-content">
         Skip to dashboard content
@@ -137,19 +170,24 @@ export function AuthenticApp() {
           <ThemeControls />
         </div>
       </header>
-      <SecondaryNavigation
-        section={section}
-        subsection={subsection}
-        navigate={navigateSubsection}
-      />
+      {section !== "command" && (
+        <SecondaryNavigation
+          section={section}
+          subsection={subsection}
+          navigate={navigateSubsection}
+        />
+      )}
       <PrivacyState
         installation={runtime.bootstrap.installations[0]?.displayName}
       />
       <main id="dashboard-content" className="view-frame" tabIndex={-1}>
-        {section === "command" && subsection === "Council" ? (
-          <ExecutiveCouncil installation={runtime.bootstrap.installations[0]} />
-        ) : section === "command" ? (
-          <CommandBridge installationName={installationName} />
+        {section === "command" ? (
+          <CommandBridgePage
+            installationName={installationName}
+            installation={runtime.bootstrap.installations[0]}
+            subsection={subsection}
+            navigate={navigateSubsection}
+          />
         ) : section === "tasks" ? (
           <WorkModule
             installation={runtime.bootstrap.installations[0]}
@@ -624,7 +662,139 @@ function PrivacyState({ installation }: { installation?: string }) {
   );
 }
 
-function CommandBridge({ installationName }: { installationName: string }) {
+export function commandSectionIdFromSubsection(subsection: string) {
+  return (
+    commandBridgeSections.find((item) => item.route === subsection)?.id ??
+    commandBridgeSections[0].id
+  );
+}
+
+function CommandBridgePage({
+  installationName,
+  installation,
+  subsection,
+  navigate,
+}: {
+  installationName: string;
+  installation?: Installation;
+  subsection: string;
+  navigate(subsection: string): void;
+}) {
+  return (
+    <SectionNavigator
+      items={commandBridgeSections}
+      label="Command Bridge sections"
+      requestedId={commandSectionIdFromSubsection(subsection)}
+      onNavigate={navigate}
+    >
+      <section
+        id="command-briefing"
+        className="command-page-section command-page-section-briefing"
+        aria-label="Briefing"
+      >
+        <CommandBriefing installationName={installationName} />
+      </section>
+      <section
+        id="command-council"
+        className="command-page-section command-page-section-council"
+        aria-label="Council"
+      >
+        <ExecutiveCouncil installation={installation} embedded />
+      </section>
+      <CommandDecisions />
+      <CommandActivity installation={installation} />
+    </SectionNavigator>
+  );
+}
+
+function CommandDecisions() {
+  return (
+    <section
+      id="command-decisions"
+      className="command-page-section command-page-register"
+      aria-labelledby="command-decisions-heading"
+    >
+      <header className="command-section-heading">
+        <div>
+          <p className="eyebrow">Decision register</p>
+          <h2 id="command-decisions-heading">Owner decisions</h2>
+          <p>
+            Council recommendations remain advisory until the owner records a
+            separate decision. No recommendation silently becomes authority.
+          </p>
+        </div>
+        <span className="status-pill status-watch">0 recorded</span>
+      </header>
+      <div className="directional-empty-state">
+        <h3>No owner decision has been recorded</h3>
+        <p>
+          Completed council recommendations will remain visible above. A future
+          decision workflow will bind an owner judgment to the exact advisory
+          records it accepts or rejects.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function CommandActivity({ installation }: { installation?: Installation }) {
+  const recentWork = [...(installation?.workItems ?? [])]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, 6);
+
+  return (
+    <section
+      id="command-activity"
+      className="command-page-section command-page-register"
+      aria-labelledby="command-activity-heading"
+    >
+      <header className="command-section-heading">
+        <div>
+          <p className="eyebrow">Governed activity</p>
+          <h2 id="command-activity-heading">Current organizational change</h2>
+          <p>
+            This is the installation-scoped Work projection. It observes
+            declared state and custody without manufacturing an execution log.
+          </p>
+        </div>
+        <span className="status-pill status-good">
+          {recentWork.length} visible
+        </span>
+      </header>
+      {recentWork.length > 0 ? (
+        <div className="compact-list command-activity-list">
+          {recentWork.map((work) => (
+            <article key={work.id}>
+              <div>
+                <p className="eyebrow">Work · P{work.priority}</p>
+                <h3>{work.title}</h3>
+                <p>{work.requestedOutcome}</p>
+              </div>
+              <div className="right-meta">
+                <span className="status-pill status-watch">{work.state}</span>
+                <time dateTime={work.updatedAt}>
+                  {new Intl.DateTimeFormat(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(new Date(work.updatedAt))}
+                </time>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="directional-empty-state">
+          <h3>No governed activity is available</h3>
+          <p>Work will appear here after it enters this installation.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CommandBriefing({ installationName }: { installationName: string }) {
   const runtime = useBrowserRuntime();
   const installation = runtime.bootstrap.installations[0];
   const binding = installation?.proposalBindings[0];
