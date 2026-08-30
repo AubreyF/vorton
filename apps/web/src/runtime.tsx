@@ -7,6 +7,7 @@ import {
   createContext,
   type FormEvent,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -62,6 +63,81 @@ export interface RuntimeBootstrap {
   }>;
 }
 
+export type CouncilPhase = "proposal" | "review" | "synthesis" | "complete";
+
+export interface CouncilRecord {
+  id: string;
+  kind: "proposal" | "review";
+  summary: string;
+  actorWorkerId: string;
+  recommendation: {
+    summary: string;
+    evidenceRecordIds: string[];
+    alternatives: Array<{
+      title: string;
+      description: string;
+      expectedOutcome: string;
+      risks: string[];
+    }>;
+    recommendedAction: {
+      title: string;
+      description: string;
+      capability: string;
+      mode: string;
+      externalEffect: boolean;
+    };
+    confidence: number;
+    uncertainties: string[];
+  };
+  phase: Exclude<CouncilPhase, "complete">;
+  roleId: string;
+  inputRecordIds: string[];
+  peerRecordIds: string[];
+  providerJob: {
+    id: string;
+    provider: string;
+    model: string;
+    store: boolean;
+    background: boolean;
+  };
+}
+
+export interface ExecutiveCouncilState {
+  protocol: "vorton.executive-council.v1";
+  installationId: string;
+  work: {
+    id: string;
+    title: string;
+    requestedOutcome: string;
+    acceptanceCriteria: string[];
+    state: string;
+  };
+  authority: "none";
+  phase: CouncilPhase;
+  nextStep: null | {
+    phase: Exclude<CouncilPhase, "complete">;
+    roleId: string;
+    roleName: string;
+  };
+  counts: {
+    proposals: number;
+    reviews: number;
+    syntheses: number;
+    total: number;
+    required: number;
+  };
+  roles: Array<{
+    roleId: string;
+    workerId: string;
+    name: string;
+    version: number;
+    status: "awaiting_proposal" | "awaiting_review" | "complete";
+    proposal: CouncilRecord | null;
+    review: CouncilRecord | null;
+  }>;
+  synthesis: CouncilRecord | null;
+}
+
 export interface RuntimeContextValue {
   session: Session;
   bootstrap: RuntimeBootstrap;
@@ -70,6 +146,19 @@ export interface RuntimeContextValue {
     stage: "proposals" | "reviews" | "decisions" | "approvals" | "work",
     request: unknown,
   ): Promise<unknown>;
+  refreshBootstrap(): Promise<void>;
+  getExecutiveCouncil(
+    workId: string,
+    installationId: string,
+  ): Promise<ExecutiveCouncilState>;
+  installExecutiveCouncil(
+    workId: string,
+    installationId: string,
+  ): Promise<ExecutiveCouncilState>;
+  advanceExecutiveCouncil(
+    workId: string,
+    installationId: string,
+  ): Promise<ExecutiveCouncilState>;
 }
 
 const RuntimeContext = createContext<RuntimeContextValue | null>(null);
@@ -174,6 +263,20 @@ export function BrowserRuntime({
   const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>();
   const [runtimeError, setRuntimeError] = useState<string>();
 
+  const refreshBootstrap = useCallback(async () => {
+    if (!session) return;
+    setRuntimeError(undefined);
+    try {
+      setBootstrap(
+        await getRuntimeBootstrap(config.apiUrl, session.access_token),
+      );
+    } catch (error) {
+      setRuntimeError(
+        error instanceof Error ? error.message : "Runtime bootstrap failed",
+      );
+    }
+  }, [config.apiUrl, session]);
+
   useEffect(() => {
     void client.auth.getSession().then(({ data, error }) => {
       if (error) setSession(null);
@@ -190,14 +293,8 @@ export function BrowserRuntime({
       setBootstrap(undefined);
       return;
     }
-    void getRuntimeBootstrap(config.apiUrl, session.access_token)
-      .then(setBootstrap)
-      .catch((error: unknown) =>
-        setRuntimeError(
-          error instanceof Error ? error.message : "Runtime bootstrap failed",
-        ),
-      );
-  }, [config.apiUrl, session]);
+    void refreshBootstrap();
+  }, [refreshBootstrap, session]);
 
   if (session === undefined)
     return (
@@ -231,11 +328,109 @@ export function BrowserRuntime({
             stage,
             request,
           ),
+        refreshBootstrap,
+        getExecutiveCouncil: (workId, installationId) =>
+          getExecutiveCouncil(
+            config.apiUrl,
+            session.access_token,
+            workId,
+            installationId,
+          ),
+        installExecutiveCouncil: (workId, installationId) =>
+          installExecutiveCouncil(
+            config.apiUrl,
+            session.access_token,
+            workId,
+            installationId,
+          ),
+        advanceExecutiveCouncil: (workId, installationId) =>
+          advanceExecutiveCouncil(
+            config.apiUrl,
+            session.access_token,
+            workId,
+            installationId,
+          ),
       }}
     >
       {children}
     </RuntimeProvider>
   );
+}
+
+export async function getExecutiveCouncil(
+  apiUrl: string,
+  accessToken: string,
+  workId: string,
+  installationId: string,
+  requestFetch: typeof fetch = fetch,
+): Promise<ExecutiveCouncilState> {
+  const query = new URLSearchParams({ installationId });
+  return requestCouncilState(
+    `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}?${query.toString()}`,
+    accessToken,
+    undefined,
+    requestFetch,
+  );
+}
+
+export async function installExecutiveCouncil(
+  apiUrl: string,
+  accessToken: string,
+  workId: string,
+  installationId: string,
+  requestFetch: typeof fetch = fetch,
+): Promise<ExecutiveCouncilState> {
+  return requestCouncilState(
+    `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/install`,
+    accessToken,
+    installationId,
+    requestFetch,
+  );
+}
+
+export async function advanceExecutiveCouncil(
+  apiUrl: string,
+  accessToken: string,
+  workId: string,
+  installationId: string,
+  requestFetch: typeof fetch = fetch,
+): Promise<ExecutiveCouncilState> {
+  return requestCouncilState(
+    `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/advance`,
+    accessToken,
+    installationId,
+    requestFetch,
+  );
+}
+
+async function requestCouncilState(
+  url: string,
+  accessToken: string,
+  installationId: string | undefined,
+  requestFetch: typeof fetch,
+): Promise<ExecutiveCouncilState> {
+  const response = await requestFetch(url, {
+    ...(installationId
+      ? {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ installationId }),
+        }
+      : { headers: { authorization: `Bearer ${accessToken}` } }),
+  });
+  const payload = (await response.json()) as
+    ExecutiveCouncilState | { error?: { code?: string; message?: string } };
+  if (!response.ok) {
+    const message =
+      "error" in payload && payload.error?.message
+        ? payload.error.message
+        : `Executive council API rejected the request with HTTP ${String(response.status)}`;
+    throw new Error(message);
+  }
+  return payload as ExecutiveCouncilState;
 }
 
 export async function getRuntimeBootstrap(

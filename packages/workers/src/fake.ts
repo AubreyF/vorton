@@ -20,6 +20,7 @@ export class FakeExecutiveWorkerAdapter implements ExecutiveWorkerProvider {
   readonly provider = "deterministic-fake";
   readonly model = "synthetic-executive-v1";
   readonly dataClassificationCeiling = "synthetic" as const;
+  readonly storesResponses = false;
   readonly #recommendation?: ExecutiveRecommendation;
   #sequence = 0;
 

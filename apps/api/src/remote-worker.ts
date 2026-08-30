@@ -20,6 +20,8 @@ export class RemoteExecutiveWorkerAdapter implements ExecutiveWorkerProvider {
   readonly provider: string;
   readonly model: string;
   readonly dataClassificationCeiling: DataClassification;
+  // The remote worker refuses to start when provider storage is enabled.
+  readonly storesResponses = false;
   readonly #url: string;
   readonly #secret: string;
   readonly #fetch: typeof fetch;

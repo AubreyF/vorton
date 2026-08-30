@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveDataClassification,
   executiveRecommendationSchema,
+  executiveWorkerJobRequestSchema,
   installationLockSchema,
   recordActorSchema,
   recordInputSchema,
@@ -319,6 +320,89 @@ describe("installation contracts", () => {
     expect(result.success).toBe(true);
     expect(result.data).not.toHaveProperty("policyId");
     expect(result.data).not.toHaveProperty("capabilityGrantId");
+  });
+
+  it("rejects a council request before it can exceed the worker ingress ceiling", () => {
+    const roleIds = Array.from(
+      { length: 5 },
+      (_, index) =>
+        `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    );
+    const peers = Array.from({ length: 10 }, (_, index) => ({
+      recordId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      kind: index < 5 ? ("proposal" as const) : ("review" as const),
+      phase: index < 5 ? ("proposal" as const) : ("review" as const),
+      roleId: roleIds[index % 5]!,
+      roleName: `Role ${String((index % 5) + 1)}`,
+      summary: "s".repeat(8_000),
+      recommendation: {
+        summary: "r".repeat(8_000),
+        evidenceRecordIds: ["7fb46f09-3894-4c24-933c-77c7a403341c"],
+        alternatives: [
+          {
+            title: "Bounded option",
+            description: "d".repeat(8_000),
+            expectedOutcome: "o".repeat(4_000),
+            risks: ["risk"],
+          },
+        ],
+        recommendedAction: {
+          title: "Review",
+          description: "a".repeat(8_000),
+          capability: "executive.review",
+          mode: "recommend" as const,
+          externalEffect: false,
+        },
+        confidence: 0.5,
+        uncertainties: [],
+      },
+      trust: "untrusted" as const,
+      authority: "none" as const,
+    }));
+    const result = executiveWorkerJobRequestSchema.safeParse({
+      installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      workId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+      workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
+      role: {
+        roleId: roleIds[0],
+        name: "Chief Executive Officer",
+        version: 1,
+        contentSha256: "a".repeat(64),
+        skillMarkdown: "# Chief Executive Officer",
+      },
+      objective: "Synthesize",
+      evidence: [
+        {
+          recordId: "7fb46f09-3894-4c24-933c-77c7a403341c",
+          summary: "Evidence",
+          sourceUri: null,
+          classification: "synthetic",
+        },
+      ],
+      council: {
+        protocol: "vorton.executive-council.v1",
+        phase: "synthesis",
+        roleId: roleIds[0],
+        workUpdatedAt: "2026-08-30T12:00:00.000Z",
+        workInputSha256: "b".repeat(64),
+        inputRecordIds: [
+          "7fb46f09-3894-4c24-933c-77c7a403341c",
+          ...peers.map((peer) => peer.recordId),
+        ],
+        peerContext: peers,
+        authority: "none",
+      },
+      background: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "Council worker request exceeds the 192 KiB ingress ceiling",
+        }),
+      ]),
+    );
   });
 
   it("marks retrieved memory as derived and untrusted", () => {

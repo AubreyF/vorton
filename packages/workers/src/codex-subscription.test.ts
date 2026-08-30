@@ -224,9 +224,12 @@ describe("CodexSubscriptionAdapter", () => {
       })),
     };
 
-    await expect(adapter(runner).submit(request)).rejects.toThrow(
-      "outside the authoritative request",
-    );
+    const job = await adapter(runner).submit(request);
+    expect(job).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("outside the authoritative request"),
+    });
+    expect(job.recommendation).toBeUndefined();
   });
 
   it("does not expose malformed model output through its error", async () => {
@@ -236,14 +239,13 @@ describe("CodexSubscriptionAdapter", () => {
       })),
     };
 
-    const error = await adapter(runner)
-      .submit(request)
-      .catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      "Codex CLI returned an invalid executive recommendation",
-    );
-    expect((error as Error).message).not.toContain("private-output");
+    const job = await adapter(runner).submit(request);
+    expect(job).toMatchObject({
+      status: "failed",
+      error: "Codex CLI returned an invalid executive recommendation",
+    });
+    expect(job.recommendation).toBeUndefined();
+    expect(job.error).not.toContain("private-output");
   });
 
   it("serializes invocations that share auth.json", async () => {

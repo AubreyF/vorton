@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  advanceExecutiveCouncil,
+  getExecutiveCouncil,
   getRuntimeBootstrap,
+  installExecutiveCouncil,
   postExecutiveRequest,
   readBrowserRuntimeConfig,
 } from "./runtime.js";
@@ -91,4 +94,51 @@ describe("browser runtime boundary", () => {
       { headers: { authorization: "Bearer verified-session-token" } },
     );
   });
+
+  it("routes council reads with the exact bearer token and installation query", async () => {
+    const requestFetch = vi.fn(async () =>
+      Response.json({ protocol: "vorton.executive-council.v1" }),
+    );
+    await getExecutiveCouncil(
+      "https://api.vorton.example",
+      "verified-session-token",
+      "work/with spaces",
+      "installation-1",
+      requestFetch as typeof fetch,
+    );
+    expect(requestFetch).toHaveBeenCalledWith(
+      "https://api.vorton.example/v1/executive/councils/work%2Fwith%20spaces?installationId=installation-1",
+      { headers: { authorization: "Bearer verified-session-token" } },
+    );
+  });
+
+  it.each([
+    ["install", installExecutiveCouncil],
+    ["advance", advanceExecutiveCouncil],
+  ] as const)(
+    "routes council %s with the exact bearer token and installation body",
+    async (action, request) => {
+      const requestFetch = vi.fn(async () =>
+        Response.json({ protocol: "vorton.executive-council.v1" }),
+      );
+      await request(
+        "https://api.vorton.example",
+        "verified-session-token",
+        "work-1",
+        "installation-1",
+        requestFetch as typeof fetch,
+      );
+      expect(requestFetch).toHaveBeenCalledWith(
+        `https://api.vorton.example/v1/executive/councils/work-1/${action}`,
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer verified-session-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ installationId: "installation-1" }),
+        },
+      );
+    },
+  );
 });
