@@ -4,6 +4,7 @@ import {
   triageMoonbaseIncidents,
   type TriagedIncident,
 } from "@vorton/example-moonbase-triage";
+import { factoryModuleManifest } from "@vorton/factory";
 import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
@@ -147,11 +148,90 @@ export function AuthenticApp() {
           />
         ) : section === "tools" ? (
           <ToolLab view={subsection} />
+        ) : section === "factory" ? (
+          <FactoryModule view={subsection} />
         ) : (
           <ModuleFoundation section={section} />
         )}
       </main>
     </div>
+  );
+}
+
+function FactoryModule({ view }: { view: string }) {
+  const manifest = factoryModuleManifest;
+  return (
+    <section className="factory-module">
+      <header className="module-intro">
+        <div>
+          <p className="eyebrow">Vorton / Factory / {view}</p>
+          <h1>Factory</h1>
+          <p className="lede">
+            Governed software work across repositories and enrolled workers. The
+            FreedOS connector is now part of Vorton. Live execution remains
+            under Freed task authority and stays closed until its pilot gates
+            pass.
+          </p>
+        </div>
+        <dl className="work-summary" aria-label="Factory integration summary">
+          <div>
+            <dt>Runtime</dt>
+            <dd>Integrated</dd>
+          </div>
+          <div>
+            <dt>Projection</dt>
+            <dd>Read only</dd>
+          </div>
+          <div>
+            <dt>Writer</dt>
+            <dd>Closed</dd>
+          </div>
+        </dl>
+      </header>
+
+      <div className="factory-authority-grid">
+        {Object.entries(manifest.authority).map(([name, owner]) => (
+          <article key={name}>
+            <p className="eyebrow">{name}</p>
+            <h2>{owner}</h2>
+          </article>
+        ))}
+      </div>
+
+      <article className="factory-connector-card">
+        <header>
+          <div>
+            <p className="eyebrow">Installed connector</p>
+            <h2>{manifest.connector}</h2>
+          </div>
+          <span className="work-state">{manifest.mode}</span>
+        </header>
+        <p>
+          This connector imports the proven admission, custody, routing,
+          checkpoint, review, and draft publication machinery. It does not copy
+          credentials, mutable host state, OAuth caches, worktrees, or a second
+          authority ledger into Vorton.
+        </p>
+        <ul className="factory-capabilities">
+          {manifest.capabilities.map((capability) => (
+            <li key={capability}>{capability}</li>
+          ))}
+        </ul>
+        <footer>
+          <span>Source {manifest.sourceRepository}</span>
+          <code>{manifest.sourceCommit.slice(0, 12)}</code>
+        </footer>
+      </article>
+
+      <div className="directional-empty-state">
+        <h2>Live Factory projection is the next gate</h2>
+        <p>
+          Tickets, workers, pull requests, and receipts will appear after the
+          live connector exposes a fresh read-only snapshot. Vorton will not
+          infer execution state from stale or synthetic evidence.
+        </p>
+      </div>
+    </section>
   );
 }
 

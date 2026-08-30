@@ -1,0 +1,35 @@
+[Unit]
+Description=FreedOS Factory signed host observation gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/opt/vorton-factory/current
+EnvironmentFile=/etc/vorton-factory/host-gateway.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/host-gateway.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=vorton-factory/coordinator
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory
+ReadWritePaths=/var/lib/vorton-factory/coordinator
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

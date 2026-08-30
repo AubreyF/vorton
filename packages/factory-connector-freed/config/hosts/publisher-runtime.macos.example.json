@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "hostId": "macos-executor-1",
+  "gitExecutable": "/usr/bin/git",
+  "nodeExecutable": "/opt/vorton-factory/node/bin/node",
+  "nodeVersion": "v24.14.1",
+  "appId": "replace-with-draft-publisher-app-id",
+  "installationId": 1,
+  "privateKeyFile": "/Library/Application Support/Vorton Factory/publisher/draft-publisher-private.pem",
+  "selectedRepositories": ["freed-project/freed"],
+  "worktreeRoots": [
+    "/Users/vorton-factory/Library/Application Support/Vorton Factory/workspaces"
+  ]
+}

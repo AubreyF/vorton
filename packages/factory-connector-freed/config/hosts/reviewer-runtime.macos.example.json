@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "hostId": "macos-executor-1",
+  "accountId": "codex-pro-1",
+  "codexExecutable": "/opt/vorton-factory/codex/bin/codex",
+  "codexHome": "/Users/vorton-factory/Library/Application Support/Vorton Factory/reviewer/codex",
+  "homeDirectory": "/Users/vorton-factory/Library/Application Support/Vorton Factory/reviewer",
+  "model": "replace-with-advertised-model",
+  "effort": "high",
+  "quotaSampleIntervalMs": 30000
+}

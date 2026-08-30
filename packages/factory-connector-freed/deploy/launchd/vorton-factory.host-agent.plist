@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>vorton-factory.host-monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/vorton-factory/node/bin/node</string>
+    <string>/opt/vorton-factory/current/dist/host-monitor.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/opt/vorton-factory/current</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CODEX_HOME</key>
+    <string>/Users/vorton-factory/Library/Application Support/Vorton Factory/codex</string>
+    <key>VORTON_FACTORY_ACCOUNT_ID</key>
+    <string>replace-account-id</string>
+    <key>VORTON_FACTORY_CODEX_EFFORT</key>
+    <string>high</string>
+    <key>VORTON_FACTORY_CODEX_EXECUTABLE</key>
+    <string>replace-with-absolute-codex-executable</string>
+    <key>VORTON_FACTORY_CODEX_MODEL</key>
+    <string>replace-with-advertised-callable-model</string>
+    <key>VORTON_FACTORY_CODEX_VERSION</key>
+    <string>replace-with-exact-codex-version-output</string>
+    <key>VORTON_FACTORY_HOST_GATEWAY_URL</key>
+    <string>https://replace-private-linux-host-name</string>
+    <key>VORTON_FACTORY_HOST_ID</key>
+    <string>macos-executor-1</string>
+    <key>VORTON_FACTORY_HOST_LANE</key>
+    <string>macos</string>
+    <key>VORTON_FACTORY_HOST_PRIVATE_KEY_FILE</key>
+    <string>/Users/vorton-factory/Library/Application Support/Vorton Factory/identity/host-private.pem</string>
+    <key>VORTON_FACTORY_HOST_SEQUENCE_FILE</key>
+    <string>/Users/vorton-factory/Library/Application Support/Vorton Factory/state/host-envelope.sequence</string>
+    <key>VORTON_FACTORY_QUOTA_SAMPLE_SECONDS</key>
+    <string>60</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/vorton-factory/Library/Logs/Vorton Factory/host-monitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/vorton-factory/Library/Logs/Vorton Factory/host-monitor-error.log</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

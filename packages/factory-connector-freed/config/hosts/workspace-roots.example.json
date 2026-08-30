@@ -1,0 +1,4 @@
+{
+  "linux-control-1": "/var/lib/vorton-factory/workspaces",
+  "macos-executor-1": "/Users/vorton-factory/Library/Application Support/Vorton Factory/workspaces"
+}

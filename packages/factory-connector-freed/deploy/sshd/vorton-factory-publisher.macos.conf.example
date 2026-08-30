@@ -1,0 +1,10 @@
+Match User vorton-factory-publisher
+    AuthenticationMethods publickey
+    AuthorizedKeysFile "/Library/Application Support/Vorton Factory/ssh/publisher_authorized_keys"
+    ForceCommand /opt/vorton-factory/node/bin/node /opt/vorton-factory/releases/replace-with-revision/dist/cli/publisher-ssh-gateway.js '/Library/Application Support/Vorton Factory/publisher-runtime.json' /opt/vorton-factory/releases/replace-with-revision/dist/cli/publish-draft-local.js '/Library/Application Support/Vorton Factory/ssh/publisher_authorized_keys'
+    DisableForwarding yes
+    PermitTTY no
+    X11Forwarding no
+    PermitUserRC no
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no

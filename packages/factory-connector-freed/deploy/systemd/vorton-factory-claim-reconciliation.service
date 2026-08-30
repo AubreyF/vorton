@@ -1,0 +1,29 @@
+[Unit]
+Description=FreedOS Factory stale claim reconciliation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/var/lib/vorton-factory/symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/reconcile-freed-claims.js
+StateDirectory=vorton-factory/admission
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory /opt/vorton-factory /opt/freed /srv/freed
+ReadWritePaths=/var/lib/vorton-factory/admission /var/lib/freed/automation/control
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

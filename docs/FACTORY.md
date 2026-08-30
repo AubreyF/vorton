@@ -28,3 +28,13 @@ The existing Freed Linux pilot remains the sole launch lane for its first ticket
 Initial FreedOS integration is read-only. It displays open tickets, worker activity, claims, draft pull requests, checks, blockers, and recovery state. It does not create a new queue, change live authority, contact providers, or publish code.
 
 Later write integration requires an explicit connector contract and separate owner approval for each authority-changing operation.
+
+## Imported implementation
+
+The governed execution implementation now lives in `packages/factory-connector-freed`. It is a sanitized snapshot of `AubreyF/aubtown` commit `014b786c8bf6b51a3ed265b4e36773afff0f5d59`, which is also the release installed on Nova Prime.
+
+The import preserves admission, routing, quota, custody, checkpoint, validation, review, reconciliation, and draft publication behavior. It excludes Git history, reports, dependency directories, build output, credentials, OAuth caches, host state, worktrees, and mutable runtime journals.
+
+The connector remains Freed-specific because its broker, workspace manager, claim readers, readiness gates, and lifecycle reconciliation depend on Freed's authority model. Provider-neutral extraction can proceed behind the existing Factory contracts without weakening the pilot boundary.
+
+The Vorton and imported AubTown repositories currently declare no public software license. Their source is visible, but downstream reuse is not licensed until the owner selects one.

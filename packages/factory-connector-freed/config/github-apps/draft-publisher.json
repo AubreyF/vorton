@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "FreedOS Factory Draft Publisher",
+  "description": "(AI Generated).\n\nPublishes only admitted FreedOS Factory draft pull requests from custody hosts.",
+  "homepageUrl": "https://github.com/AubreyF/vorton",
+  "repositorySelection": "selected",
+  "permissions": {
+    "metadata": "read",
+    "contents": "write",
+    "pullRequests": "write"
+  },
+  "events": [],
+  "public": false,
+  "webhookActive": false,
+  "requestOauthOnInstall": false,
+  "publicationCeiling": "draft-pr",
+  "workflowFilesAllowed": false
+}

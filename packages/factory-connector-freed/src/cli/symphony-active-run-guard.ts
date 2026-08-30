@@ -1,0 +1,95 @@
+import path from "node:path";
+import { ProcessCommandRunner } from "../adapters/command-runner.js";
+import { FreedClaimBrokerClient } from "../adapters/freed/claim-broker.js";
+import { HostObservationJournal } from "../gateway/host-observation-journal.js";
+import {
+  evaluateSymphonyActiveRunGuard,
+  interruptSymphonyActiveRun,
+  parseSymphonyActiveRunGuardRequest,
+  type SymphonyActiveRunGuardResponse,
+} from "../integrations/symphony/active-run-guard.js";
+import { loadSymphonyAdmissionEnvelope } from "../integrations/symphony/admission-envelope.js";
+import { loadHostEnrollments } from "../security/host-enrollment.js";
+import { heartbeatSymphonyActiveClaim } from "../integrations/symphony/active-claim-heartbeat.js";
+import { SymphonyActiveTurnJournal } from "../integrations/symphony/active-turn-journal.js";
+import { symphonyWorkspaceRequirementFromBinding } from "../integrations/symphony/prepare-admission.js";
+import {
+  executorHandoffManifestDigest,
+  executorHandoffManifestFromRequirement,
+} from "../execution/handoff-manifest.js";
+
+function requiredAbsoluteEnvironment(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || !path.isAbsolute(value)) {
+    throw new Error(`${name} must name one absolute path.`);
+  }
+  return value;
+}
+
+const request = parseSymphonyActiveRunGuardRequest(process.argv.slice(2));
+let response: SymphonyActiveRunGuardResponse;
+
+try {
+  const enrollments = await loadHostEnrollments(process.env);
+  const envelope = await loadSymphonyAdmissionEnvelope(
+    requiredAbsoluteEnvironment("VORTON_FACTORY_PRELAUNCH_ENVELOPE_ROOT"),
+    request.issueId,
+  );
+  const observations = await new HostObservationJournal(
+    requiredAbsoluteEnvironment("VORTON_FACTORY_HOST_OBSERVATION_JOURNAL_FILE"),
+    enrollments,
+  ).snapshot();
+  const now = new Date().toISOString();
+  response = evaluateSymphonyActiveRunGuard({
+    request,
+    envelope,
+    observations,
+    enrollments,
+    now,
+  });
+  if (response.decision === "continue") {
+    await heartbeatSymphonyActiveClaim({
+      envelope,
+      now,
+      broker: new FreedClaimBrokerClient(new ProcessCommandRunner(), {
+        executable: requiredAbsoluteEnvironment(
+          "VORTON_FACTORY_FREED_CLAIM_BROKER",
+        ),
+        cwd: requiredAbsoluteEnvironment(
+          "VORTON_FACTORY_FREED_REPOSITORY_ROOT",
+        ),
+      }),
+    });
+    const manifestDigest = executorHandoffManifestDigest(
+      executorHandoffManifestFromRequirement(
+        symphonyWorkspaceRequirementFromBinding({
+          binding: envelope.binding,
+          requiredAt: envelope.preparedAt,
+        }),
+      ),
+    );
+    const binding = envelope.binding;
+    await new SymphonyActiveTurnJournal(
+      requiredAbsoluteEnvironment("VORTON_FACTORY_ACTIVE_TURN_ROOT"),
+    ).record({
+      schemaVersion: 1,
+      kind: "symphony-active-turn",
+      manifestDigest,
+      repository: binding.qualification.repository,
+      issueNumber: binding.qualification.issue.number,
+      claimId: binding.claim.claimId,
+      custodyEpoch: 1,
+      hostId: binding.claim.hostId,
+      workerId: binding.claim.workerId,
+      accountId: binding.accountId,
+      driverId: binding.driverId,
+      threadId: request.threadId,
+      turnId: request.turnId,
+      observedAt: now,
+    });
+  }
+} catch {
+  response = interruptSymphonyActiveRun(request, "active-guard-state-invalid");
+}
+
+process.stdout.write(`${JSON.stringify(response)}\n`);

@@ -1,0 +1,23 @@
+[Unit]
+Description=FreedOS Factory signed host and quota monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/opt/vorton-factory/current
+EnvironmentFile=/etc/vorton-factory/host-agent.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/host-monitor.js
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/vorton-factory
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

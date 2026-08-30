@@ -1,0 +1,57 @@
+import path from "node:path";
+import { ProcessCommandRunner } from "../adapters/command-runner.js";
+import { SshExecutorReadinessProbe } from "../execution/remote-executor-readiness.js";
+import { writeProtectedJsonFile } from "../security/protected-json.js";
+
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (value === undefined || value.length === 0) {
+    throw new Error(`${name} is required.`);
+  }
+  return value;
+}
+
+function absolute(name: string): string {
+  const value = required(name);
+  if (!path.isAbsolute(value)) {
+    throw new Error(`${name} must be absolute.`);
+  }
+  return value;
+}
+
+const hostId = required("VORTON_FACTORY_PILOT_EXECUTOR_HOST_ID");
+const report = await new SshExecutorReadinessProbe(new ProcessCommandRunner(), {
+  sshExecutable: absolute("VORTON_FACTORY_SSH_EXECUTABLE"),
+  sshConfig: absolute("VORTON_FACTORY_SYMPHONY_SSH_CONFIG"),
+  commandCwd: absolute("VORTON_FACTORY_SSH_COMMAND_CWD"),
+  remoteNodeExecutable: absolute("VORTON_FACTORY_REMOTE_NODE_EXECUTABLE"),
+  remoteProbeExecutable: absolute("VORTON_FACTORY_REMOTE_EXECUTOR_PROBE"),
+  remoteRuntimeConfig: absolute("VORTON_FACTORY_REMOTE_WORKER_RUNTIME_CONFIG"),
+  remoteReviewerRuntimeConfig: absolute(
+    "VORTON_FACTORY_REMOTE_REVIEWER_RUNTIME_CONFIG",
+  ),
+  remoteWorkspacePreparer: absolute("VORTON_FACTORY_REMOTE_WORKSPACE_PREPARER"),
+  remoteWorkspaceCompleter: absolute(
+    "VORTON_FACTORY_REMOTE_WORKSPACE_COMPLETER",
+  ),
+  remoteCompletionReader: absolute("VORTON_FACTORY_REMOTE_COMPLETION_READER"),
+  remoteAdjudicator: absolute("VORTON_FACTORY_REMOTE_ADJUDICATOR"),
+  expectedUser: required("VORTON_FACTORY_SSH_WORKER_USER"),
+  expectedIdentityFile: absolute("VORTON_FACTORY_SSH_IDENTITY_FILE"),
+  expectedKnownHostsFile: absolute("VORTON_FACTORY_SSH_KNOWN_HOSTS_FILE"),
+  requiredConfigUid: 0,
+}).probe(hostId);
+const outputFile = absolute("VORTON_FACTORY_EXECUTOR_READINESS_FILE");
+await writeProtectedJsonFile({
+  file: outputFile,
+  label: "Executor readiness report",
+  value: report,
+});
+process.stdout.write(
+  `${JSON.stringify({
+    event: "executor-readiness-probed",
+    hostId: report.hostId,
+    baseHead: report.baseHead,
+    outputFile,
+  })}\n`,
+);
