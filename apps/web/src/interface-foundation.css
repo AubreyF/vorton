@@ -408,6 +408,191 @@
   max-width: 1240px;
 }
 
+.tool-lab {
+  max-width: 1120px;
+}
+
+.tool-lab > h1 {
+  margin: 6px 0 8px;
+  font-size: clamp(2.5rem, 5vw, 4.6rem);
+  font-weight: var(--vorton-heading-font-weight, 300);
+  letter-spacing: var(--vorton-heading-letter-spacing, -0.05em);
+  line-height: 0.95;
+}
+
+.catalog-count {
+  display: grid;
+  min-width: 180px;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-card-radius);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.catalog-count strong {
+  font-family: var(--vorton-font-display);
+  font-size: 2rem;
+}
+
+.catalog-count span {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.tool-preview-card,
+.tool-contract-guide {
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-card-radius);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.tool-preview-card > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tool-preview-card h2,
+.tool-contract-guide h2 {
+  margin: 7px 0 8px;
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 560;
+}
+
+.tool-preview-card header p:last-child {
+  max-width: 650px;
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.tool-version {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.tool-boundaries {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.tool-boundaries > div {
+  padding: 0 18px;
+}
+
+.tool-boundaries > div:first-child {
+  padding-left: 0;
+}
+
+.tool-boundaries > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.tool-boundaries dt {
+  color: var(--ink-soft);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-boundaries dd {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tool-preview-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding-top: 24px;
+}
+
+.tool-preview-actions .primary-button {
+  width: auto;
+  min-width: 190px;
+  margin: 0;
+}
+
+.tool-preview-actions p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.triage-result {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.triage-result > header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.triage-result > header span {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.triage-result ol {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.triage-result li {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) minmax(100px, 0.4fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-control-radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.triage-result li span,
+.triage-result li small {
+  color: var(--ink-soft);
+}
+
+.triage-result li b {
+  color: var(--blue);
+  font-size: 0.7rem;
+}
+
+.tool-contract-guide {
+  margin-top: 32px;
+}
+
+.tool-contract-guide ol {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 0;
+  padding-left: 22px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
 .module-intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -658,6 +843,16 @@
   .work-card__body {
     grid-template-columns: 1fr;
   }
+
+  .tool-boundaries {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 0;
+  }
+
+  .tool-boundaries > div:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -716,6 +911,26 @@
 
   .work-metadata {
     grid-template-columns: 1fr;
+  }
+
+  .tool-preview-card > header,
+  .tool-preview-actions {
+    display: grid;
+  }
+
+  .tool-boundaries {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-boundaries > div,
+  .tool-boundaries > div:first-child,
+  .tool-boundaries > div:nth-child(3) {
+    padding: 0;
+    border-left: 0;
+  }
+
+  .triage-result li {
+    grid-template-columns: 52px minmax(0, 1fr);
   }
 
   .daily-focus-card {
