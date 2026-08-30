@@ -73,6 +73,10 @@ describe("executive council route and surface", () => {
     expect(sectionFromHash("#command/Council")).toBe("command");
     expect(subsectionFromHash("command", "#command/Council")).toBe("Council");
     expect(subsectionFromHash("command", "#command/unknown")).toBe("Briefing");
+    expect(subsectionFromHash("tools", "#tools/moonbase-triage")).toBe(
+      "moonbase-triage",
+    );
+    expect(subsectionFromHash("tools", "#tools/unknown")).toBe("Catalog");
     expect(commandSectionIdFromSubsection("Council")).toBe("command-council");
     expect(commandSectionIdFromSubsection("unknown")).toBe("command-briefing");
   });

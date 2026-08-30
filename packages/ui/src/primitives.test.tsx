@@ -6,11 +6,11 @@ describe("control-plane primitives", () => {
   it("renders status tone and accessible empty-state guidance", () => {
     const html = renderToStaticMarkup(
       <EmptyState eyebrow="Tools / Installed" title="No tools installed">
-        <p>Open Tool Lab to preview examples.</p>
+        <p>Open Tools to preview examples.</p>
       </EmptyState>,
     );
     expect(html).toContain("No tools installed");
-    expect(html).toContain("Open Tool Lab");
+    expect(html).toContain("Open Tools");
     expect(renderToStaticMarkup(<StatusDot tone="warn" />)).toContain(
       "status-dot--warn",
     );
