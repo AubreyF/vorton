@@ -281,18 +281,10 @@ const snapshot: ControlPlaneSnapshot = {
       countLabel: "0 installed",
     },
     {
-      id: "conversations",
-      name: "Conversations",
-      description:
-        "Provider-neutral transcript evidence with source revision history.",
-      state: "quiet",
-      countLabel: "No adapters",
-    },
-    {
       id: "admin",
       name: "Admin",
       description:
-        "People, access, policy, integrations, and deployment observations.",
+        "People, access, policy, conversations, integrations, and deployment observations.",
       state: "ready",
       countLabel: "2 notices",
     },

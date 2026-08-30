@@ -20,7 +20,11 @@ describe("synthetic control-plane adapter", () => {
     expect(snapshot.modules.map((module) => module.id)).not.toContain(
       "finance",
     );
-    expect(snapshot.modules).toHaveLength(8);
+    expect(snapshot.modules.map((module) => module.id)).not.toContain(
+      "conversations",
+    );
+    expect(snapshot.modules.map((module) => module.id)).toContain("admin");
+    expect(snapshot.modules).toHaveLength(7);
   });
 
   it("creates inspectable Work inside the synthetic adapter boundary", async () => {
