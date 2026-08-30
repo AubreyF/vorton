@@ -20,6 +20,23 @@ const codex = {
 };
 
 describe("worker environment", () => {
+  it("accepts only the isolated legacy shared secret during transition", () => {
+    expect(
+      readWorkerEnvironment({
+        ...codex,
+        VORTON_WORKER_SHARED_SECRET: undefined,
+        AUBOS_WORKER_SHARED_SECRET: codex.VORTON_WORKER_SHARED_SECRET,
+      }).sharedSecret,
+    ).toBe(codex.VORTON_WORKER_SHARED_SECRET);
+    expect(
+      readWorkerEnvironment({
+        ...codex,
+        VORTON_WORKER_SHARED_SECRET: "v".repeat(32),
+        AUBOS_WORKER_SHARED_SECRET: "a".repeat(32),
+      }).sharedSecret,
+    ).toBe("v".repeat(32));
+  });
+
   it("requires an explicitly supported provider and model", () => {
     expect(() =>
       readWorkerEnvironment({ ...base, VORTON_WORKER_PROVIDER: "" }),
