@@ -159,7 +159,7 @@ export async function prepareCodexRuntimeStorage(input: {
     }
     if (!input.authSeed) {
       throw new Error(
-        "AUBOS_CODEX_AUTH_JSON is required when the persistent Codex cache is empty",
+        "VORTON_CODEX_AUTH_JSON is required when the persistent Codex cache is empty",
       );
     }
     assertManagedChatGptAuth(input.authSeed);
@@ -194,6 +194,6 @@ export function dropRuntimePrivileges(
     process.getgid?.() === 0 ||
     process.getgroups?.().includes(0)
   ) {
-    throw new Error("AubOS worker failed to drop root privileges");
+    throw new Error("Vorton worker failed to drop root privileges");
   }
 }

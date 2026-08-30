@@ -1,4 +1,4 @@
-.aubos/
+.vorton/
 .env
 .env.*
 !.env.example

@@ -62,7 +62,7 @@ const filesUnder = (root: string): string[] => {
 const protectedDigests = (): Record<string, string> =>
   (() => {
     const lock = JSON.parse(
-      readFileSync(join(installationRoot, "aubos.lock.json"), "utf8"),
+      readFileSync(join(installationRoot, "vorton.lock.json"), "utf8"),
     ) as { managedFiles: Record<string, string> };
     const managed = new Set(Object.keys(lock.managedFiles));
     return Object.fromEntries(
@@ -70,17 +70,17 @@ const protectedDigests = (): Record<string, string> =>
         .map((path) => relative(installationRoot, path))
         .filter(
           (path) =>
-            path !== "aubos.lock.json" &&
-            !path.startsWith(".aubos/") &&
+            path !== "vorton.lock.json" &&
+            !path.startsWith(".vorton/") &&
             !managed.has(path),
         )
         .map((path) => [
           path,
           sha256(
-            path === "aubos.yaml"
+            path === "vorton.yaml"
               ? readFileSync(join(installationRoot, path), "utf8").replace(
                   /^(\s*version:\s*)[^\n#]+/m,
-                  "$1{{AUBOS_VERSION}}",
+                  "$1{{VORTON_VERSION}}",
                 )
               : readFileSync(join(installationRoot, path)),
           ),
@@ -115,7 +115,7 @@ const upgradeResult = applyPlan({
   planHash: upgrade.hash,
 });
 const upgradedHostDigest = sha256(
-  readFileSync(join(installationRoot, "host/aubos-runtime.json")),
+  readFileSync(join(installationRoot, "host/vorton-runtime.json")),
 );
 const organizationAfterUpgrade = protectedDigests();
 const rollbackResult = rollbackPlan({

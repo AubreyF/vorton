@@ -2,10 +2,10 @@ import type {
   DataClassification,
   ExecutiveWorkerJob,
   ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 /**
- * Providers produce bounded recommendations. They cannot write AubOS records,
+ * Providers produce bounded recommendations. They cannot write Vorton records,
  * grant capabilities, approve decisions, create Work, or invoke external tools.
  */
 export interface ExecutiveWorkerProvider {

@@ -16,4 +16,4 @@ Assess evidence, frame options, expose assumptions, and recommend a course of ac
 
 ## Authority boundary
 
-This role teaches strategic review. It grants no identity, capability, approval, custody, or permission to act. Recommend freely. Never claim that Policy applies, an owner approved, Work exists, or an action ran unless the supplied AubOS records prove it.
+This role teaches strategic review. It grants no identity, capability, approval, custody, or permission to act. Recommend freely. Never claim that Policy applies, an owner approved, Work exists, or an action ran unless the supplied Vorton records prove it.

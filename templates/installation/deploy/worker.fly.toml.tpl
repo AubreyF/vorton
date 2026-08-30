@@ -1,4 +1,4 @@
-# Organization-owned Fly configuration. AubOS upgrades replace only the
+# Organization-owned Fly configuration. Vorton upgrades replace only the
 # digest-pinned image field in this file.
 app = "{{INSTALLATION_NAME}}-worker"
 primary_region = "sea"
@@ -8,17 +8,17 @@ primary_region = "sea"
 
 [env]
   PORT = "8080"
-  AUBOS_WORKER_PROVIDER = "codex-subscription"
-  AUBOS_CODEX_MODEL = "replace-with-explicit-codex-model"
-  AUBOS_CODEX_REASONING_EFFORT = "high"
-  AUBOS_CODEX_EXECUTION_TIMEOUT_MS = "900000"
-  AUBOS_CODEX_HOME = "/data/codex"
-  AUBOS_CODEX_WORKDIR = "/var/empty/aubos-worker"
-  AUBOS_CODEX_CLASSIFICATION_CEILING = "internal"
+  VORTON_WORKER_PROVIDER = "codex-subscription"
+  VORTON_CODEX_MODEL = "replace-with-explicit-codex-model"
+  VORTON_CODEX_REASONING_EFFORT = "high"
+  VORTON_CODEX_EXECUTION_TIMEOUT_MS = "900000"
+  VORTON_CODEX_HOME = "/data/codex"
+  VORTON_CODEX_WORKDIR = "/var/empty/vorton-worker"
+  VORTON_CODEX_CLASSIFICATION_CEILING = "internal"
 
-# Set AUBOS_WORKER_SHARED_SECRET and the one-time AUBOS_CODEX_AUTH_JSON seed
+# Set VORTON_WORKER_SHARED_SECRET and the one-time VORTON_CODEX_AUTH_JSON seed
 # with Fly secrets. After a healthy volume-backed restart, remove the seed with
-# `fly secrets unset AUBOS_CODEX_AUTH_JSON --app <worker-app>` and verify health.
+# `fly secrets unset VORTON_CODEX_AUTH_JSON --app <worker-app>` and verify health.
 # The persistent cache is never overwritten by the seed.
 
 [[mounts]]

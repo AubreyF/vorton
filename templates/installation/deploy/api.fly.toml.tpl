@@ -1,4 +1,4 @@
-# Organization-owned Fly configuration. AubOS upgrades replace only the
+# Organization-owned Fly configuration. Vorton upgrades replace only the
 # digest-pinned image field in this file.
 app = "{{INSTALLATION_NAME}}-api"
 primary_region = "sea"
@@ -8,23 +8,23 @@ primary_region = "sea"
 
 [env]
   PORT = "8080"
-  AUBOS_DATABASE_SSL = "true"
-  AUBOS_SUPABASE_PROJECT_REF = "replace-with-project-ref"
-  AUBOS_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
-  AUBOS_SUPABASE_JWT_ISSUER = "https://replace-with-project-ref.supabase.co/auth/v1"
-  AUBOS_SUPABASE_JWT_AUDIENCE = "authenticated"
-  AUBOS_SUPABASE_JWKS_URL = "https://replace-with-project-ref.supabase.co/auth/v1/.well-known/jwks.json"
-  AUBOS_WORKER_URL = "http://{{INSTALLATION_NAME}}-worker.internal:8080"
-  AUBOS_WORKER_PROVIDER = "codex-subscription"
-  AUBOS_WORKER_MODEL = "replace-with-explicit-codex-model"
-  AUBOS_WORKER_CLASSIFICATION_CEILING = "internal"
-  AUBOS_WORKER_REQUEST_TIMEOUT_MS = "930000"
-  AUBOS_ALLOWED_ORIGIN = "https://{{INSTALLATION_NAME}}-web.fly.dev"
-  AUBOS_HINDSIGHT_URL = "http://{{INSTALLATION_NAME}}-hindsight.internal:8888"
+  VORTON_DATABASE_SSL = "true"
+  VORTON_SUPABASE_PROJECT_REF = "replace-with-project-ref"
+  VORTON_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
+  VORTON_SUPABASE_JWT_ISSUER = "https://replace-with-project-ref.supabase.co/auth/v1"
+  VORTON_SUPABASE_JWT_AUDIENCE = "authenticated"
+  VORTON_SUPABASE_JWKS_URL = "https://replace-with-project-ref.supabase.co/auth/v1/.well-known/jwks.json"
+  VORTON_WORKER_URL = "http://{{INSTALLATION_NAME}}-worker.internal:8080"
+  VORTON_WORKER_PROVIDER = "codex-subscription"
+  VORTON_WORKER_MODEL = "replace-with-explicit-codex-model"
+  VORTON_WORKER_CLASSIFICATION_CEILING = "internal"
+  VORTON_WORKER_REQUEST_TIMEOUT_MS = "930000"
+  VORTON_ALLOWED_ORIGIN = "https://{{INSTALLATION_NAME}}-web.fly.dev"
+  VORTON_HINDSIGHT_URL = "http://{{INSTALLATION_NAME}}-hindsight.internal:8888"
 
-# Set AUBOS_DATABASE_URL, AUBOS_DATABASE_CONTEXT_SIGNING_SECRET,
-# AUBOS_WORKER_SHARED_SECRET, and AUBOS_HINDSIGHT_API_KEY with Fly secrets. Set
-# AUBOS_DATABASE_SSL_CA_BASE64 when the authority database uses a private CA.
+# Set VORTON_DATABASE_URL, VORTON_DATABASE_CONTEXT_SIGNING_SECRET,
+# VORTON_WORKER_SHARED_SECRET, and VORTON_HINDSIGHT_API_KEY with Fly secrets. Set
+# VORTON_DATABASE_SSL_CA_BASE64 when the authority database uses a private CA.
 
 [http_service]
   internal_port = 8080

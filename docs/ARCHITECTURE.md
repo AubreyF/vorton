@@ -2,12 +2,20 @@
 
 ## Design goal
 
-An AubOS installation is one governed system that can span many hosts, providers, and worker types. The control plane stays online in the cloud. Workers connect outward, advertise capabilities, lease Work, and return evidence. Provider credentials remain on the worker host or in its dedicated credential boundary.
+A Vorton installation is one governed system that can span many hosts, providers, and worker types. The control plane stays online in the cloud. Workers connect outward, advertise capabilities, lease Work, and return evidence. Provider credentials remain on the worker host or in its dedicated credential boundary.
+
+Vorton is the product and release identity. FreedOS and AubOS are installation identities. The interface derives its name, branding, enabled modules, and organization-specific behavior from installation configuration while sharing the same Vorton product source.
+
+### Legacy protocol identifiers
+
+Releases through 0.3.2 were published under the former upstream name. Their manifests, OCI references, migration files, PostgreSQL role names, private schema, and transaction context keys remain byte-for-byte historical contracts. Current Vorton code may use those persisted identifiers behind a compatibility boundary until a tested forward migration replaces them. They are not product branding and must not be rewritten in place.
+
+New package scopes, CLI commands, environment variables, installation manifests, release images, and public documentation use Vorton. The first Vorton release must prove an upgrade from the exact 0.3.2 FreedOS state before the compatibility identifiers can be retired.
 
 ```text
 Human and agent-facing clients
              |
-      AubOS control plane
+      Vorton control plane
              |
   Postgres authority and events
              |
@@ -27,7 +35,7 @@ Roles are skill files. A role may describe jurisdiction, inputs, outputs, method
 
 The web control plane runs on Fly.io. It provides one view of goals, open Work, decisions, approvals, memory provenance, conversations, costs, worker health, and Factory tickets. It uses Supabase Auth and Postgres. Realtime updates drive operational views.
 
-The first release uses one OpenAI Codex worker route. Provider and runtime adapters remain explicit so later workers can use Grok, Claude, local models, or containerized research environments without changing kernel authority.
+The first release uses one frontier worker route. Provider and runtime adapters remain explicit so later workers can use different frontier providers, local models, or containerized research environments without changing kernel authority.
 
 ## Data boundaries
 
@@ -49,13 +57,13 @@ Role-based memory filtering is a future enforcement layer. The first release inc
 - Admin manages people, access, policies, integrations, and observed deployment state.
 - Factory coordinates software production through kernel Work and external repository connectors.
 
-The upstream Tools module starts empty. It ships scaffolding and one uninstalled, offline example named Moonbase Triage. No personal tools, data, configuration, or assets are copied into AubOS.
+The upstream Tools module starts empty. It ships scaffolding and one uninstalled, offline example named Moonbase Triage. No personal tools, data, configuration, or assets are copied into Vorton.
 
 ## Factory boundary
 
 Factory is a first-party module, not a separate organizational system. GitHub Issues may remain the canonical human software queue while Postgres records organizational Work, approvals, worker state, and receipts. A connector projects and reconciles between them without creating a second software-task authority.
 
-The active Freed Linux pilot remains the launch authority for its first ticket. AubOS consumes its read-only status first. Factory integration cannot delay or replace that pilot.
+The active Freed Linux pilot remains the launch authority for its first ticket. Vorton consumes its read-only status first. Factory integration cannot delay or replace that pilot.
 
 ## Deployment
 

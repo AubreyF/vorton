@@ -1,7 +1,7 @@
 import {
   dataClassificationSchema,
   type DataClassification,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 export interface WorkerEnvironment {
   port: number;
@@ -65,15 +65,15 @@ export function readWorkerEnvironment(
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("PORT must be an integer from 1 through 65535");
   }
-  const secret = required(env, "AUBOS_WORKER_SHARED_SECRET");
+  const secret = required(env, "VORTON_WORKER_SHARED_SECRET");
   if (secret.length < 32)
     throw new Error(
-      "AUBOS_WORKER_SHARED_SECRET must contain at least 32 characters",
+      "VORTON_WORKER_SHARED_SECRET must contain at least 32 characters",
     );
-  const provider = required(env, "AUBOS_WORKER_PROVIDER");
+  const provider = required(env, "VORTON_WORKER_PROVIDER");
   if (provider !== "openai-responses" && provider !== "codex-subscription") {
     throw new Error(
-      "AUBOS_WORKER_PROVIDER must be explicitly set to openai-responses or codex-subscription",
+      "VORTON_WORKER_PROVIDER must be explicitly set to openai-responses or codex-subscription",
     );
   }
   const common = {
@@ -81,46 +81,46 @@ export function readWorkerEnvironment(
     sharedSecret: secret,
     provider,
     release:
-      env.FLY_IMAGE_REF?.trim() || env.AUBOS_RELEASE?.trim() || "development",
+      env.FLY_IMAGE_REF?.trim() || env.VORTON_RELEASE?.trim() || "development",
   };
   if (provider === "openai-responses") {
     const baseUrl = new URL(
-      env.AUBOS_OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+      env.VORTON_OPENAI_BASE_URL ?? "https://api.openai.com/v1",
     );
     if (baseUrl.protocol !== "https:")
-      throw new Error("AUBOS_OPENAI_BASE_URL must use https");
+      throw new Error("VORTON_OPENAI_BASE_URL must use https");
     return {
       ...common,
       provider,
-      model: required(env, "AUBOS_OPENAI_MODEL"),
-      openAiApiKey: required(env, "AUBOS_OPENAI_API_KEY"),
+      model: required(env, "VORTON_OPENAI_MODEL"),
+      openAiApiKey: required(env, "VORTON_OPENAI_API_KEY"),
       openAiBaseUrl: baseUrl.toString().replace(/\/$/, ""),
-      storeResponses: exactBoolean(env, "AUBOS_OPENAI_STORE_RESPONSES", false),
+      storeResponses: exactBoolean(env, "VORTON_OPENAI_STORE_RESPONSES", false),
       classificationCeiling: dataClassificationSchema.parse(
-        env.AUBOS_OPENAI_CLASSIFICATION_CEILING ?? "internal",
+        env.VORTON_OPENAI_CLASSIFICATION_CEILING ?? "internal",
       ),
     };
   }
 
-  const codexHome = required(env, "AUBOS_CODEX_HOME");
+  const codexHome = required(env, "VORTON_CODEX_HOME");
   if (!codexHome.startsWith("/")) {
-    throw new Error("AUBOS_CODEX_HOME must be an absolute path");
+    throw new Error("VORTON_CODEX_HOME must be an absolute path");
   }
-  const codexWorkdir = required(env, "AUBOS_CODEX_WORKDIR");
+  const codexWorkdir = required(env, "VORTON_CODEX_WORKDIR");
   if (!codexWorkdir.startsWith("/")) {
-    throw new Error("AUBOS_CODEX_WORKDIR must be an absolute path");
+    throw new Error("VORTON_CODEX_WORKDIR must be an absolute path");
   }
-  const reasoningEffort = required(env, "AUBOS_CODEX_REASONING_EFFORT");
+  const reasoningEffort = required(env, "VORTON_CODEX_REASONING_EFFORT");
   if (
     !["low", "medium", "high", "xhigh", "max", "ultra"].includes(
       reasoningEffort,
     )
   ) {
     throw new Error(
-      "AUBOS_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
+      "VORTON_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
     );
   }
-  for (const name of ["AUBOS_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
+  for (const name of ["VORTON_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
     if (env[name]?.trim()) {
       throw new Error(
         `A Codex subscription worker must not receive API billing secret ${name}`,
@@ -130,18 +130,18 @@ export function readWorkerEnvironment(
   return {
     ...common,
     provider,
-    model: required(env, "AUBOS_CODEX_MODEL"),
+    model: required(env, "VORTON_CODEX_MODEL"),
     storeResponses: false,
     classificationCeiling: dataClassificationSchema.parse(
-      env.AUBOS_CODEX_CLASSIFICATION_CEILING ?? "internal",
+      env.VORTON_CODEX_CLASSIFICATION_CEILING ?? "internal",
     ),
     codexHome,
-    codexPath: env.AUBOS_CODEX_PATH?.trim() || "codex",
+    codexPath: env.VORTON_CODEX_PATH?.trim() || "codex",
     codexWorkdir,
-    codexAuthJson: env.AUBOS_CODEX_AUTH_JSON,
+    codexAuthJson: env.VORTON_CODEX_AUTH_JSON,
     codexExecutionTimeoutMs: boundedInteger(
       env,
-      "AUBOS_CODEX_EXECUTION_TIMEOUT_MS",
+      "VORTON_CODEX_EXECUTION_TIMEOUT_MS",
       60_000,
       1_800_000,
     ),

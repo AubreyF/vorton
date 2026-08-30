@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, relative } from "node:path";
 
-import { releaseManifestSchema, type ReleaseManifest } from "@aubos/contracts";
+import { releaseManifestSchema, type ReleaseManifest } from "@vorton/contracts";
 
 const imageReferencePattern =
   /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/;
@@ -16,9 +16,9 @@ function releaseImageRepositories(
     throw new Error(`Invalid GitHub repository owner: ${repositoryOwner}`);
   }
   return {
-    "control-plane": `ghcr.io/${owner}/aubos-control-plane`,
-    web: `ghcr.io/${owner}/aubos-web`,
-    worker: `ghcr.io/${owner}/aubos-worker`,
+    "control-plane": `ghcr.io/${owner}/vorton-control-plane`,
+    web: `ghcr.io/${owner}/vorton-web`,
+    worker: `ghcr.io/${owner}/vorton-worker`,
   };
 }
 

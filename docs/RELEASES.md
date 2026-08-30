@@ -1,12 +1,12 @@
 # Immutable releases
 
-An AubOS release has three immutable identities:
+An Vorton release has three immutable identities:
 
 1. The source commit contains runtime code, Dockerfiles, migrations, and managed templates.
 2. GHCR stores the `control-plane`, `web`, and `worker` images built from that source. The image workflow records their registry digests and attaches BuildKit provenance and SBOM attestations to each image index.
 3. A manifest-only child commit records the exact source parent, image references, current migration head, CLI version, protocol versions, and managed-template digests. The release tag points to this child commit.
 
-Hindsight is an upstream installation dependency. AubOS does not build it or include it in the first-party image set.
+Hindsight is an upstream installation dependency. Vorton does not build it or include it in the first-party image set.
 
 ## Build the images
 
@@ -28,9 +28,9 @@ gh workflow run build-release-images.yml \
   -f version="$next_version"
 ```
 
-The workflow builds all three images from the same checkout, publishes them to GHCR, adds the exact source commit as an OCI label, and attaches BuildKit provenance and SBOM metadata to each image index. It also exports one SPDX JSON SBOM per image. Every workflow action is pinned to an exact commit. Its `aubos-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
+The workflow builds all three images from the same checkout, publishes them to GHCR, adds the exact source commit as an OCI label, and attaches BuildKit provenance and SBOM metadata to each image index. It also exports one SPDX JSON SBOM per image. Every workflow action is pinned to an exact commit. Its `vorton-<version>-image-digests` artifact contains `image-digests.json`. That file is the handoff to manifest preparation. Do not invent, truncate, or retype digests.
 
-GitHub's hosted artifact-attestation service requires GitHub Enterprise Cloud for private repositories. AubOS therefore uses registry-attached BuildKit attestations for its private MVP repository. The digest-pinned image, source label, exported SBOM, deterministic contract archive, and checksum are the release evidence. A later public repository or Enterprise installation may add GitHub or Sigstore signatures without changing the manifest contract.
+GitHub's hosted artifact-attestation service requires GitHub Enterprise Cloud for private repositories. Vorton therefore uses registry-attached BuildKit attestations for its private MVP repository. The digest-pinned image, source label, exported SBOM, deterministic contract archive, and checksum are the release evidence. A later public repository or Enterprise installation may add GitHub or Sigstore signatures without changing the manifest contract.
 
 Download the artifact outside the repository and inspect it:
 
@@ -38,14 +38,14 @@ Download the artifact outside the repository and inspect it:
 run_id=<completed-image-workflow-run-id>
 artifact_dir=$(mktemp -d)
 gh run download "$run_id" \
-  --name "aubos-$next_version-image-digests" \
+  --name "vorton-$next_version-image-digests" \
   --dir "$artifact_dir"
 jq . "$artifact_dir/image-digests.json"
 ```
 
 ## Prepare the manifest commit
 
-Return to the exact clean source checkout. The preparation command refuses a source other than `HEAD`, a dirty worktree, mutable image tags, image repositories outside the selected GitHub owner's canonical `aubos-control-plane`, `aubos-web`, and `aubos-worker` packages, duplicate image names, missing templates, invalid protocol versions, and a CLI version that differs from `packages/cli/package.json`. It derives the current migration head and managed-file digests from the source commit's Git tree.
+Return to the exact clean source checkout. The preparation command refuses a source other than `HEAD`, a dirty worktree, mutable image tags, image repositories outside the selected GitHub owner's canonical `vorton-control-plane`, `vorton-web`, and `vorton-worker` packages, duplicate image names, missing templates, invalid protocol versions, and a CLI version that differs from `packages/cli/package.json`. It derives the current migration head and managed-file digests from the source commit's Git tree.
 
 Manifest schema v1 is frozen for the historical 0.1.0 and 0.1.1 releases. Those manifests contain the control plane and worker images and remain replayable. The preparation command now emits schema v2. Every schema v2 released manifest contains exactly the control plane, web, and worker images.
 
@@ -65,9 +65,9 @@ npm run release:prepare -- \
   --worker-contract 1 \
   --repository-owner "$repository_owner" \
   --image-receipt "$image_file" \
-  --managed-file "host/aubos-runtime.json=templates/releases/$next_version/host/aubos-runtime.json"
+  --managed-file "host/vorton-runtime.json=templates/releases/$next_version/host/vorton-runtime.json"
 git add "release/manifests/$next_version.json"
-git commit -m "chore: prepare AubOS $next_version release"
+git commit -m "chore: prepare Vorton $next_version release"
 npm run release:preflight -- \
   --version "$next_version" \
   --repository-owner "$repository_owner" \
@@ -81,33 +81,33 @@ Serialize default-branch writes from the source image build through release land
 After review, create and push the tag:
 
 ```bash
-git tag -a "v$next_version" -m "AubOS v$next_version"
+git tag -a "v$next_version" -m "Vorton v$next_version"
 git push origin "v$next_version"
 ```
 
-The tag workflow reruns the exact preflight. It creates a deterministic contract archive, checksum, and SPDX SBOM, then creates or recovers the GitHub Release from the tag. The archive contains the authoritative `supabase/migrations/*.sql` files from the tagged source alongside the release, schema, deployment, and template contracts. It also contains the first-install bootstrap, its default strategic-reviewer role skill, a dependency-locked bootstrap runtime, `bin/aubos.cjs`, and the self-contained `bin/hindsight-canary.cjs` release gate. Any mismatch stops publication.
+The tag workflow reruns the exact preflight. It creates a deterministic contract archive, checksum, and SPDX SBOM, then creates or recovers the GitHub Release from the tag. The archive contains the authoritative `supabase/migrations/*.sql` files from the tagged source alongside the release, schema, deployment, and template contracts. It also contains the first-install bootstrap, its default strategic-reviewer role skill, a dependency-locked bootstrap runtime, `bin/vorton.cjs`, and the self-contained `bin/hindsight-canary.cjs` release gate. Any mismatch stops publication.
 
 The authenticated registry checks prove first-party image identity and evidence. They do not prove that Fly can pull a private GHCR package. Deployment remains blocked until the installation deliberately chooses one of two distribution contracts: public digest-pinned GHCR packages, or a verified promotion receipt that binds each source digest to a private `registry.fly.io` image. Release publication does not silently choose that policy.
 
-An operator can bootstrap from only the extracted archive. No AubOS source checkout is required:
+An operator can bootstrap from only the extracted archive. No Vorton source checkout is required:
 
 ```bash
 installation_directory=$(mktemp -d)
-tar -xzf "aubos-$next_version-contracts.tgz" -C "$installation_directory"
+tar -xzf "vorton-$next_version-contracts.tgz" -C "$installation_directory"
 cd "$installation_directory"
 npm ci --ignore-scripts
-AUBOS_BOOTSTRAP_AUTH_USER_ID=<supabase-auth-user-uuid> \
-AUBOS_WORKER_PROVIDER=codex-subscription \
-AUBOS_WORKER_MODEL=<explicit-codex-model> \
-AUBOS_CODEX_MODEL=<same-explicit-codex-model> \
-AUBOS_CODEX_REASONING_EFFORT=high \
+VORTON_BOOTSTRAP_AUTH_USER_ID=<supabase-auth-user-uuid> \
+VORTON_WORKER_PROVIDER=codex-subscription \
+VORTON_WORKER_MODEL=<explicit-codex-model> \
+VORTON_CODEX_MODEL=<same-explicit-codex-model> \
+VORTON_CODEX_REASONING_EFFORT=high \
 npm run bootstrap:plan
 ```
 
 The bundled CLI works before `npm ci` and needs no source checkout:
 
 ```bash
-node "$installation_directory/bin/aubos.cjs" upgrade plan \
+node "$installation_directory/bin/vorton.cjs" upgrade plan \
   --manifest "$installation_directory/release/manifests/$next_version.json" \
   --artifact-root "$installation_directory" \
   --root /absolute/path/to/private-installation
@@ -151,7 +151,7 @@ npm run release:prepare -- \
   --worker-contract 1 \
   --repository-owner "$repository_owner" \
   --image-receipt "$image_file" \
-  --managed-file "host/aubos-runtime.json=templates/releases/$next_version/host/aubos-runtime.json"
+  --managed-file "host/vorton-runtime.json=templates/releases/$next_version/host/vorton-runtime.json"
 ```
 
 Commit only the new release manifest, validate that commit, then create its immutable tag. The installation upgrade and rollback proof must consume the manifest's digest-pinned images. Tags are labels, never deployment identity.

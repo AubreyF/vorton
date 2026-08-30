@@ -10,15 +10,15 @@ import {
   type RecordInput,
   type WorkerAdvertisement,
   type WorkInput,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 import {
   Database,
   type PersonContext,
   type SqlExecutor,
   type WorkerContext,
-} from "@aubos/database";
+} from "@vorton/database";
 
-export type { PersonContext, WorkerContext } from "@aubos/database";
+export type { PersonContext, WorkerContext } from "@vorton/database";
 
 export interface KernelDependencies {
   now?: () => Date;

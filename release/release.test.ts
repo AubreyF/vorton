@@ -36,7 +36,7 @@ function commit(repository: string, message: string): string {
 }
 
 function fixture(): { repository: string; sourceCommit: string } {
-  const repository = mkdtempSync(join(tmpdir(), "aubos-release-test-"));
+  const repository = mkdtempSync(join(tmpdir(), "vorton-release-test-"));
   repositories.push(repository);
   command(repository, ["init", "-q"]);
   command(repository, ["config", "user.name", "Release Test"]);
@@ -72,11 +72,11 @@ function manifest(sourceCommit: string, digest = `sha256:${"a".repeat(64)}`) {
     coreMigrationHead: "20260828000300_executive",
     images: {
       "control-plane": {
-        reference: `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
+        reference: `ghcr.io/moonbase-labs/vorton-control-plane@${digest}`,
         digest,
       },
       worker: {
-        reference: `ghcr.io/moonbase-labs/aubos-worker@${digest}`,
+        reference: `ghcr.io/moonbase-labs/vorton-worker@${digest}`,
         digest,
       },
     },
@@ -100,7 +100,7 @@ function schemaV2Manifest(
     images: {
       ...manifest(sourceCommit, digest).images,
       web: {
-        reference: `ghcr.io/moonbase-labs/aubos-web@${digest}`,
+        reference: `ghcr.io/moonbase-labs/vorton-web@${digest}`,
         digest,
       },
     },
@@ -178,14 +178,14 @@ describe("immutable release contracts", () => {
     );
     expect(buildWorkflow).toContain("org.opencontainers.image.revision");
     expect(buildWorkflow).toContain("apps/web/Dockerfile");
-    expect(buildWorkflow).toContain("aubos-web");
+    expect(buildWorkflow).toContain("vorton-web");
     expect(buildWorkflow).toContain("web.spdx.json");
     expect(buildWorkflow).toContain("provenance: mode=max");
     expect(buildWorkflow).toContain("sbom: true");
     expect(releaseWorkflow).toContain("workflow_dispatch:");
     expect(releaseWorkflow).toContain("image: postgres:16");
     expect(releaseWorkflow).toContain(
-      "AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority",
+      "VORTON_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/vorton_authority",
     );
     const postgresAuthorityGate = releaseWorkflow.indexOf(
       "run: npm run test:postgres-authority",
@@ -251,7 +251,7 @@ describe("immutable release contracts", () => {
         images: ["control-plane", "web", "worker"],
       },
     ]);
-    const fixtureReference = `registry.invalid/aubos-fixture/control-plane@sha256:${"1".repeat(64)}`;
+    const fixtureReference = `registry.invalid/vorton-fixture/control-plane@sha256:${"1".repeat(64)}`;
     expect(
       new RegExp(
         manifestJsonSchema.properties.images.additionalProperties.properties
@@ -270,22 +270,22 @@ describe("immutable release contracts", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     expect(
       parseImageArgument(
-        `control-plane=ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
+        `control-plane=ghcr.io/moonbase-labs/vorton-control-plane@${digest}`,
       ),
     ).toEqual({
       name: "control-plane",
-      reference: `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
+      reference: `ghcr.io/moonbase-labs/vorton-control-plane@${digest}`,
       digest,
     });
     expect(() =>
       parseImageArgument(
-        "control-plane=ghcr.io/moonbase-labs/aubos-control-plane:latest",
+        "control-plane=ghcr.io/moonbase-labs/vorton-control-plane:latest",
       ),
     ).toThrow(/pinned by sha256/);
   });
 
   it("runs the documented bootstrap plan from only an extracted contract archive", async () => {
-    const root = mkdtempSync(join(tmpdir(), "aubos-contract-archive-test-"));
+    const root = mkdtempSync(join(tmpdir(), "vorton-contract-archive-test-"));
     const staged = join(root, "staged");
     const extracted = join(root, "extracted");
     const archive = join(root, "contracts.tgz");
@@ -328,17 +328,17 @@ describe("immutable release contracts", () => {
       canaryFailure = String((error as { stderr?: Buffer }).stderr ?? error);
     }
     expect(canaryFailure).toContain(
-      "Hindsight release canary failed: AUBOS_HINDSIGHT_URL is required",
+      "Hindsight release canary failed: VORTON_HINDSIGHT_URL is required",
     );
 
-    const cli = join(extracted, "bin/aubos.cjs");
+    const cli = join(extracted, "bin/vorton.cjs");
     const installation = join(root, "installation");
     const extractionManifest = join(root, "extraction-release.json");
     mkdirSync(installation);
     const cliPackage = JSON.parse(
       readFileSync(join(process.cwd(), "packages/cli/package.json"), "utf8"),
     ) as { version: string };
-    const hostTemplate = `templates/releases/${cliPackage.version}/host/aubos-runtime.json`;
+    const hostTemplate = `templates/releases/${cliPackage.version}/host/vorton-runtime.json`;
     const extractionRelease = {
       schemaVersion: 2,
       status: "released",
@@ -350,21 +350,21 @@ describe("immutable release contracts", () => {
       coreMigrationHead: "20260828000400_runtime_authority",
       images: {
         "control-plane": {
-          reference: `ghcr.io/moonbase-labs/aubos-control-plane@sha256:${"3".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/vorton-control-plane@sha256:${"3".repeat(64)}`,
           digest: `sha256:${"3".repeat(64)}`,
         },
         web: {
-          reference: `ghcr.io/moonbase-labs/aubos-web@sha256:${"4".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/vorton-web@sha256:${"4".repeat(64)}`,
           digest: `sha256:${"4".repeat(64)}`,
         },
         worker: {
-          reference: `ghcr.io/moonbase-labs/aubos-worker@sha256:${"5".repeat(64)}`,
+          reference: `ghcr.io/moonbase-labs/vorton-worker@sha256:${"5".repeat(64)}`,
           digest: `sha256:${"5".repeat(64)}`,
         },
       },
       managedFiles: [
         {
-          path: "host/aubos-runtime.json",
+          path: "host/vorton-runtime.json",
           template: hostTemplate,
           digest: sha256(readFileSync(join(extracted, hostTemplate))),
         },
@@ -437,7 +437,7 @@ describe("immutable release contracts", () => {
       mismatch = String((error as { stderr?: Buffer }).stderr ?? error);
     }
     expect(mismatch).toContain(
-      `requires AubOS CLI 9.9.9, but the running CLI is ${cliPackage.version}`,
+      `requires Vorton CLI 9.9.9, but the running CLI is ${cliPackage.version}`,
     );
 
     execFileSync(
@@ -451,10 +451,10 @@ describe("immutable release contracts", () => {
         encoding: "utf8",
         env: {
           ...process.env,
-          AUBOS_BOOTSTRAP_AUTH_USER_ID: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
-          AUBOS_WORKER_PROVIDER: "openai-responses",
-          AUBOS_WORKER_MODEL: "gpt-5.4",
-          AUBOS_OPENAI_MODEL: "gpt-5.4",
+          VORTON_BOOTSTRAP_AUTH_USER_ID: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+          VORTON_WORKER_PROVIDER: "openai-responses",
+          VORTON_WORKER_MODEL: "gpt-5.4",
+          VORTON_OPENAI_MODEL: "gpt-5.4",
         },
       }),
     ) as Record<string, unknown>;
@@ -475,9 +475,9 @@ describe("immutable release contracts", () => {
       sourceCommit: "b".repeat(40),
       version: "0.1.0",
       images: {
-        "control-plane": `ghcr.io/moonbase-labs/aubos-control-plane@${digest}`,
-        web: `ghcr.io/moonbase-labs/aubos-web@${digest}`,
-        worker: `ghcr.io/moonbase-labs/aubos-worker@${digest}`,
+        "control-plane": `ghcr.io/moonbase-labs/vorton-control-plane@${digest}`,
+        web: `ghcr.io/moonbase-labs/vorton-web@${digest}`,
+        worker: `ghcr.io/moonbase-labs/vorton-worker@${digest}`,
       },
     });
     expect(
@@ -504,7 +504,7 @@ describe("immutable release contracts", () => {
 
     expect(() =>
       parseImageReceipt(receipt, "b".repeat(40), "0.1.0", "moonbase-labs"),
-    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
+    ).toThrow(/ghcr\.io\/moonbase-labs\/vorton-control-plane/);
   });
 
   it("derives the current migration head from the exact source commit", () => {
@@ -645,6 +645,6 @@ describe("immutable release contracts", () => {
         manifestPath,
         expectedRepositoryOwner: "moonbase-labs",
       }),
-    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
+    ).toThrow(/ghcr\.io\/moonbase-labs\/vorton-control-plane/);
   });
 });

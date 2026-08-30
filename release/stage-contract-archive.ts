@@ -45,7 +45,7 @@ export async function stageContractArchive(
     runtimeLock.packages?.[""]?.version !== cliPackage.version
   ) {
     throw new Error(
-      `Archive runtime and lock must match AubOS CLI ${String(cliPackage.version)}`,
+      `Archive runtime and lock must match Vorton CLI ${String(cliPackage.version)}`,
     );
   }
   for (const filename of ["package.json", "package-lock.json"] as const) {
@@ -56,7 +56,7 @@ export async function stageContractArchive(
     );
   }
 
-  const cliOutput = join(destination, "bin/aubos.cjs");
+  const cliOutput = join(destination, "bin/vorton.cjs");
   await mkdir(dirname(cliOutput), { recursive: true });
   await build({
     entryPoints: [join(sourceRoot, "packages/cli/src/cli.ts")],

@@ -3,7 +3,7 @@ import type {
   RepositoryCheck,
   RepositoryPullRequest,
   RepositoryTicket,
-} from "@aubos/repository-connector";
+} from "@vorton/repository-connector";
 
 export type GitHubIssueFixture = {
   number: number;

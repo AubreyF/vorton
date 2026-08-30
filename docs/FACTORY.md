@@ -1,12 +1,12 @@
 # Factory module
 
-Factory coordinates software work through the AubOS kernel. It does not create a sibling platform, member model, memory system, or organizational ledger.
+Factory coordinates software work through the Vorton kernel. It does not create a sibling platform, member model, memory system, or organizational ledger.
 
 ## Authority split
 
 GitHub Issues may remain the canonical human queue for software tickets. Repository-specific claim, lease, validation, draft publication, and recovery machinery remains authoritative for execution where the connector declares it.
 
-AubOS owns organizational intent, Policy, decisions, approvals, Work relationships, worker inventory, executive recommendations, cross-module memory, and the control-plane view. The Factory connector reconciles those records with the software queue and execution system.
+Vorton owns organizational intent, Policy, decisions, approvals, Work relationships, worker inventory, executive recommendations, cross-module memory, and the control-plane view. The Factory connector reconciles those records with the software queue and execution system.
 
 For each linked ticket, the connector records:
 

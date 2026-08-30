@@ -1,10 +1,10 @@
 {
-  "name": "@aubos/cli",
-  "version": "0.3.2",
+  "name": "@vorton/cli",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "bin": {
-    "aubos": "./bin/aubos.js"
+    "vorton": "./bin/vorton.js"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "0.0.0",
+    "@vorton/contracts": "0.0.0",
     "tsx": "^4.20.5",
     "yaml": "^2.8.1",
     "zod": "^4.0.0"

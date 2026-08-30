@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { validateRuntimeEnvironment } from "../../../deploy/fly/runtime/validate-environment.js";
 
 const valid = {
-  AUBOS_DATABASE_URL:
-    "postgresql://authority:synthetic@authority.example/aubos",
-  AUBOS_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
+  VORTON_DATABASE_URL:
+    "postgresql://authority:synthetic@authority.example/vorton",
+  VORTON_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
   HINDSIGHT_API_DATABASE_URL:
     "postgresql://memory:synthetic@memory.example/hindsight",
   HINDSIGHT_API_TENANT_EXTENSION:
@@ -37,17 +37,17 @@ const valid = {
   HINDSIGHT_API_WORKER_ENABLED: "true",
   HINDSIGHT_API_WORKER_ID: "installation-memory-1",
   HINDSIGHT_API_MCP_ENABLED: "false",
-  AUBOS_WORKER_PROVIDER: "codex-subscription",
-  AUBOS_WORKER_MODEL: "explicit-model",
-  AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
-  AUBOS_WORKER_REQUEST_TIMEOUT_MS: "930000",
-  AUBOS_CODEX_MODEL: "explicit-model",
-  AUBOS_CODEX_CLASSIFICATION_CEILING: "internal",
-  AUBOS_CODEX_REASONING_EFFORT: "high",
-  AUBOS_CODEX_EXECUTION_TIMEOUT_MS: "900000",
-  AUBOS_CODEX_HOME: "/data/codex",
-  AUBOS_CODEX_WORKDIR: "/var/empty/aubos-worker",
-  AUBOS_ALLOWED_ORIGIN: "https://control.aubos.example",
+  VORTON_WORKER_PROVIDER: "codex-subscription",
+  VORTON_WORKER_MODEL: "explicit-model",
+  VORTON_WORKER_CLASSIFICATION_CEILING: "internal",
+  VORTON_WORKER_REQUEST_TIMEOUT_MS: "930000",
+  VORTON_CODEX_MODEL: "explicit-model",
+  VORTON_CODEX_CLASSIFICATION_CEILING: "internal",
+  VORTON_CODEX_REASONING_EFFORT: "high",
+  VORTON_CODEX_EXECUTION_TIMEOUT_MS: "900000",
+  VORTON_CODEX_HOME: "/data/codex",
+  VORTON_CODEX_WORKDIR: "/var/empty/vorton-worker",
+  VORTON_ALLOWED_ORIGIN: "https://control.vorton.example",
 };
 
 describe("combined deployment environment", () => {
@@ -59,7 +59,7 @@ describe("combined deployment environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...valid,
-        HINDSIGHT_API_DATABASE_URL: valid.AUBOS_DATABASE_URL,
+        HINDSIGHT_API_DATABASE_URL: valid.VORTON_DATABASE_URL,
       }),
     ).toThrow("different databases");
   });
@@ -83,7 +83,7 @@ describe("combined deployment environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...valid,
-        AUBOS_CODEX_MODEL: "different-model",
+        VORTON_CODEX_MODEL: "different-model",
       }),
     ).toThrow("must exactly match");
   });
@@ -92,8 +92,8 @@ describe("combined deployment environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...valid,
-        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "900000",
+        VORTON_WORKER_REQUEST_TIMEOUT_MS: "900000",
       }),
-    ).toThrow("must exceed AUBOS_CODEX_EXECUTION_TIMEOUT_MS");
+    ).toThrow("must exceed VORTON_CODEX_EXECUTION_TIMEOUT_MS");
   });
 });

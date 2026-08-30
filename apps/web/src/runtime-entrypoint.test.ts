@@ -9,12 +9,12 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const entrypoint = join(
   appRoot,
   "docker-entrypoint.d",
-  "40-aubos-runtime-config.sh",
+  "40-vorton-runtime-config.sh",
 );
 const nginxTemplate = join(appRoot, "nginx.conf");
 
 function createRuntimeTarget() {
-  const root = mkdtempSync(join(tmpdir(), "aubos-web-runtime-"));
+  const root = mkdtempSync(join(tmpdir(), "vorton-web-runtime-"));
   const webRoot = join(root, "html");
   const nginxOutput = join(root, "nginx", "default.conf");
   mkdirSync(webRoot, { recursive: true });
@@ -24,12 +24,12 @@ function createRuntimeTarget() {
 function runtimeEnvironment(target: ReturnType<typeof createRuntimeTarget>) {
   return {
     ...process.env,
-    AUBOS_WEB_ROOT: target.webRoot,
-    AUBOS_NGINX_TEMPLATE: nginxTemplate,
-    AUBOS_NGINX_OUTPUT: target.nginxOutput,
-    AUBOS_PUBLIC_SUPABASE_URL: "https://moonbase.supabase.co/",
-    AUBOS_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_synthetic",
-    AUBOS_PUBLIC_API_URL: "https://api.example.test/",
+    VORTON_WEB_ROOT: target.webRoot,
+    VORTON_NGINX_TEMPLATE: nginxTemplate,
+    VORTON_NGINX_OUTPUT: target.nginxOutput,
+    VORTON_PUBLIC_SUPABASE_URL: "https://moonbase.supabase.co/",
+    VORTON_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_synthetic",
+    VORTON_PUBLIC_API_URL: "https://api.example.test/",
   };
 }
 
@@ -42,7 +42,7 @@ describe("web container runtime configuration", () => {
 
     expect(readFileSync(join(target.webRoot, "runtime-config.js"), "utf8"))
       .toMatchInlineSnapshot(`
-        "globalThis.__AUBOS_RUNTIME_CONFIG__ = Object.freeze({
+        "globalThis.__VORTON_RUNTIME_CONFIG__ = Object.freeze({
           supabaseUrl: \"https://moonbase.supabase.co\",
           supabaseAnonKey: \"sb_publishable_synthetic\",
           apiUrl: \"https://api.example.test\"
@@ -55,12 +55,12 @@ describe("web container runtime configuration", () => {
     );
     expect(nginxConfig).toContain("frame-ancestors 'none'");
     expect(nginxConfig).toContain("add_header X-Frame-Options DENY always;");
-    expect(nginxConfig).not.toContain("@@AUBOS_");
+    expect(nginxConfig).not.toContain("@@VORTON_");
   });
 
   it("fails closed before writing files when required configuration is absent", () => {
     const target = createRuntimeTarget();
-    const { AUBOS_PUBLIC_API_URL: _omittedApiUrl, ...env } =
+    const { VORTON_PUBLIC_API_URL: _omittedApiUrl, ...env } =
       runtimeEnvironment(target);
     const result = spawnSync("/bin/sh", [entrypoint], {
       env,
@@ -68,14 +68,14 @@ describe("web container runtime configuration", () => {
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("AUBOS_PUBLIC_API_URL is required");
+    expect(result.stderr).toContain("VORTON_PUBLIC_API_URL is required");
   });
 
   it("refuses secret Supabase keys before they can enter the public document root", () => {
     const target = createRuntimeTarget();
     const env = {
       ...runtimeEnvironment(target),
-      AUBOS_PUBLIC_SUPABASE_ANON_KEY: "sb_secret_do-not-publish",
+      VORTON_PUBLIC_SUPABASE_ANON_KEY: "sb_secret_do-not-publish",
     };
     writeFileSync(join(target.webRoot, "sentinel"), "untouched");
     const result = spawnSync("/bin/sh", [entrypoint], {
@@ -102,7 +102,7 @@ describe("web container runtime configuration", () => {
       const target = createRuntimeTarget();
       const env = {
         ...runtimeEnvironment(target),
-        AUBOS_PUBLIC_API_URL: value,
+        VORTON_PUBLIC_API_URL: value,
       };
       const result = spawnSync("/bin/sh", [entrypoint], {
         env,

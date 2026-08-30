@@ -10,13 +10,13 @@ import {
   type SourceBoundary,
   type SourceCitation,
   type SourceRevision,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 import {
   installationHindsightBank,
   type HindsightAdapter,
   type HindsightBank,
   type HindsightMemory,
-} from "@aubos/memory";
+} from "@vorton/memory";
 
 export type AdmitSourceInput = Omit<
   SourceRevision,

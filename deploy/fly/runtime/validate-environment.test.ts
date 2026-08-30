@@ -4,26 +4,26 @@ import { validateRuntimeEnvironment } from "./validate-environment.js";
 
 function environment(): NodeJS.ProcessEnv {
   return {
-    AUBOS_DATABASE_URL:
-      "postgresql://aubos_runtime:synthetic@authority.example.test/aubos",
-    AUBOS_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
+    VORTON_DATABASE_URL:
+      "postgresql://aubos_runtime:synthetic@authority.example.test/vorton",
+    VORTON_DATABASE_CONTEXT_SIGNING_SECRET: "c".repeat(32),
     HINDSIGHT_API_DATABASE_URL:
       "postgresql://hindsight:synthetic@memory.example.test/hindsight",
     HINDSIGHT_API_DATABASE_BACKEND: "postgresql",
     HINDSIGHT_ENABLE_API: "true",
     HINDSIGHT_ENABLE_CP: "false",
     HINDSIGHT_API_HOST: "::",
-    AUBOS_ALLOWED_ORIGIN: "https://control.example.test",
-    AUBOS_WORKER_PROVIDER: "codex-subscription",
-    AUBOS_WORKER_MODEL: "explicit-model",
-    AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
-    AUBOS_WORKER_REQUEST_TIMEOUT_MS: "930000",
-    AUBOS_CODEX_MODEL: "explicit-model",
-    AUBOS_CODEX_CLASSIFICATION_CEILING: "internal",
-    AUBOS_CODEX_REASONING_EFFORT: "high",
-    AUBOS_CODEX_EXECUTION_TIMEOUT_MS: "900000",
-    AUBOS_CODEX_HOME: "/data/codex",
-    AUBOS_CODEX_WORKDIR: "/var/empty/aubos-worker",
+    VORTON_ALLOWED_ORIGIN: "https://control.example.test",
+    VORTON_WORKER_PROVIDER: "codex-subscription",
+    VORTON_WORKER_MODEL: "explicit-model",
+    VORTON_WORKER_CLASSIFICATION_CEILING: "internal",
+    VORTON_WORKER_REQUEST_TIMEOUT_MS: "930000",
+    VORTON_CODEX_MODEL: "explicit-model",
+    VORTON_CODEX_CLASSIFICATION_CEILING: "internal",
+    VORTON_CODEX_REASONING_EFFORT: "high",
+    VORTON_CODEX_EXECUTION_TIMEOUT_MS: "900000",
+    VORTON_CODEX_HOME: "/data/codex",
+    VORTON_CODEX_WORKDIR: "/var/empty/vorton-worker",
     HINDSIGHT_API_TENANT_EXTENSION:
       "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension",
     HINDSIGHT_API_TENANT_API_KEY: "synthetic-tenant-key",
@@ -61,7 +61,7 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_DATABASE_CONTEXT_SIGNING_SECRET: "short",
+        VORTON_DATABASE_CONTEXT_SIGNING_SECRET: "short",
       }),
     ).toThrow("at least 32 characters");
   });
@@ -70,9 +70,9 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_OPENAI_API_KEY: "must-not-be-present",
+        VORTON_OPENAI_API_KEY: "must-not-be-present",
       }),
-    ).toThrow("must not receive API billing secret AUBOS_OPENAI_API_KEY");
+    ).toThrow("must not receive API billing secret VORTON_OPENAI_API_KEY");
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
@@ -82,7 +82,7 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_CODEX_HOME: "relative",
+        VORTON_CODEX_HOME: "relative",
       }),
     ).toThrow("must be an absolute path");
   });
@@ -100,20 +100,20 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "900000",
+        VORTON_WORKER_REQUEST_TIMEOUT_MS: "900000",
       }),
-    ).toThrow("must exceed AUBOS_CODEX_EXECUTION_TIMEOUT_MS");
+    ).toThrow("must exceed VORTON_CODEX_EXECUTION_TIMEOUT_MS");
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "960001",
+        VORTON_WORKER_REQUEST_TIMEOUT_MS: "960001",
       }),
-    ).toThrow("must exceed AUBOS_CODEX_EXECUTION_TIMEOUT_MS");
+    ).toThrow("must exceed VORTON_CODEX_EXECUTION_TIMEOUT_MS");
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_CODEX_EXECUTION_TIMEOUT_MS: "1800001",
-        AUBOS_WORKER_REQUEST_TIMEOUT_MS: "1830001",
+        VORTON_CODEX_EXECUTION_TIMEOUT_MS: "1800001",
+        VORTON_WORKER_REQUEST_TIMEOUT_MS: "1830001",
       }),
     ).toThrow("must be from 60000 through 1800000");
   });
@@ -122,10 +122,10 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        AUBOS_CODEX_CLASSIFICATION_CEILING: "restricted",
+        VORTON_CODEX_CLASSIFICATION_CEILING: "restricted",
       }),
     ).toThrow(
-      "AUBOS_WORKER_CLASSIFICATION_CEILING must exactly match AUBOS_CODEX_CLASSIFICATION_CEILING",
+      "VORTON_WORKER_CLASSIFICATION_CEILING must exactly match VORTON_CODEX_CLASSIFICATION_CEILING",
     );
   });
 
@@ -237,7 +237,7 @@ describe("Fly runtime environment", () => {
     expect(() =>
       validateRuntimeEnvironment({
         ...environment(),
-        CODEX_HOME: environment().AUBOS_CODEX_HOME,
+        CODEX_HOME: environment().VORTON_CODEX_HOME,
       }),
     ).toThrow("separate CODEX_HOME auth caches");
   });

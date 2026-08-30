@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/worker-runtime",
+  "name": "@vorton/worker-runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "*",
-    "@aubos/workers": "*",
+    "@vorton/contracts": "*",
+    "@vorton/workers": "*",
     "@openai/codex": "0.151.0"
   },
   "devDependencies": {

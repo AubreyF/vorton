@@ -29,7 +29,7 @@ function managedAuth(refreshToken: string): string {
 }
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), "aubos-codex-auth-"));
+  const value = await mkdtemp(join(tmpdir(), "vorton-codex-auth-"));
   roots.push(value);
   return value;
 }
@@ -84,7 +84,7 @@ describe("Codex managed authentication storage", () => {
     const workdir = join(directory, "work");
     await expect(
       prepareCodexRuntimeStorage({ codexHome, workdir }),
-    ).rejects.toThrow("AUBOS_CODEX_AUTH_JSON is required");
+    ).rejects.toThrow("VORTON_CODEX_AUTH_JSON is required");
     await expect(
       prepareCodexRuntimeStorage({
         codexHome,

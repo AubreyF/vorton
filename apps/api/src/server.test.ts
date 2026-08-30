@@ -1,9 +1,9 @@
 import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { FakeExecutiveWorkerAdapter } from "@aubos/workers";
-import { InMemoryExecutiveLedger } from "@aubos/executive";
-import type { Database } from "@aubos/database";
+import { FakeExecutiveWorkerAdapter } from "@vorton/workers";
+import { InMemoryExecutiveLedger } from "@vorton/executive";
+import type { Database } from "@vorton/database";
 
 import { createApiServer } from "./server.js";
 
@@ -131,7 +131,7 @@ async function runtime() {
     } as never,
     workerRuns: { record: async () => "synthetic-run" } as never,
     release: "synthetic-test",
-    allowedOrigin: "https://control.aubos.example",
+    allowedOrigin: "https://control.vorton.example",
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -158,7 +158,7 @@ describe("control-plane API", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       status: "ok",
-      service: "aubos-api",
+      service: "vorton-api",
     });
   });
 
@@ -294,13 +294,13 @@ describe("control-plane API", () => {
     const allowed = await fetch(`${baseUrl}/v1/executive/proposals`, {
       method: "OPTIONS",
       headers: {
-        origin: "https://control.aubos.example",
+        origin: "https://control.vorton.example",
         "access-control-request-method": "POST",
       },
     });
     expect(allowed.status).toBe(204);
     expect(allowed.headers.get("access-control-allow-origin")).toBe(
-      "https://control.aubos.example",
+      "https://control.vorton.example",
     );
     const denied = await fetch(`${baseUrl}/healthz`, {
       headers: { origin: "https://forged.example" },

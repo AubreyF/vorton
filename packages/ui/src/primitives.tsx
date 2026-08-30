@@ -4,7 +4,7 @@ export function Mark({ compact = false }: { compact?: boolean }) {
   return (
     <span
       className={compact ? "mark mark--compact" : "mark"}
-      aria-label="AubOS"
+      aria-label="Vorton"
     >
       <span className="mark__orbit" aria-hidden="true" />
       <span className="mark__word">AUB</span>

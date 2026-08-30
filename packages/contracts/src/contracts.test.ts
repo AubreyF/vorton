@@ -17,7 +17,7 @@ import {
 describe("installation contracts", () => {
   it("accepts a synthetic installation manifest", () => {
     const result = installationManifestSchema.safeParse({
-      apiVersion: "aubos.dev/v1alpha1",
+      apiVersion: "vorton.dev/v1alpha1",
       kind: "Installation",
       metadata: { name: "moonbase-lab" },
       spec: {
@@ -34,7 +34,7 @@ describe("installation contracts", () => {
           installed: [],
           examples: [{ name: "Moonbase Triage", installed: false }],
         },
-        secrets: { "database-url": "AUBOS_DATABASE_URL" },
+        secrets: { "database-url": "VORTON_DATABASE_URL" },
       },
     });
 
@@ -84,11 +84,11 @@ describe("installation contracts", () => {
       coreMigrationHead: "20260828000300_executive",
       images: {
         "control-plane": {
-          reference: `registry.invalid/aubos-fixture/control-plane@${controlDigest}`,
+          reference: `registry.invalid/vorton-fixture/control-plane@${controlDigest}`,
           digest: controlDigest,
         },
         worker: {
-          reference: `registry.invalid/aubos-fixture/worker@${workerDigest}`,
+          reference: `registry.invalid/vorton-fixture/worker@${workerDigest}`,
           digest: workerDigest,
         },
       },
@@ -159,11 +159,11 @@ describe("installation contracts", () => {
       coreMigrationHead: "20260828000300_executive",
       images: {
         "control-plane": {
-          reference: `ghcr.io/example/aubos-control-plane@${digest}`,
+          reference: `ghcr.io/example/vorton-control-plane@${digest}`,
           digest,
         },
         worker: {
-          reference: `ghcr.io/example/aubos-worker@${digest}`,
+          reference: `ghcr.io/example/vorton-worker@${digest}`,
           digest,
         },
       },
@@ -188,7 +188,7 @@ describe("installation contracts", () => {
         images: {
           ...historical.images,
           web: {
-            reference: `ghcr.io/example/aubos-web@${digest}`,
+            reference: `ghcr.io/example/vorton-web@${digest}`,
             digest,
           },
         },
@@ -209,11 +209,11 @@ describe("installation contracts", () => {
       coreMigrationHead: "20260828000300_executive",
       images: {
         "control-plane": {
-          reference: `ghcr.io/example/aubos-control-plane@${digest}`,
+          reference: `ghcr.io/example/vorton-control-plane@${digest}`,
           digest,
         },
         worker: {
-          reference: `ghcr.io/example/aubos-worker@${digest}`,
+          reference: `ghcr.io/example/vorton-worker@${digest}`,
           digest,
         },
       },

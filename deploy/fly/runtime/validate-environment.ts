@@ -35,8 +35,8 @@ function postgres(value: string, name: string): string {
 
 export function validateRuntimeEnvironment(env: NodeJS.ProcessEnv): void {
   const authority = postgres(
-    required(env, "AUBOS_DATABASE_URL"),
-    "AUBOS_DATABASE_URL",
+    required(env, "VORTON_DATABASE_URL"),
+    "VORTON_DATABASE_URL",
   );
   const hindsight = postgres(
     required(env, "HINDSIGHT_API_DATABASE_URL"),
@@ -44,12 +44,12 @@ export function validateRuntimeEnvironment(env: NodeJS.ProcessEnv): void {
   );
   if (authority === hindsight) {
     throw new Error(
-      "AubOS authority and Hindsight derived memory must use different databases and credentials",
+      "Vorton authority and Hindsight derived memory must use different databases and credentials",
     );
   }
-  if (required(env, "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET").length < 32) {
+  if (required(env, "VORTON_DATABASE_CONTEXT_SIGNING_SECRET").length < 32) {
     throw new Error(
-      "AUBOS_DATABASE_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
+      "VORTON_DATABASE_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
     );
   }
   if (
@@ -201,70 +201,70 @@ export function validateRuntimeEnvironment(env: NodeJS.ProcessEnv): void {
     );
   if (required(env, "HINDSIGHT_API_MCP_ENABLED") !== "false")
     throw new Error("Hindsight MCP must remain disabled in the MVP runtime");
-  const workerProvider = required(env, "AUBOS_WORKER_PROVIDER");
-  const workerModel = required(env, "AUBOS_WORKER_MODEL");
+  const workerProvider = required(env, "VORTON_WORKER_PROVIDER");
+  const workerModel = required(env, "VORTON_WORKER_MODEL");
   const workerRequestTimeoutMs = boundedInteger(
     env,
-    "AUBOS_WORKER_REQUEST_TIMEOUT_MS",
+    "VORTON_WORKER_REQUEST_TIMEOUT_MS",
     60_000,
     1_860_000,
   );
   if (workerProvider === "openai-responses") {
-    const openAiModel = required(env, "AUBOS_OPENAI_MODEL");
+    const openAiModel = required(env, "VORTON_OPENAI_MODEL");
     if (workerModel !== openAiModel) {
       throw new Error(
-        "AUBOS_WORKER_MODEL must exactly match AUBOS_OPENAI_MODEL",
+        "VORTON_WORKER_MODEL must exactly match VORTON_OPENAI_MODEL",
       );
     }
-    const store = required(env, "AUBOS_OPENAI_STORE_RESPONSES");
+    const store = required(env, "VORTON_OPENAI_STORE_RESPONSES");
     if (store !== "false" && store !== "true")
       throw new Error(
-        "AUBOS_OPENAI_STORE_RESPONSES must be exactly true or false",
+        "VORTON_OPENAI_STORE_RESPONSES must be exactly true or false",
       );
   } else if (workerProvider === "codex-subscription") {
-    if (workerModel !== required(env, "AUBOS_CODEX_MODEL")) {
+    if (workerModel !== required(env, "VORTON_CODEX_MODEL")) {
       throw new Error(
-        "AUBOS_WORKER_MODEL must exactly match AUBOS_CODEX_MODEL",
+        "VORTON_WORKER_MODEL must exactly match VORTON_CODEX_MODEL",
       );
     }
     if (
-      required(env, "AUBOS_WORKER_CLASSIFICATION_CEILING") !==
-      required(env, "AUBOS_CODEX_CLASSIFICATION_CEILING")
+      required(env, "VORTON_WORKER_CLASSIFICATION_CEILING") !==
+      required(env, "VORTON_CODEX_CLASSIFICATION_CEILING")
     ) {
       throw new Error(
-        "AUBOS_WORKER_CLASSIFICATION_CEILING must exactly match AUBOS_CODEX_CLASSIFICATION_CEILING",
+        "VORTON_WORKER_CLASSIFICATION_CEILING must exactly match VORTON_CODEX_CLASSIFICATION_CEILING",
       );
     }
     if (
       !["low", "medium", "high", "xhigh", "max", "ultra"].includes(
-        required(env, "AUBOS_CODEX_REASONING_EFFORT"),
+        required(env, "VORTON_CODEX_REASONING_EFFORT"),
       )
     ) {
-      throw new Error("AUBOS_CODEX_REASONING_EFFORT is not supported");
+      throw new Error("VORTON_CODEX_REASONING_EFFORT is not supported");
     }
     const executionTimeoutMs = boundedInteger(
       env,
-      "AUBOS_CODEX_EXECUTION_TIMEOUT_MS",
+      "VORTON_CODEX_EXECUTION_TIMEOUT_MS",
       60_000,
       1_800_000,
     );
     const requestMarginMs = workerRequestTimeoutMs - executionTimeoutMs;
     if (requestMarginMs < 10_000 || requestMarginMs > 60_000) {
       throw new Error(
-        "AUBOS_WORKER_REQUEST_TIMEOUT_MS must exceed AUBOS_CODEX_EXECUTION_TIMEOUT_MS by 10000 through 60000 milliseconds",
+        "VORTON_WORKER_REQUEST_TIMEOUT_MS must exceed VORTON_CODEX_EXECUTION_TIMEOUT_MS by 10000 through 60000 milliseconds",
       );
     }
-    for (const name of ["AUBOS_CODEX_HOME", "AUBOS_CODEX_WORKDIR"] as const) {
+    for (const name of ["VORTON_CODEX_HOME", "VORTON_CODEX_WORKDIR"] as const) {
       if (!required(env, name).startsWith("/")) {
         throw new Error(`${name} must be an absolute path`);
       }
     }
-    if (hindsightCodexHome === required(env, "AUBOS_CODEX_HOME")) {
+    if (hindsightCodexHome === required(env, "VORTON_CODEX_HOME")) {
       throw new Error(
         "Hindsight and the executive worker must use separate CODEX_HOME auth caches",
       );
     }
-    for (const name of ["AUBOS_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
+    for (const name of ["VORTON_OPENAI_API_KEY", "OPENAI_API_KEY"] as const) {
       if (env[name]?.trim()) {
         throw new Error(
           `The subscription runtime must not receive API billing secret ${name}`,
@@ -273,19 +273,19 @@ export function validateRuntimeEnvironment(env: NodeJS.ProcessEnv): void {
     }
   } else {
     throw new Error(
-      "AUBOS_WORKER_PROVIDER must be openai-responses or codex-subscription",
+      "VORTON_WORKER_PROVIDER must be openai-responses or codex-subscription",
     );
   }
-  const origin = new URL(required(env, "AUBOS_ALLOWED_ORIGIN"));
+  const origin = new URL(required(env, "VORTON_ALLOWED_ORIGIN"));
   if (
     origin.protocol !== "https:" ||
-    origin.origin !== env.AUBOS_ALLOWED_ORIGIN
+    origin.origin !== env.VORTON_ALLOWED_ORIGIN
   ) {
-    throw new Error("AUBOS_ALLOWED_ORIGIN must be one exact HTTPS origin");
+    throw new Error("VORTON_ALLOWED_ORIGIN must be one exact HTTPS origin");
   }
 }
 
 if (process.argv[1]?.endsWith("validate-environment.ts")) {
   validateRuntimeEnvironment(process.env);
-  console.log("AubOS runtime environment is valid");
+  console.log("Vorton runtime environment is valid");
 }

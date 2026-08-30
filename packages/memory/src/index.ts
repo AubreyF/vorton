@@ -2,7 +2,7 @@ import type {
   DataClassification,
   InstallationRealm,
   SourceCitation,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 export type HindsightBank = {
   id: string;

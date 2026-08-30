@@ -14,13 +14,13 @@ import {
   type ExecutionAuthority,
   type RecordInput,
   type WorkInput,
-} from "@aubos/contracts";
-import type { ExecutiveWorkerProvider } from "@aubos/workers";
+} from "@vorton/contracts";
+import type { ExecutiveWorkerProvider } from "@vorton/workers";
 import type {
   DatabaseContext,
   PersonContext,
   WorkerContext,
-} from "@aubos/database";
+} from "@vorton/database";
 
 export type ExecutiveActor =
   { kind: "person"; id: string } | { kind: "worker"; id: string };

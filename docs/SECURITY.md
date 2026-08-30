@@ -1,6 +1,6 @@
 # Security model
 
-Organizational and personal memory can contain finances, private conversations, credentials, health information, strategy, and legal material. AubOS treats isolation and provenance as product behavior.
+Organizational and personal memory can contain finances, private conversations, credentials, health information, strategy, and legal material. Vorton treats isolation and provenance as product behavior.
 
 ## First-release rules
 

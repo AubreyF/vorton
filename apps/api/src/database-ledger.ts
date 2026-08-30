@@ -3,14 +3,14 @@ import type {
   DatabaseContext,
   PersonContext,
   SqlExecutor,
-} from "@aubos/database";
+} from "@vorton/database";
 import type {
   AppendExecutiveRecord,
   ExecutiveLedger,
   ExecutiveRecord,
   ExecutiveWork,
-} from "@aubos/executive";
-import type { ExecutionAuthority, WorkInput } from "@aubos/contracts";
+} from "@vorton/executive";
+import type { ExecutionAuthority, WorkInput } from "@vorton/contracts";
 
 interface RecordRow {
   id: string;

@@ -1,13 +1,13 @@
 {
-  "name": "@aubos/release-bootstrap-runtime",
-  "version": "0.3.2",
+  "name": "@vorton/release-bootstrap-runtime",
+  "version": "0.4.0",
   "private": true,
-  "description": "Dependency-locked runtime for an extracted AubOS release bootstrap.",
+  "description": "Dependency-locked runtime for an extracted Vorton release bootstrap.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "aubos": "node bin/aubos.cjs",
+    "vorton": "node bin/vorton.cjs",
     "bootstrap:apply": "tsx deploy/bootstrap/provision.ts --apply",
     "bootstrap:plan": "tsx deploy/bootstrap/provision.ts --plan",
     "runtime:hindsight-canary": "node bin/hindsight-canary.cjs"

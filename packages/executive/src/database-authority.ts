@@ -1,4 +1,4 @@
-import type { Database } from "@aubos/database";
+import type { Database } from "@vorton/database";
 
 import type {
   ExecutiveAuthorityVerification,

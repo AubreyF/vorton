@@ -6,8 +6,8 @@ import {
   type ServerResponse,
 } from "node:http";
 
-import { executiveWorkerJobRequestSchema } from "@aubos/contracts";
-import type { ExecutiveWorkerProvider } from "@aubos/workers";
+import { executiveWorkerJobRequestSchema } from "@vorton/contracts";
+import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
 export interface WorkerServerDependencies {
   secret: string;
@@ -59,7 +59,7 @@ export function createWorkerServer(
       if (request.method === "GET" && url.pathname === "/healthz") {
         json(response, 200, {
           status: "ok",
-          service: "aubos-worker",
+          service: "vorton-worker",
           provider: dependencies.provider.provider,
           model: dependencies.provider.model,
           release: dependencies.release,
@@ -91,7 +91,7 @@ export function createWorkerServer(
         typeof error === "object" &&
         "name" in error &&
         error.name === "ZodError";
-      if (!invalid) console.error("AubOS worker request failed", error);
+      if (!invalid) console.error("Vorton worker request failed", error);
       json(response, invalid ? 400 : 500, {
         error: {
           code: invalid ? "invalid_request" : "worker_error",

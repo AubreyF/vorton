@@ -5,13 +5,13 @@ import {
   type ServerResponse,
 } from "node:http";
 
-import type { Database } from "@aubos/database";
+import type { Database } from "@vorton/database";
 import {
   ExecutiveWorkflow,
   type ExecutiveAuthorityVerifier,
   type ExecutiveLedger,
-} from "@aubos/executive";
-import type { ExecutiveWorkerProvider } from "@aubos/workers";
+} from "@vorton/executive";
+import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
 import { AuthenticationError, type IdentityVerifier } from "./auth.js";
 import type { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
@@ -172,7 +172,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
       if (request.method === "GET" && url.pathname === "/healthz") {
         send(200, {
           status: "ok",
-          service: "aubos-api",
+          service: "vorton-api",
           release: dependencies.release,
         });
         return;
@@ -181,7 +181,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         await dependencies.database.asAdministrator(async (transaction) => {
           await transaction.query("select 1");
         });
-        send(200, { status: "ready", service: "aubos-api" });
+        send(200, { status: "ready", service: "vorton-api" });
         return;
       }
       if (
@@ -415,7 +415,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         );
         return;
       }
-      console.error("AubOS API request failed", error);
+      console.error("Vorton API request failed", error);
       json(
         response,
         500,

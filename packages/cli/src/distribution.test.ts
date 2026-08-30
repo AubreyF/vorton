@@ -28,7 +28,7 @@ const repositoryRoot = resolve(
 const roots: string[] = [];
 
 function syntheticRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "aubos-distribution-"));
+  const root = mkdtempSync(join(tmpdir(), "vorton-distribution-"));
   roots.push(root);
   return root;
 }
@@ -96,11 +96,11 @@ describe("installation distribution", () => {
     expect(applyPlan({ root, planHash: first.hash }).status).toBe(
       "already-applied",
     );
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toContain(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toContain(
       '"version": "0.1.0"',
     );
     expect(
-      readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
+      readFileSync(join(root, "host/vorton-runtime.json"), "utf8"),
     ).toContain('"workLeaseProtocol": 1');
   });
 
@@ -114,15 +114,18 @@ describe("installation distribution", () => {
       allowCandidate: true,
     });
     mkdirSync(join(root, "host"), { recursive: true });
-    writeFileSync(join(root, "host/aubos-runtime.json"), "organization data\n");
-
-    expect(() => applyPlan({ root, planHash: planned.hash })).toThrow(
-      /Preimage conflict at host\/aubos-runtime\.json/,
-    );
-    expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
+    writeFileSync(
+      join(root, "host/vorton-runtime.json"),
       "organization data\n",
     );
-    expect(existsSync(join(root, "aubos.yaml"))).toBe(false);
+
+    expect(() => applyPlan({ root, planHash: planned.hash })).toThrow(
+      /Preimage conflict at host\/vorton-runtime\.json/,
+    );
+    expect(readFileSync(join(root, "host/vorton-runtime.json"), "utf8")).toBe(
+      "organization data\n",
+    );
+    expect(existsSync(join(root, "vorton.yaml"))).toBe(false);
   });
 
   it("upgrades only managed files and rolls back exact unchanged postimages", () => {
@@ -136,10 +139,10 @@ describe("installation distribution", () => {
     });
     applyPlan({ root, planHash: initialized.hash });
     const originalHost = readFileSync(
-      join(root, "host/aubos-runtime.json"),
+      join(root, "host/vorton-runtime.json"),
       "utf8",
     );
-    const originalLock = readFileSync(join(root, "aubos.lock.json"), "utf8");
+    const originalLock = readFileSync(join(root, "vorton.lock.json"), "utf8");
     const identityPath = join(root, "organization/identity.yaml");
     writeFileSync(
       identityPath,
@@ -157,7 +160,7 @@ describe("installation distribution", () => {
     });
     applyPlan({ root, planHash: upgraded.hash });
     expect(
-      readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
+      readFileSync(join(root, "host/vorton-runtime.json"), "utf8"),
     ).toContain('"readinessPath": "/readyz"');
     expect(
       readFileSync(
@@ -167,19 +170,19 @@ describe("installation distribution", () => {
     ).toContain("Runtime image is not digest-pinned");
     expect(
       readFileSync(
-        join(root, ".github/workflows/aubos-installation.yml"),
+        join(root, ".github/workflows/vorton-installation.yml"),
         "utf8",
       ),
     ).toContain("ruby tests/acceptance/validate-installation.rb");
 
     const rolledBack = rollbackPlan({ root, planHash: upgraded.hash });
     expect(rolledBack.restored.sort()).toEqual(
-      ["aubos.lock.json", "aubos.yaml", "host/aubos-runtime.json"].sort(),
+      ["vorton.lock.json", "vorton.yaml", "host/vorton-runtime.json"].sort(),
     );
-    expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "host/vorton-runtime.json"), "utf8")).toBe(
       originalHost,
     );
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toBe(
       originalLock,
     );
     expect(readFileSync(identityPath, "utf8")).toContain("# owner edit");
@@ -188,7 +191,7 @@ describe("installation distribution", () => {
   it("refuses to adopt a preexisting managed path", () => {
     const root = syntheticRoot();
     mkdirSync(join(root, "host"), { recursive: true });
-    writeFileSync(join(root, "host/aubos-runtime.json"), "owner file\n");
+    writeFileSync(join(root, "host/vorton-runtime.json"), "owner file\n");
 
     expect(() =>
       planInit({
@@ -199,7 +202,7 @@ describe("installation distribution", () => {
         allowCandidate: true,
       }),
     ).toThrow(/Initial adoption collision/);
-    expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "host/vorton-runtime.json"), "utf8")).toBe(
       "owner file\n",
     );
   });
@@ -214,12 +217,12 @@ describe("installation distribution", () => {
       allowCandidate: true,
     });
     applyPlan({ root, planHash: initialized.hash });
-    writeFileSync(join(root, "host/aubos-runtime.json"), "manual change\n");
+    writeFileSync(join(root, "host/vorton-runtime.json"), "manual change\n");
 
     expect(() => rollbackPlan({ root, planHash: initialized.hash })).toThrow(
       /Rollback postimage conflict/,
     );
-    expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "host/vorton-runtime.json"), "utf8")).toBe(
       "manual change\n",
     );
   });

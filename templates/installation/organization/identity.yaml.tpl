@@ -1,4 +1,4 @@
-apiVersion: aubos.dev/v1alpha1
+apiVersion: vorton.dev/v1alpha1
 kind: OrganizationIdentity
 metadata:
   name: {{INSTALLATION_NAME}}

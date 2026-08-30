@@ -1,4 +1,4 @@
-app = "replace-with-aubos-worker-app"
+app = "replace-with-vorton-worker-app"
 primary_region = "sjc"
 
 [build]
@@ -6,13 +6,13 @@ primary_region = "sjc"
 
 [env]
   PORT = "8080"
-  AUBOS_WORKER_PROVIDER = "codex-subscription"
-  AUBOS_CODEX_MODEL = "replace-with-explicit-codex-model"
-  AUBOS_CODEX_REASONING_EFFORT = "high"
-  AUBOS_CODEX_EXECUTION_TIMEOUT_MS = "900000"
-  AUBOS_CODEX_HOME = "/data/codex"
-  AUBOS_CODEX_WORKDIR = "/var/empty/aubos-worker"
-  AUBOS_CODEX_CLASSIFICATION_CEILING = "internal"
+  VORTON_WORKER_PROVIDER = "codex-subscription"
+  VORTON_CODEX_MODEL = "replace-with-explicit-codex-model"
+  VORTON_CODEX_REASONING_EFFORT = "high"
+  VORTON_CODEX_EXECUTION_TIMEOUT_MS = "900000"
+  VORTON_CODEX_HOME = "/data/codex"
+  VORTON_CODEX_WORKDIR = "/var/empty/vorton-worker"
+  VORTON_CODEX_CLASSIFICATION_CEILING = "internal"
 
 [[mounts]]
   source = "replace_with_codex_auth"

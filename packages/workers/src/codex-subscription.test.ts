@@ -57,7 +57,10 @@ const recommendation = {
   uncertainties: ["No external sources were consulted."],
 };
 
-function adapter(runner: CodexExecRunner, codexHome = "/tmp/aubos-codex-home") {
+function adapter(
+  runner: CodexExecRunner,
+  codexHome = "/tmp/vorton-codex-home",
+) {
   return new CodexSubscriptionAdapter({
     model: "gpt-test",
     reasoningEffort: "high",
@@ -126,7 +129,7 @@ describe("CodexSubscriptionAdapter", () => {
       expect(invocation!.args[index - 1]).toBe("--disable");
     }
     expect(Object.keys(invocation!.env).sort()).toEqual(["CODEX_HOME", "PATH"]);
-    expect(invocation!.env.CODEX_HOME).toBe("/tmp/aubos-codex-home");
+    expect(invocation!.env.CODEX_HOME).toBe("/tmp/vorton-codex-home");
     expect(invocation!.stdin).toContain(request.objective);
     expect(invocation!.stdin).toContain(evidenceRecordId);
     expect(job).toMatchObject({
@@ -157,7 +160,7 @@ describe("CodexSubscriptionAdapter", () => {
     const provider = new CodexSubscriptionAdapter({
       model: "gpt-test",
       reasoningEffort: "high",
-      codexHome: "/tmp/aubos-codex-home",
+      codexHome: "/tmp/vorton-codex-home",
       codexPath: "/synthetic/bin/codex",
       cwd: process.cwd(),
       executionTimeoutMs: 60_000,
@@ -179,7 +182,7 @@ describe("CodexSubscriptionAdapter", () => {
     const provider = new CodexSubscriptionAdapter({
       model: "gpt-test",
       reasoningEffort: "high",
-      codexHome: "/tmp/aubos-codex-home",
+      codexHome: "/tmp/vorton-codex-home",
       codexPath: "/synthetic/bin/codex",
       cwd: process.cwd(),
       executionTimeoutMs: 60_000,
@@ -199,7 +202,7 @@ describe("CodexSubscriptionAdapter", () => {
             citations: [
               {
                 sourceRevisionId: evidenceRecordId,
-                sourceUri: "urn:aubos:synthetic",
+                sourceUri: "urn:vorton:synthetic",
                 revisionHash: "b".repeat(64),
                 locator: "fixture:restricted",
               },
@@ -268,7 +271,7 @@ describe("CodexSubscriptionAdapter", () => {
         return { outputText: JSON.stringify(recommendation) };
       },
     };
-    const provider = adapter(runner, "/tmp/aubos-shared-codex-home");
+    const provider = adapter(runner, "/tmp/vorton-shared-codex-home");
 
     const first = provider.submit(request);
     await firstStarted;
@@ -302,7 +305,7 @@ describe("CodexSubscriptionAdapter", () => {
           return { outputText: JSON.stringify(recommendation) };
         }),
       };
-      const provider = adapter(runner, "/tmp/aubos-timeout-codex-home");
+      const provider = adapter(runner, "/tmp/vorton-timeout-codex-home");
 
       const first = provider.submit(request);
       await firstStarted;
@@ -338,7 +341,7 @@ describe("CodexSubscriptionAdapter", () => {
       stdin: "",
       cwd: process.cwd(),
       env: { PATH: process.env.PATH ?? "" },
-      outputFile: "/tmp/aubos-output-that-must-not-exist",
+      outputFile: "/tmp/vorton-output-that-must-not-exist",
       signal: controller.signal,
     });
 
@@ -353,14 +356,14 @@ describe("CodexSubscriptionAdapter", () => {
         new CodexSubscriptionAdapter({
           model: "gpt-test",
           reasoningEffort: "extreme" as "high",
-          codexHome: "/tmp/aubos-codex-home",
+          codexHome: "/tmp/vorton-codex-home",
           executionTimeoutMs: 60_000,
         }),
     ).toThrow("reasoning effort must be one of");
     expect(() =>
       createCodexSubscriptionAdapterFromEnv({
-        AUBOS_CODEX_MODEL: "gpt-test",
-        AUBOS_CODEX_HOME: "/tmp/aubos-codex-home",
+        VORTON_CODEX_MODEL: "gpt-test",
+        VORTON_CODEX_HOME: "/tmp/vorton-codex-home",
       }),
     ).toThrow("reasoning effort must be one of");
     expect(
@@ -368,7 +371,7 @@ describe("CodexSubscriptionAdapter", () => {
         new CodexSubscriptionAdapter({
           model: "gpt-test",
           reasoningEffort: "high",
-          codexHome: "/tmp/aubos-codex-home",
+          codexHome: "/tmp/vorton-codex-home",
           executionTimeoutMs: 59_999,
         }),
     ).toThrow("execution timeout must be an integer");

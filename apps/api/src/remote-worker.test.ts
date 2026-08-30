@@ -1,4 +1,4 @@
-import type { ExecutiveWorkerJobRequest } from "@aubos/contracts";
+import type { ExecutiveWorkerJobRequest } from "@vorton/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { RemoteExecutiveWorkerAdapter } from "./remote-worker.js";

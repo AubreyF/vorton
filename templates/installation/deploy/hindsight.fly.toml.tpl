@@ -1,5 +1,5 @@
 # Organization-owned Fly configuration. Hindsight remains pinned separately
-# from the AubOS release manifest.
+# from the Vorton release manifest.
 app = "{{INSTALLATION_NAME}}-hindsight"
 primary_region = "sea"
 

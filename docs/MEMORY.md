@@ -1,6 +1,6 @@
 # Memory architecture
 
-AubOS separates organizational authority from remembered context. Postgres and immutable source records answer what was decided, approved, assigned, and observed. The memory system helps workers retrieve, connect, consolidate, and reflect on that material.
+Vorton separates organizational authority from remembered context. Postgres and immutable source records answer what was decided, approved, assigned, and observed. The memory system helps workers retrieve, connect, consolidate, and reflect on that material.
 
 ## Components
 
@@ -27,7 +27,7 @@ The gateway is a narrow broker, not a second organizational ledger.
 
 Hindsight provides the derived-memory engine. The MVP retains source chunks, builds local semantic indexes with the pinned `BAAI/bge-small-en-v1.5` model, and combines semantic and keyword retrieval with reciprocal-rank fusion. Hindsight's native `openai-codex` provider performs fact extraction, observations, and automatic consolidation with strict structured output. Global and consolidation model settings are explicit and serialized. Retain and reflect cannot override the provider, model, or backend.
 
-The AubOS adapter accepts a native observation only when Hindsight returns every supporting fact and each fact is active, document-bound, scoped to the installation realm, and backed by matching AubOS citations and source revision IDs. Missing, truncated, mismatched, or invalidated lineage drops that observation while preserving valid raw facts as fallback. Hindsight reflect text lacks this complete citation envelope, so it remains advisory narrative and cannot become cited evidence. No Hindsight output can create an approval, decision, Policy, capability grant, or Work assignment.
+The Vorton adapter accepts a native observation only when Hindsight returns every supporting fact and each fact is active, document-bound, scoped to the installation realm, and backed by matching Vorton citations and source revision IDs. Missing, truncated, mismatched, or invalidated lineage drops that observation while preserving valid raw facts as fallback. Hindsight reflect text lacks this complete citation envelope, so it remains advisory narrative and cannot become cited evidence. No Hindsight output can create an approval, decision, Policy, capability grant, or Work assignment.
 
 Hindsight classification metadata is transport-only and untrusted. Provider egress rehydrates active admitted source revisions and exact citation tuples from person-scoped Postgres, derives the most restrictive classification, and only then applies the worker ceiling.
 
@@ -50,9 +50,9 @@ source revision
   -> reviewed promotion or rejection
 ```
 
-AubOS surfaces a derived observation only when it can reconstruct links to every source revision used to produce it. Superseded sources remain historically traceable. Deleted sources are removed from active retrieval, and Hindsight invalidates or rebuilds affected observations from their remaining sources.
+Vorton surfaces a derived observation only when it can reconstruct links to every source revision used to produce it. Superseded sources remain historically traceable. Deleted sources are removed from active retrieval, and Hindsight invalidates or rebuilds affected observations from their remaining sources.
 
-The MVP implements source citations, admission state, Hindsight bank isolation, retrieval receipts, deletion propagation, native observation consolidation, and fail-closed observation hydration. Derived observations remain untrusted context. Promotion into an authoritative Record always requires the typed AubOS authority path. The governed scheduling, review, contradiction, promotion, evaluation, and portability system in the roadmap remains future work. Memory temples, spatial indexing, and richer personal mnemonic structures remain compatible future modules rather than kernel requirements.
+The MVP implements source citations, admission state, Hindsight bank isolation, retrieval receipts, deletion propagation, native observation consolidation, and fail-closed observation hydration. Derived observations remain untrusted context. Promotion into an authoritative Record always requires the typed Vorton authority path. The governed scheduling, review, contradiction, promotion, evaluation, and portability system in the roadmap remains future work. Memory temples, spatial indexing, and richer personal mnemonic structures remain compatible future modules rather than kernel requirements.
 
 ## Security boundary
 

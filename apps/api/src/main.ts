@@ -1,6 +1,6 @@
-import { Database } from "@aubos/database";
-import { DatabaseExecutiveAuthorityVerifier } from "@aubos/executive";
-import { HttpHindsightAdapter } from "@aubos/memory";
+import { Database } from "@vorton/database";
+import { DatabaseExecutiveAuthorityVerifier } from "@vorton/executive";
+import { HttpHindsightAdapter } from "@vorton/memory";
 
 import { createSupabaseIdentityVerifier } from "./auth.js";
 import { DatabaseExecutiveLedger } from "./database-ledger.js";
@@ -23,7 +23,7 @@ const database = new Database({
   max: 10,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 30_000,
-  application_name: "aubos-api",
+  application_name: "vorton-api",
 });
 const ledger = new DatabaseExecutiveLedger(database);
 const worker = new RemoteExecutiveWorkerAdapter({
@@ -56,7 +56,7 @@ const server = createApiServer({
     hindsight,
     (error) =>
       console.warn(
-        "AubOS derived memory recall is unavailable; continuing with authoritative evidence only",
+        "Vorton derived memory recall is unavailable; continuing with authoritative evidence only",
         error,
       ),
   ),
@@ -66,11 +66,11 @@ const server = createApiServer({
 });
 
 server.listen(env.port, "0.0.0.0", () => {
-  console.log(`AubOS API listening on port ${String(env.port)}`);
+  console.log(`Vorton API listening on port ${String(env.port)}`);
 });
 
 async function shutdown(signal: string): Promise<void> {
-  console.log(`AubOS API received ${signal}`);
+  console.log(`Vorton API received ${signal}`);
   server.close();
   await database.close();
 }

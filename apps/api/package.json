@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/api",
+  "name": "@vorton/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,11 +11,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "*",
-    "@aubos/database": "*",
-    "@aubos/executive": "*",
-    "@aubos/memory": "*",
-    "@aubos/workers": "*",
+    "@vorton/contracts": "*",
+    "@vorton/database": "*",
+    "@vorton/executive": "*",
+    "@vorton/memory": "*",
+    "@vorton/workers": "*",
     "jose": "^6.1.0"
   },
   "devDependencies": {

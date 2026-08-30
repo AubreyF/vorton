@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FakeExecutiveWorkerAdapter } from "@aubos/workers";
+import { FakeExecutiveWorkerAdapter } from "@vorton/workers";
 
 import { ExecutiveWorkflow, InMemoryExecutiveLedger } from "./workflow.js";
 
@@ -126,7 +126,7 @@ describe("governed executive workflow", () => {
       work,
       workerId,
       summary: "Synthetic check completed.",
-      artifacts: [{ uri: "urn:aubos:synthetic:coolant-receipt" }],
+      artifacts: [{ uri: "urn:vorton:synthetic:coolant-receipt" }],
     });
     const outcome = await workflow.recordOutcome({
       receiptRecordId: receipt.id,

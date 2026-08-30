@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryHindsightAdapter, type HindsightAdapter } from "@aubos/memory";
+import {
+  InMemoryHindsightAdapter,
+  type HindsightAdapter,
+} from "@vorton/memory";
 import { ContextGateway } from "./index.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";

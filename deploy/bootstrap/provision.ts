@@ -97,7 +97,7 @@ function exactBoolean(
 
 function exactClassification(value: string, name: string): Classification {
   if (!classifications.includes(value as Classification)) {
-    throw new Error(`${name} must be a valid AubOS data classification`);
+    throw new Error(`${name} must be a valid Vorton data classification`);
   }
   return value as Classification;
 }
@@ -128,7 +128,7 @@ function uuid(value: string, name: string): string {
 function slug(value: string): string {
   if (!/^[a-z][a-z0-9-]*$/.test(value)) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_INSTALLATION_SLUG must start with a letter and contain lowercase letters, digits, or hyphens",
+      "VORTON_BOOTSTRAP_INSTALLATION_SLUG must start with a letter and contain lowercase letters, digits, or hyphens",
     );
   }
   return value;
@@ -137,7 +137,7 @@ function slug(value: string): string {
 function roleIdentifier(value: string): string {
   if (!/^[a-z][a-z0-9_]{2,62}$/.test(value)) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_RUNTIME_ROLE must be a lowercase PostgreSQL identifier between 3 and 63 characters",
+      "VORTON_BOOTSTRAP_RUNTIME_ROLE must be a lowercase PostgreSQL identifier between 3 and 63 characters",
     );
   }
   return value;
@@ -157,7 +157,7 @@ function sha256(value: string): string {
 
 function deterministicUuid(slugValue: string, kind: string): string {
   const bytes = Buffer.from(
-    sha256(`aubos-bootstrap-v1:${slugValue}:${kind}`),
+    sha256(`vorton-bootstrap-v1:${slugValue}:${kind}`),
     "hex",
   ).subarray(0, 16);
   bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
@@ -182,54 +182,54 @@ function identifiersFor(slugValue: string): Identifiers {
 export async function readBootstrapConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<BootstrapConfig> {
-  const provider = required(env, "AUBOS_WORKER_PROVIDER");
+  const provider = required(env, "VORTON_WORKER_PROVIDER");
   if (provider !== "openai-responses" && provider !== "codex-subscription") {
     throw new Error(
-      "AUBOS_WORKER_PROVIDER must be openai-responses or codex-subscription for the first installation",
+      "VORTON_WORKER_PROVIDER must be openai-responses or codex-subscription for the first installation",
     );
   }
-  const model = required(env, "AUBOS_WORKER_MODEL");
+  const model = required(env, "VORTON_WORKER_MODEL");
   const providerModelName =
     provider === "openai-responses"
-      ? "AUBOS_OPENAI_MODEL"
-      : "AUBOS_CODEX_MODEL";
+      ? "VORTON_OPENAI_MODEL"
+      : "VORTON_CODEX_MODEL";
   if (model !== required(env, providerModelName)) {
     throw new Error(
-      `AUBOS_WORKER_MODEL must exactly match ${providerModelName}`,
+      `VORTON_WORKER_MODEL must exactly match ${providerModelName}`,
     );
   }
   const classificationCeiling = exactClassification(
-    optional(env, "AUBOS_WORKER_CLASSIFICATION_CEILING", "internal"),
-    "AUBOS_WORKER_CLASSIFICATION_CEILING",
+    optional(env, "VORTON_WORKER_CLASSIFICATION_CEILING", "internal"),
+    "VORTON_WORKER_CLASSIFICATION_CEILING",
   );
   const providerCeilingName =
     provider === "openai-responses"
-      ? "AUBOS_OPENAI_CLASSIFICATION_CEILING"
-      : "AUBOS_CODEX_CLASSIFICATION_CEILING";
+      ? "VORTON_OPENAI_CLASSIFICATION_CEILING"
+      : "VORTON_CODEX_CLASSIFICATION_CEILING";
   const providerCeiling = exactClassification(
     optional(env, providerCeilingName, "internal"),
     providerCeilingName,
   );
   if (classificationCeiling !== providerCeiling) {
     throw new Error(
-      `AUBOS_WORKER_CLASSIFICATION_CEILING must exactly match ${providerCeilingName}`,
+      `VORTON_WORKER_CLASSIFICATION_CEILING must exactly match ${providerCeilingName}`,
     );
   }
   if (provider === "codex-subscription") {
-    const reasoningEffort = required(env, "AUBOS_CODEX_REASONING_EFFORT");
+    const reasoningEffort = required(env, "VORTON_CODEX_REASONING_EFFORT");
     if (
       !["low", "medium", "high", "xhigh", "max", "ultra"].includes(
         reasoningEffort,
       )
     ) {
       throw new Error(
-        "AUBOS_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
+        "VORTON_CODEX_REASONING_EFFORT must be low, medium, high, xhigh, max, or ultra",
       );
     }
   }
   const evidenceClassification = exactClassification(
-    optional(env, "AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION", "internal"),
-    "AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION",
+    optional(env, "VORTON_BOOTSTRAP_EVIDENCE_CLASSIFICATION", "internal"),
+    "VORTON_BOOTSTRAP_EVIDENCE_CLASSIFICATION",
   );
   if (!classificationAllows(classificationCeiling, evidenceClassification)) {
     throw new Error(
@@ -237,31 +237,31 @@ export async function readBootstrapConfig(
     );
   }
   const roleSkillMarkdown = await readFile(
-    env.AUBOS_BOOTSTRAP_ROLE_SKILL_PATH?.trim() || defaultRoleSkillPath,
+    env.VORTON_BOOTSTRAP_ROLE_SKILL_PATH?.trim() || defaultRoleSkillPath,
     "utf8",
   );
   if (!roleSkillMarkdown.trim()) throw new Error("Role skill file is empty");
   return {
     authUserId: uuid(
-      required(env, "AUBOS_BOOTSTRAP_AUTH_USER_ID"),
-      "AUBOS_BOOTSTRAP_AUTH_USER_ID",
+      required(env, "VORTON_BOOTSTRAP_AUTH_USER_ID"),
+      "VORTON_BOOTSTRAP_AUTH_USER_ID",
     ),
     installationSlug: slug(
-      optional(env, "AUBOS_BOOTSTRAP_INSTALLATION_SLUG", "moonbase-lab"),
+      optional(env, "VORTON_BOOTSTRAP_INSTALLATION_SLUG", "moonbase-lab"),
     ),
     installationName: optional(
       env,
-      "AUBOS_BOOTSTRAP_INSTALLATION_NAME",
+      "VORTON_BOOTSTRAP_INSTALLATION_NAME",
       "Moonbase Lab",
     ),
     ownerDisplayName: optional(
       env,
-      "AUBOS_BOOTSTRAP_OWNER_DISPLAY_NAME",
+      "VORTON_BOOTSTRAP_OWNER_DISPLAY_NAME",
       "Synthetic Owner",
     ),
     workerName: optional(
       env,
-      "AUBOS_BOOTSTRAP_WORKER_NAME",
+      "VORTON_BOOTSTRAP_WORKER_NAME",
       "Executive Recommendation Worker",
     ),
     provider,
@@ -271,27 +271,27 @@ export async function readBootstrapConfig(
     classificationCeiling,
     evidenceClassification,
     runtimeRole: roleIdentifier(
-      optional(env, "AUBOS_BOOTSTRAP_RUNTIME_ROLE", "aubos_runtime"),
+      optional(env, "VORTON_BOOTSTRAP_RUNTIME_ROLE", "aubos_runtime"),
     ),
-    roleName: optional(env, "AUBOS_BOOTSTRAP_ROLE_NAME", "Strategic Reviewer"),
+    roleName: optional(env, "VORTON_BOOTSTRAP_ROLE_NAME", "Strategic Reviewer"),
     roleVersion: positiveInteger(
-      optional(env, "AUBOS_BOOTSTRAP_ROLE_VERSION", "1"),
-      "AUBOS_BOOTSTRAP_ROLE_VERSION",
+      optional(env, "VORTON_BOOTSTRAP_ROLE_VERSION", "1"),
+      "VORTON_BOOTSTRAP_ROLE_VERSION",
     ),
     roleSkillMarkdown,
     workTitle: optional(
       env,
-      "AUBOS_BOOTSTRAP_WORK_TITLE",
+      "VORTON_BOOTSTRAP_WORK_TITLE",
       "Review organizational priorities",
     ),
     requestedOutcome: optional(
       env,
-      "AUBOS_BOOTSTRAP_REQUESTED_OUTCOME",
+      "VORTON_BOOTSTRAP_REQUESTED_OUTCOME",
       "Recommend the next bounded action using the supplied organizational evidence.",
     ),
     evidenceSummary: optional(
       env,
-      "AUBOS_BOOTSTRAP_EVIDENCE_SUMMARY",
+      "VORTON_BOOTSTRAP_EVIDENCE_SUMMARY",
       "The synthetic installation is ready for its first executive review.",
     ),
   };
@@ -302,40 +302,40 @@ export function readBootstrapSecrets(
 ): BootstrapSecrets {
   const administratorDatabaseUrl = required(
     env,
-    "AUBOS_BOOTSTRAP_DATABASE_URL",
+    "VORTON_BOOTSTRAP_DATABASE_URL",
   );
   const parsed = new URL(administratorDatabaseUrl);
   if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
-    throw new Error("AUBOS_BOOTSTRAP_DATABASE_URL must be a PostgreSQL URL");
+    throw new Error("VORTON_BOOTSTRAP_DATABASE_URL must be a PostgreSQL URL");
   }
   const runtimeDatabasePassword = required(
     env,
-    "AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD",
+    "VORTON_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD",
   );
   if (runtimeDatabasePassword.length < 32) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD must contain at least 32 characters",
+      "VORTON_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD must contain at least 32 characters",
     );
   }
   const runtimeContextSigningSecret = required(
     env,
-    "AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET",
+    "VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET",
   );
   if (runtimeContextSigningSecret.length < 32) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
+      "VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET must contain at least 32 characters",
     );
   }
   if (runtimeContextSigningSecret === runtimeDatabasePassword) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET must differ from the runtime database password",
+      "VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET must differ from the runtime database password",
     );
   }
   return {
     administratorDatabaseUrl,
     administratorDatabaseSsl: exactBoolean(
       env,
-      "AUBOS_BOOTSTRAP_DATABASE_SSL",
+      "VORTON_BOOTSTRAP_DATABASE_SSL",
       true,
     ),
     runtimeDatabasePassword,
@@ -593,14 +593,14 @@ export async function provisionInstallation(
 ): Promise<Identifiers> {
   const ids = identifiersFor(config.installationSlug);
   await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
-    `aubos-bootstrap:${config.installationSlug}`,
+    `vorton-bootstrap:${config.installationSlug}`,
   ]);
   const schema = await client.query<{ applied: boolean }>(
     "select to_regclass('aubos_private.runtime_context_keys') is not null as applied",
   );
   if (!schema.rows[0]?.applied) {
     throw new Error(
-      "AubOS migrations through 20260828000400_runtime_authority must be applied first",
+      "Vorton migrations through 20260828000400_runtime_authority must be applied first",
     );
   }
   const authUser = await client.query<{ exists: boolean }>(
@@ -609,7 +609,7 @@ export async function provisionInstallation(
   );
   if (!authUser.rows[0]?.exists) {
     throw new Error(
-      "AUBOS_BOOTSTRAP_AUTH_USER_ID does not identify an existing Supabase Auth user",
+      "VORTON_BOOTSTRAP_AUTH_USER_ID does not identify an existing Supabase Auth user",
     );
   }
 
@@ -892,7 +892,7 @@ export async function provisionInstallation(
       ids.workId,
       config.evidenceSummary,
       JSON.stringify({ bootstrap: true, syntheticDefault: true }),
-      `urn:aubos:bootstrap:${config.installationSlug}`,
+      `urn:vorton:bootstrap:${config.installationSlug}`,
       config.evidenceClassification,
       ids.personId,
     ],
@@ -913,7 +913,7 @@ export async function provisionInstallation(
       kind: "evidence",
       summary: config.evidenceSummary,
       payload: { bootstrap: true, syntheticDefault: true },
-      source_uri: `urn:aubos:bootstrap:${config.installationSlug}`,
+      source_uri: `urn:vorton:bootstrap:${config.installationSlug}`,
       classification: config.evidenceClassification,
       actor_person_id: ids.personId,
       actor_worker_id: null,
@@ -934,7 +934,7 @@ export async function applyBootstrap(
       ? { rejectUnauthorized: true }
       : undefined,
     max: 1,
-    application_name: "aubos-first-install-bootstrap",
+    application_name: "vorton-first-install-bootstrap",
   });
   let client: PoolClient | undefined;
   try {

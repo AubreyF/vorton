@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Decision
 
-Factory is a first-party AubOS module. It uses kernel Work, Policy, Records, workers, memory, and control-plane views. Repository connectors preserve declared external authority, including GitHub ticket and claim state, without creating a second software queue.
+Factory is a first-party Vorton module. It uses kernel Work, Policy, Records, workers, memory, and control-plane views. Repository connectors preserve declared external authority, including GitHub ticket and claim state, without creating a second software queue.
 
 The existing Freed Linux pilot remains independent while it proves the first ticket. FreedOS begins with read-only reconciliation.
 

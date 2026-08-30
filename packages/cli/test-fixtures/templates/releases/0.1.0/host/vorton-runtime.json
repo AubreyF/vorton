@@ -1,0 +1,6 @@
+{
+  "apiVersion": "vorton.dev/host/v1",
+  "healthPath": "/api/health",
+  "observedDeploymentTable": "vorton_observed_deployments",
+  "workLeaseProtocol": 1
+}

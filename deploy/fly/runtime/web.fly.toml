@@ -1,13 +1,13 @@
-app = "replace-with-aubos-web-app"
+app = "replace-with-vorton-web-app"
 primary_region = "sjc"
 
 [build]
   image = "replace-with-web-release-image-by-digest"
 
 [env]
-  AUBOS_PUBLIC_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
-  AUBOS_PUBLIC_SUPABASE_ANON_KEY = "replace-with-public-anon-key"
-  AUBOS_PUBLIC_API_URL = "https://replace-with-aubos-api-app.fly.dev"
+  VORTON_PUBLIC_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
+  VORTON_PUBLIC_SUPABASE_ANON_KEY = "replace-with-public-anon-key"
+  VORTON_PUBLIC_API_URL = "https://replace-with-vorton-api-app.fly.dev"
 
 [http_service]
   internal_port = 8080
