@@ -288,8 +288,9 @@ export class NodeCodexExecRunner implements CodexExecRunner {
       };
       if (invocation.signal.aborted) cancel();
       else invocation.signal.addEventListener("abort", cancel, { once: true });
-      child.once("error", () => {
-        rejectRun(new Error("Unable to start the Codex CLI"));
+      child.once("error", (error) => {
+        const code = "code" in error && error.code ? ` (${error.code})` : "";
+        rejectRun(new Error(`Unable to start the Codex CLI${code}`));
       });
       child.once("close", (code, signal) => {
         invocation.signal.removeEventListener("abort", cancel);

@@ -14,7 +14,7 @@ const codex = {
   VORTON_WORKER_PROVIDER: "codex-subscription",
   VORTON_CODEX_MODEL: "explicit-synthetic-model",
   VORTON_CODEX_HOME: "/data/codex",
-  VORTON_CODEX_WORKDIR: "/var/empty/vorton-worker",
+  VORTON_CODEX_WORKDIR: "/var/lib/vorton-worker",
   VORTON_CODEX_REASONING_EFFORT: "high",
   VORTON_CODEX_EXECUTION_TIMEOUT_MS: "900000",
 };
@@ -65,7 +65,7 @@ describe("worker environment", () => {
       model: "explicit-synthetic-model",
       codexHome: "/data/codex",
       codexPath: "codex",
-      codexWorkdir: "/var/empty/vorton-worker",
+      codexWorkdir: "/var/lib/vorton-worker",
       codexReasoningEffort: "high",
       codexExecutionTimeoutMs: 900000,
       storeResponses: false,

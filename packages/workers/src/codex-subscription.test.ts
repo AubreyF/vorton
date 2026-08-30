@@ -352,6 +352,23 @@ describe("CodexSubscriptionAdapter", () => {
     await expect(running).rejects.toThrow("exceeded its execution timeout");
   });
 
+  it("reports a safe spawn error code when the Codex process cannot start", async () => {
+    const runner = new NodeCodexExecRunner();
+    const controller = new AbortController();
+
+    await expect(
+      runner.run({
+        command: "/path/that/does/not/exist/codex",
+        args: [],
+        stdin: "",
+        cwd: process.cwd(),
+        env: { PATH: process.env.PATH ?? "" },
+        outputFile: "/tmp/vorton-output-that-must-not-exist",
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Unable to start the Codex CLI (ENOENT)");
+  });
+
   it("requires an explicit supported reasoning effort from configuration", () => {
     expect(
       () =>

@@ -23,7 +23,7 @@ function environment(): NodeJS.ProcessEnv {
     VORTON_CODEX_REASONING_EFFORT: "high",
     VORTON_CODEX_EXECUTION_TIMEOUT_MS: "900000",
     VORTON_CODEX_HOME: "/data/codex",
-    VORTON_CODEX_WORKDIR: "/var/empty/vorton-worker",
+    VORTON_CODEX_WORKDIR: "/var/lib/vorton-worker",
     HINDSIGHT_API_TENANT_EXTENSION:
       "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension",
     HINDSIGHT_API_TENANT_API_KEY: "synthetic-tenant-key",

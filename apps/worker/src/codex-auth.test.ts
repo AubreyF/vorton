@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdtemp,
   readFile,
   readdir,
@@ -12,7 +13,10 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { prepareCodexRuntimeStorage } from "./codex-auth.js";
+import {
+  assertCodexRuntimeStorageAccessible,
+  prepareCodexRuntimeStorage,
+} from "./codex-auth.js";
 
 const roots: string[] = [];
 
@@ -76,6 +80,25 @@ describe("Codex managed authentication storage", () => {
       await readFile(join(codexHome, "auth.json"), "utf8"),
     );
     expect(await readdir(codexHome)).toEqual(["auth.json"]);
+  });
+
+  it("fails closed when the runtime account cannot traverse a parent directory", async () => {
+    if (process.getuid?.() === 0) return;
+    const directory = await root();
+    const storage = await prepareCodexRuntimeStorage({
+      codexHome: join(directory, "codex"),
+      workdir: join(directory, "work"),
+      authSeed: managedAuth("first-refresh"),
+    });
+
+    await chmod(directory, 0o000);
+    try {
+      await expect(
+        assertCodexRuntimeStorageAccessible(storage),
+      ).rejects.toThrow("not accessible after dropping privileges");
+    } finally {
+      await chmod(directory, 0o700);
+    }
   });
 
   it("requires managed ChatGPT auth when the cache is empty", async () => {
