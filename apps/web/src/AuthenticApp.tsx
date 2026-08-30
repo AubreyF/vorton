@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
+import { ExportControls } from "./design-system/export-controls.js";
 import { useBrowserRuntime } from "./runtime.js";
 
 const primarySections = [
@@ -94,6 +95,7 @@ export function AuthenticApp() {
               {runtime.session.user.email ?? installationName}
             </span>
           </button>
+          <ExportControls />
           <ThemeControls />
         </div>
       </header>
