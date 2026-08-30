@@ -57,7 +57,13 @@ async function fixture(): Promise<{
   const git = path.join(root, "git");
   const key = path.join(root, "publisher.pem");
   const worktrees = path.join(root, "worktrees");
-  const node = await realpath(process.execPath);
+  const node = path.join(root, "node");
+  await writeFile(
+    node,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`,
+    { mode: 0o700 },
+  );
+  await chmod(node, 0o700);
   await mkdir(worktrees, { mode: 0o700 });
   await writeFile(publisher, "export {};\n", { mode: 0o600 });
   await writeFile(gateway, "export {};\n", { mode: 0o600 });

@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -104,6 +111,13 @@ describe("assembled Freed pilot readiness", () => {
       path.join(os.tmpdir(), "vorton-factory-pilot-"),
     );
     roots.push(testRoot);
+    const nodeExecutable = path.join(testRoot, "node");
+    await writeFile(
+      nodeExecutable,
+      `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`,
+      { mode: 0o700 },
+    );
+    await chmod(nodeExecutable, 0o700);
     const worktree = path.join(testRoot, "worktree");
     const store = new LocalCheckpointStore(path.join(testRoot, "checkpoints"));
     await runner.run({
@@ -278,7 +292,7 @@ describe("assembled Freed pilot readiness", () => {
       workProduct,
       commands: [
         {
-          executable: process.execPath,
+          executable: nodeExecutable,
           args: [
             "-e",
             "const fs=require('node:fs'); if(fs.readFileSync('src/value.txt','utf8')!=='after\\n') process.exit(1)",

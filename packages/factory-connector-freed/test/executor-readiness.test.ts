@@ -111,7 +111,13 @@ async function fixture(): Promise<{
   await writeFile(completer, "export {};\n", { mode: 0o600 });
   await writeFile(completionReader, "export {};\n", { mode: 0o600 });
   await writeFile(adjudicator, "export {};\n", { mode: 0o600 });
-  const nodeExecutable = await realpath(process.execPath);
+  const nodeExecutable = path.join(root, "node");
+  await writeFile(
+    nodeExecutable,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} "$@"\n`,
+    { mode: 0o700 },
+  );
+  await chmod(nodeExecutable, 0o700);
   await writeFile(
     reviewerRuntime,
     `${JSON.stringify({
