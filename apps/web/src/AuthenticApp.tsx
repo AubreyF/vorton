@@ -166,7 +166,7 @@ export function AuthenticApp() {
               {runtime.session.user.email ?? installationName}
             </span>
           </button>
-          <ExportControls />
+          <ExportControls installationName={installationName} />
           <ThemeControls />
         </div>
       </header>
@@ -194,30 +194,44 @@ export function AuthenticApp() {
             view={subsection}
           />
         ) : section === "tools" ? (
-          <ToolLab view={subsection} />
+          <ToolLab installationName={installationName} view={subsection} />
         ) : section === "factory" ? (
-          <FactoryModule view={subsection} />
+          <FactoryModule
+            installationName={installationName}
+            view={subsection}
+          />
         ) : (
-          <ModuleFoundation section={section} />
+          <ModuleFoundation
+            installationName={installationName}
+            section={section}
+          />
         )}
       </main>
     </div>
   );
 }
 
-function FactoryModule({ view }: { view: string }) {
+function FactoryModule({
+  installationName,
+  view,
+}: {
+  installationName: string;
+  view: string;
+}) {
   const manifest = factoryModuleManifest;
   return (
     <section className="factory-module">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">Vorton / Factory / {view}</p>
+          <p className="eyebrow">
+            {installationName} / Factory / {view}
+          </p>
           <h1>Factory</h1>
           <p className="lede">
             Governed software work across repositories and enrolled workers. The
-            FreedOS connector is now part of Vorton. Live execution remains
-            under Freed task authority and stays closed until its pilot gates
-            pass.
+            {manifest.connector} is installed in {installationName}. Live
+            execution remains under Freed task authority and stays closed until
+            its pilot gates pass.
           </p>
         </div>
         <dl className="work-summary" aria-label="Factory integration summary">
@@ -240,7 +254,11 @@ function FactoryModule({ view }: { view: string }) {
         {Object.entries(manifest.authority).map(([name, owner]) => (
           <article key={name}>
             <p className="eyebrow">{name}</p>
-            <h2>{owner}</h2>
+            <h2>
+              {owner === "Vorton Postgres"
+                ? `${installationName} Postgres`
+                : owner}
+            </h2>
           </article>
         ))}
       </div>
@@ -257,7 +275,7 @@ function FactoryModule({ view }: { view: string }) {
           This connector imports the proven admission, custody, routing,
           checkpoint, review, and draft publication machinery. It does not copy
           credentials, mutable host state, OAuth caches, worktrees, or a second
-          authority ledger into Vorton.
+          authority ledger into {installationName}.
         </p>
         <ul className="factory-capabilities">
           {manifest.capabilities.map((capability) => (
@@ -274,21 +292,27 @@ function FactoryModule({ view }: { view: string }) {
         <h2>Live Factory projection is the next gate</h2>
         <p>
           Tickets, workers, pull requests, and receipts will appear after the
-          live connector exposes a fresh read-only snapshot. Vorton will not
-          infer execution state from stale or synthetic evidence.
+          live connector exposes a fresh read-only snapshot. {installationName}{" "}
+          will not infer execution state from stale or synthetic evidence.
         </p>
       </div>
     </section>
   );
 }
 
-function ToolLab({ view }: { view: string }) {
+function ToolLab({
+  installationName,
+  view,
+}: {
+  installationName: string;
+  view: string;
+}) {
   const [result, setResult] = useState<readonly TriagedIncident[]>();
 
   if (view === "Build") {
     return (
       <section className="tool-lab">
-        <p className="eyebrow">Vorton / Tool Lab</p>
+        <p className="eyebrow">{installationName} / Tool Lab</p>
         <h1>Build</h1>
         <p className="lede">
           Tools begin as explicit contracts: inputs, outputs, data access,
@@ -310,7 +334,7 @@ function ToolLab({ view }: { view: string }) {
   if (view === "Runs") {
     return (
       <section className="tool-lab">
-        <p className="eyebrow">Vorton / Tool Lab</p>
+        <p className="eyebrow">{installationName} / Tool Lab</p>
         <h1>Runs</h1>
         <p className="lede">
           Installed tool executions will appear here with their inputs, outputs,
@@ -331,7 +355,7 @@ function ToolLab({ view }: { view: string }) {
     <section className="tool-lab">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">Vorton / Tool Lab</p>
+          <p className="eyebrow">{installationName} / Tool Lab</p>
           <h1>Tools</h1>
           <p className="lede">
             Your installed catalog is empty. Explore a bounded example, then
@@ -385,8 +409,8 @@ function ToolLab({ view }: { view: string }) {
             Run synthetic preview
           </button>
           <p>
-            Runs in this browser. Reads no FreedOS data. Creates no authority or
-            installation record.
+            Runs in this browser. Reads no {installationName} data. Creates no
+            authority or installation record.
           </p>
         </div>
         {result && (
@@ -478,6 +502,7 @@ function WorkModule({
   installation?: Installation;
   view: string;
 }) {
+  const installationName = installation?.displayName ?? "Private installation";
   const allWork = installation?.workItems ?? [];
   const openWork = allWork.filter(
     (work) => work.state !== "completed" && work.state !== "cancelled",
@@ -497,7 +522,7 @@ function WorkModule({
     <section className="work-module">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">Vorton / Work</p>
+          <p className="eyebrow">{installationName} / Work</p>
           <h1>Tasks</h1>
           <p className="lede">
             Governed commitments across people and workers, ordered by declared
@@ -534,7 +559,7 @@ function WorkModule({
       ) : (
         <div className="directional-empty-state">
           <h2>{emptyWorkHeading(view)}</h2>
-          <p>{emptyWorkDetail(view)}</p>
+          <p>{emptyWorkDetail(view, installationName)}</p>
         </div>
       )}
     </section>
@@ -638,12 +663,12 @@ function emptyWorkHeading(view: string): string {
   return "No open Work is visible";
 }
 
-function emptyWorkDetail(view: string): string {
+function emptyWorkDetail(view: string, installationName: string): string {
   if (view === "Blocked")
     return "No visible Work item currently declares the blocked state.";
   if (view === "History")
     return "Completed and cancelled Work will appear here with its durable state intact.";
-  return "Create Work through an authorized planning flow. Vorton will not manufacture tasks from silence.";
+  return `Create Work through an authorized planning flow. ${installationName} will not manufacture tasks from silence.`;
 }
 
 function PrivacyState({ installation }: { installation?: string }) {
@@ -1031,19 +1056,23 @@ function CommandLane({
 }
 
 function ModuleFoundation({
+  installationName,
   section,
 }: {
+  installationName: string;
   section: Exclude<SectionId, "command">;
 }) {
   const label = primarySections.find(([id]) => id === section)?.[1] ?? section;
   return (
     <section className="module-foundation">
-      <p className="eyebrow">Vorton / {label}</p>
+      <p className="eyebrow">
+        {installationName} / {label}
+      </p>
       <h1>{label}</h1>
       <p className="lede">
-        This module is being translated into the reusable Vorton kernel from the
-        proven personal interface. The previous generic preview has been removed
-        rather than presented as finished product.
+        This module is being translated into {installationName} from the proven
+        personal interface. The previous generic preview has been removed rather
+        than presented as finished product.
       </p>
       <div className="directional-empty-state">
         <h2>The interface migration is in progress</h2>

@@ -63,6 +63,7 @@ interface GrantRow {
 
 interface InstallationRow {
   id: string;
+  slug: string;
   display_name: string;
   person_kind: "owner" | "member";
 }
@@ -106,6 +107,7 @@ interface BootstrapEvidenceRow extends EvidenceRow {
 export interface RuntimeBootstrap {
   installations: Array<{
     id: string;
+    slug: string;
     displayName: string;
     personKind: "owner" | "member";
     workItems: Array<{
@@ -150,7 +152,7 @@ export class DatabaseExecutiveRequestResolver {
       authUserId,
       async (transaction) => {
         const installations = await transaction.query<InstallationRow>(
-          `select installation.id, installation.display_name, person.kind as person_kind
+          `select installation.id, installation.slug, installation.display_name, person.kind as person_kind
            from public.people person
            join public.installations installation on installation.id = person.installation_id
           where person.auth_user_id = $1
@@ -228,6 +230,7 @@ export class DatabaseExecutiveRequestResolver {
         return {
           installations: installations.rows.map((installation) => ({
             id: installation.id,
+            slug: installation.slug,
             displayName: installation.display_name,
             personKind: installation.person_kind,
             workItems: workItems.rows

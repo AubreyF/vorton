@@ -17,11 +17,15 @@ describe("browser runtime boundary", () => {
   it("reads validated public configuration injected at container startup", () => {
     expect(
       readBrowserRuntimeConfig({
+        installationSlug: "moonbase",
+        installationNameBase64: "TW9vbmJhc2UgT1M=",
         supabaseUrl: "https://moonbase.supabase.co/",
         supabaseAnonKey: "sb_publishable_synthetic",
         apiUrl: "https://api.example.test/",
       }),
     ).toEqual({
+      installationSlug: "moonbase",
+      installationName: "Moonbase OS",
       supabaseUrl: "https://moonbase.supabase.co",
       supabaseAnonKey: "sb_publishable_synthetic",
       apiUrl: "https://api.example.test",
@@ -36,6 +40,8 @@ describe("browser runtime boundary", () => {
     (_name, override) => {
       expect(() =>
         readBrowserRuntimeConfig({
+          installationSlug: "moonbase",
+          installationNameBase64: "TW9vbmJhc2UgT1M=",
           supabaseUrl: "https://moonbase.supabase.co",
           supabaseAnonKey: "sb_publishable_synthetic",
           apiUrl: "https://api.example.test",
@@ -44,6 +50,45 @@ describe("browser runtime boundary", () => {
       ).toThrow("must use HTTPS");
     },
   );
+
+  it.each([
+    ["slug", { installationSlug: "Moonbase" }],
+    ["name", { installationNameBase64: "not base64" }],
+  ])("rejects an invalid installation %s", (_field, override) => {
+    expect(() =>
+      readBrowserRuntimeConfig({
+        installationSlug: "moonbase",
+        installationNameBase64: "TW9vbmJhc2UgT1M=",
+        supabaseUrl: "https://moonbase.supabase.co",
+        supabaseAnonKey: "sb_publishable_synthetic",
+        apiUrl: "https://api.example.test",
+        ...override,
+      }),
+    ).toThrow(/installation/);
+  });
+
+  it("accepts the full database display-name vocabulary and enforces its length ceiling", () => {
+    const name = "St. John’s Research, Inc.";
+    expect(
+      readBrowserRuntimeConfig({
+        installationSlug: "st-johns-research",
+        installationNameBase64: Buffer.from(name).toString("base64"),
+        supabaseUrl: "https://moonbase.supabase.co",
+        supabaseAnonKey: "sb_publishable_synthetic",
+        apiUrl: "https://api.example.test",
+      }).installationName,
+    ).toBe(name);
+
+    expect(() =>
+      readBrowserRuntimeConfig({
+        installationSlug: "oversized-name",
+        installationNameBase64: Buffer.from("a".repeat(121)).toString("base64"),
+        supabaseUrl: "https://moonbase.supabase.co",
+        supabaseAnonKey: "sb_publishable_synthetic",
+        apiUrl: "https://api.example.test",
+      }),
+    ).toThrow("1 to 120 characters");
+  });
 
   it("does not fall back to installation-specific Vite build variables", () => {
     const runtimeGlobal = globalThis as typeof globalThis & {

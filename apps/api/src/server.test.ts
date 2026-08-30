@@ -91,6 +91,7 @@ async function runtime() {
             ? [
                 {
                   id: installationId,
+                  slug: "synthetic-installation",
                   displayName: "Synthetic installation",
                   personKind: "owner" as const,
                   workItems: [
@@ -252,6 +253,7 @@ describe("control-plane API", () => {
       installations: [
         {
           id: installationId,
+          slug: "synthetic-installation",
           personKind: "owner",
           workItems: [{ id: workId, state: "ready", priority: 80 }],
           proposalBindings: [{ workId, workerId, roleId }],

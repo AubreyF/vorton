@@ -7,6 +7,8 @@ primary_region = "sea"
   image = "{{WEB_IMAGE}}"
 
 [env]
+  VORTON_PUBLIC_INSTALLATION_SLUG = "{{INSTALLATION_NAME}}"
+  VORTON_PUBLIC_INSTALLATION_NAME = {{DISPLAY_NAME_JSON}}
   VORTON_PUBLIC_SUPABASE_URL = "https://replace-with-project-ref.supabase.co"
   VORTON_PUBLIC_SUPABASE_ANON_KEY = "replace-with-public-anon-key"
   VORTON_PUBLIC_API_URL = "https://{{INSTALLATION_NAME}}-api.fly.dev"

@@ -16,12 +16,16 @@ import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { AppearanceTileStrip } from "./design-system/theme-controls.js";
 
 export interface BrowserRuntimeConfig {
+  installationSlug: string;
+  installationName: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
   apiUrl: string;
 }
 
 interface BrowserRuntimeConfigSource {
+  installationSlug?: unknown;
+  installationNameBase64?: unknown;
   supabaseUrl?: unknown;
   supabaseAnonKey?: unknown;
   apiUrl?: unknown;
@@ -30,6 +34,7 @@ interface BrowserRuntimeConfigSource {
 export interface RuntimeBootstrap {
   installations: Array<{
     id: string;
+    slug: string;
     displayName: string;
     personKind: "owner" | "member";
     workItems: Array<{
@@ -193,18 +198,28 @@ export function RuntimeProvider({
 export function readBrowserRuntimeConfig(
   source: BrowserRuntimeConfigSource = readInjectedRuntimeConfig(),
 ): BrowserRuntimeConfig {
+  const installationSlug = readInstallationSlug(source.installationSlug);
+  const installationName = readInstallationName(source.installationNameBase64);
   const supabaseUrl = readRequiredString(source.supabaseUrl);
   const supabaseAnonKey = readRequiredString(source.supabaseAnonKey);
   const apiUrl = readRequiredString(source.apiUrl);
-  if (!supabaseUrl || !supabaseAnonKey || !apiUrl) {
+  if (
+    !installationSlug ||
+    !installationName ||
+    !supabaseUrl ||
+    !supabaseAnonKey ||
+    !apiUrl
+  ) {
     throw new Error(
-      "supabaseUrl, supabaseAnonKey, and apiUrl are required in the public runtime configuration",
+      "installationSlug, installationNameBase64, supabaseUrl, supabaseAnonKey, and apiUrl are required in the public runtime configuration",
     );
   }
 
   const parsedSupabaseUrl = parsePublicServiceUrl(supabaseUrl, "supabaseUrl");
   const parsedApiUrl = parsePublicServiceUrl(apiUrl, "apiUrl");
   return {
+    installationSlug,
+    installationName,
     supabaseUrl: normalizeServiceUrl(parsedSupabaseUrl),
     supabaseAnonKey,
     apiUrl: normalizeServiceUrl(parsedApiUrl),
@@ -225,6 +240,42 @@ function readInjectedRuntimeConfig(): BrowserRuntimeConfigSource {
 
 function readRequiredString(value: unknown): string | undefined {
   return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
+function readInstallationSlug(value: unknown): string | undefined {
+  const slug = readRequiredString(value);
+  if (!slug) return undefined;
+  if (!/^[a-z][a-z0-9-]*$/.test(slug)) {
+    throw new Error(
+      "installationSlug must begin with a lowercase letter and contain only lowercase letters, numbers, and hyphens",
+    );
+  }
+  return slug;
+}
+
+function readInstallationName(value: unknown): string | undefined {
+  const encoded = readRequiredString(value);
+  if (!encoded) return undefined;
+  if (
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      encoded,
+    )
+  ) {
+    throw new Error("installationNameBase64 must be valid base64");
+  }
+  let name: string;
+  try {
+    const bytes = Uint8Array.from(atob(encoded), (character) =>
+      character.charCodeAt(0),
+    );
+    name = new TextDecoder("utf-8", { fatal: true }).decode(bytes).trim();
+  } catch {
+    throw new Error("installationNameBase64 must contain valid UTF-8 text");
+  }
+  if (!name || Array.from(name).length > 120) {
+    throw new Error("installationName must contain 1 to 120 characters");
+  }
+  return name;
 }
 
 function parsePublicServiceUrl(value: string, field: string): URL {
@@ -263,6 +314,10 @@ export function BrowserRuntime({
   const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>();
   const [runtimeError, setRuntimeError] = useState<string>();
 
+  useEffect(() => {
+    document.title = config.installationName;
+  }, [config.installationName]);
+
   const refreshBootstrap = useCallback(async () => {
     if (!session) return;
     setRuntimeError(undefined);
@@ -299,25 +354,75 @@ export function BrowserRuntime({
   if (session === undefined)
     return (
       <RuntimeState
+        installationName={config.installationName}
         title="Opening secure session"
         detail="Checking Supabase Auth."
       />
     );
-  if (!session) return <SignIn client={client} />;
+  if (!session)
+    return (
+      <SignIn client={client} installationName={config.installationName} />
+    );
   if (runtimeError)
-    return <RuntimeState title="Runtime unavailable" detail={runtimeError} />;
+    return (
+      <RuntimeState
+        installationName={config.installationName}
+        title="Runtime unavailable"
+        detail={runtimeError}
+        actions={
+          <>
+            <button type="button" onClick={() => void refreshBootstrap()}>
+              Retry
+            </button>
+            <button type="button" onClick={() => void client.auth.signOut()}>
+              Sign out
+            </button>
+          </>
+        }
+      />
+    );
   if (!bootstrap)
     return (
       <RuntimeState
+        installationName={config.installationName}
         title="Opening control plane"
         detail="Loading your accessible installation and governed Work."
+      />
+    );
+  const installation = bootstrap.installations.find(
+    (candidate) => candidate.slug === config.installationSlug,
+  );
+  if (!installation)
+    return (
+      <RuntimeState
+        installationName={config.installationName}
+        title="Installation unavailable"
+        detail={`Your account does not have access to ${config.installationName}.`}
+        actions={
+          <button type="button" onClick={() => void client.auth.signOut()}>
+            Sign out
+          </button>
+        }
+      />
+    );
+  if (installation.displayName !== config.installationName)
+    return (
+      <RuntimeState
+        installationName={config.installationName}
+        title="Installation configuration mismatch"
+        detail="The deployed installation identity does not match its authoritative record."
+        actions={
+          <button type="button" onClick={() => void client.auth.signOut()}>
+            Sign out
+          </button>
+        }
       />
     );
   return (
     <RuntimeProvider
       value={{
         session,
-        bootstrap,
+        bootstrap: { installations: [installation] },
         signOut: async () => {
           await client.auth.signOut();
         },
@@ -479,7 +584,13 @@ export function useBrowserRuntime(): RuntimeContextValue {
   return value;
 }
 
-function SignIn({ client }: { client: SupabaseClient }) {
+export function SignIn({
+  client,
+  installationName,
+}: {
+  client: SupabaseClient;
+  installationName: string;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
@@ -492,9 +603,12 @@ function SignIn({ client }: { client: SupabaseClient }) {
   return (
     <main className="runtime-gate">
       <BackgroundAtmosphere />
-      <form onSubmit={(event) => void submit(event)}>
-        <p className="eyebrow">Vorton / Control plane</p>
-        <h1>Sign in</h1>
+      <form
+        data-installation-name={installationName}
+        onSubmit={(event) => void submit(event)}
+      >
+        <p className="eyebrow">{installationName} / Control plane</p>
+        <h1>Sign in to {installationName}</h1>
         <p>
           Supabase Auth verifies your identity. Roles describe competence. They
           grant no authority.
@@ -532,19 +646,26 @@ function SignIn({ client }: { client: SupabaseClient }) {
 }
 
 export function RuntimeState({
+  installationName,
   title,
   detail,
+  actions,
 }: {
+  installationName: string;
   title: string;
   detail: string;
+  actions?: ReactNode;
 }) {
   return (
     <main className="runtime-gate">
       <BackgroundAtmosphere />
-      <section>
-        <p className="eyebrow">Vorton / Runtime</p>
+      <section data-installation-name={installationName}>
+        <p className="eyebrow">{installationName} / Runtime</p>
         <h1>{title}</h1>
         <p>{detail}</p>
+        {actions ? (
+          <div className="runtime-gate__actions">{actions}</div>
+        ) : null}
       </section>
     </main>
   );

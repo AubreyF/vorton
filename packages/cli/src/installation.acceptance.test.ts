@@ -175,9 +175,10 @@ describe("synthetic organization installation acceptance", () => {
     expect(api).toContain('app = "freed-api"');
     expect(api).toContain("[http_service.http_options]");
     expect(api).toContain("idle_timeout = 960");
-    expect(readFileSync(join(root, "deploy/web.fly.toml"), "utf8")).toContain(
-      'app = "freed-web"',
-    );
+    const web = readFileSync(join(root, "deploy/web.fly.toml"), "utf8");
+    expect(web).toContain('app = "freed-web"');
+    expect(web).toContain('VORTON_PUBLIC_INSTALLATION_SLUG = "freed"');
+    expect(web).toContain('VORTON_PUBLIC_INSTALLATION_NAME = "Freed"');
     expect(
       readFileSync(join(root, "deploy/hindsight.fly.toml"), "utf8"),
     ).toContain('HINDSIGHT_API_WORKER_ID = "freed-memory"');
