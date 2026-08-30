@@ -67,6 +67,20 @@ async function runtime() {
                   id: installationId,
                   displayName: "Synthetic installation",
                   personKind: "owner" as const,
+                  workItems: [
+                    {
+                      id: workId,
+                      title: "Assess fixture",
+                      requestedOutcome: "Reach a grounded recommendation",
+                      acceptanceCriteria: ["Cite the synthetic evidence"],
+                      state: "ready" as const,
+                      priority: 80,
+                      parentWorkId: null,
+                      custodianName: "Synthetic worker",
+                      custodianKind: "worker" as const,
+                      updatedAt: "2026-08-30T01:02:03.000Z",
+                    },
+                  ],
                   proposalBindings: [
                     {
                       workId,
@@ -173,6 +187,7 @@ describe("control-plane API", () => {
         {
           id: installationId,
           personKind: "owner",
+          workItems: [{ id: workId, state: "ready", priority: 80 }],
           proposalBindings: [{ workId, workerId, roleId }],
         },
       ],

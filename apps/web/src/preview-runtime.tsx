@@ -23,6 +23,50 @@ const previewRuntime: RuntimeContextValue = {
         id: "00000000-0000-4000-8000-000000000002",
         displayName: "FreedOS",
         personKind: "owner",
+        workItems: [
+          {
+            id: "00000000-0000-4000-8000-000000000003",
+            title: "Choose the next product decision",
+            requestedOutcome:
+              "Select one decision that creates the most useful evidence for Freed.",
+            acceptanceCriteria: [
+              "The recommendation cites current evidence.",
+              "The owner makes the consequential decision.",
+            ],
+            state: "ready",
+            priority: 86,
+            parentWorkId: null,
+            custodianName: "Executive advisor",
+            custodianKind: "worker",
+            updatedAt: "2026-08-30T01:02:03.000Z",
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000008",
+            title: "Resolve the launch evidence gap",
+            requestedOutcome:
+              "Identify the missing owner evidence before launch authority is considered.",
+            acceptanceCriteria: ["The blocker names the missing evidence."],
+            state: "blocked",
+            priority: 74,
+            parentWorkId: null,
+            custodianName: null,
+            custodianKind: null,
+            updatedAt: "2026-08-29T22:00:00.000Z",
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000009",
+            title: "Record the initial installation boundary",
+            requestedOutcome:
+              "Preserve the founding authority boundary as durable evidence.",
+            acceptanceCriteria: ["The record names its source and owner."],
+            state: "completed",
+            priority: 62,
+            parentWorkId: null,
+            custodianName: "Owner",
+            custodianKind: "person",
+            updatedAt: "2026-08-28T18:00:00.000Z",
+          },
+        ],
         proposalBindings: [
           {
             workId: "00000000-0000-4000-8000-000000000003",

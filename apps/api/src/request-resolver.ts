@@ -66,6 +66,27 @@ interface InstallationRow {
   person_kind: "owner" | "member";
 }
 
+interface BootstrapWorkRow {
+  installation_id: string;
+  id: string;
+  title: string;
+  requested_outcome: string;
+  acceptance_criteria: unknown;
+  state:
+    | "proposed"
+    | "ready"
+    | "leased"
+    | "blocked"
+    | "review"
+    | "completed"
+    | "cancelled";
+  priority: number;
+  parent_work_id: string | null;
+  custodian_name: string | null;
+  custodian_kind: "person" | "worker" | null;
+  updated_at: Date | string;
+}
+
 interface BootstrapBindingRow {
   installation_id: string;
   work_id: string;
@@ -86,6 +107,18 @@ export interface RuntimeBootstrap {
     id: string;
     displayName: string;
     personKind: "owner" | "member";
+    workItems: Array<{
+      id: string;
+      title: string;
+      requestedOutcome: string;
+      acceptanceCriteria: string[];
+      state: BootstrapWorkRow["state"];
+      priority: number;
+      parentWorkId: string | null;
+      custodianName: string | null;
+      custodianKind: BootstrapWorkRow["custodian_kind"];
+      updatedAt: string;
+    }>;
     proposalBindings: Array<{
       workId: string;
       workTitle: string;
@@ -125,6 +158,28 @@ export class DatabaseExecutiveRequestResolver {
         );
         const installationIds = installations.rows.map((row) => row.id);
         if (installationIds.length === 0) return { installations: [] };
+        const workItems = await transaction.query<BootstrapWorkRow>(
+          `select work.installation_id, work.id, work.title, work.requested_outcome,
+                  work.acceptance_criteria, work.state, work.priority,
+                  work.parent_work_id,
+                  coalesce(person.display_name, worker.name) as custodian_name,
+                  case
+                    when work.custodian_person_id is not null then 'person'
+                    when work.custodian_worker_id is not null then 'worker'
+                    else null
+                  end as custodian_kind,
+                  work.updated_at
+             from public.work work
+             left join public.people person
+               on person.installation_id = work.installation_id
+              and person.id = work.custodian_person_id
+             left join public.workers worker
+               on worker.installation_id = work.installation_id
+              and worker.id = work.custodian_worker_id
+            where work.installation_id = any($1::uuid[])
+            order by work.priority desc, work.updated_at desc, work.id`,
+          [installationIds],
+        );
         const bindings = await transaction.query<BootstrapBindingRow>(
           `select work.installation_id, work.id as work_id, work.title as work_title,
                 worker.id as worker_id, worker.name as worker_name,
@@ -165,6 +220,28 @@ export class DatabaseExecutiveRequestResolver {
             id: installation.id,
             displayName: installation.display_name,
             personKind: installation.person_kind,
+            workItems: workItems.rows
+              .filter((work) => work.installation_id === installation.id)
+              .map((work) => ({
+                id: work.id,
+                title: work.title,
+                requestedOutcome: work.requested_outcome,
+                acceptanceCriteria: Array.isArray(work.acceptance_criteria)
+                  ? work.acceptance_criteria.filter(
+                      (criterion): criterion is string =>
+                        typeof criterion === "string",
+                    )
+                  : [],
+                state: work.state,
+                priority: work.priority,
+                parentWorkId: work.parent_work_id,
+                custodianName: work.custodian_name,
+                custodianKind: work.custodian_kind,
+                updatedAt:
+                  work.updated_at instanceof Date
+                    ? work.updated_at.toISOString()
+                    : work.updated_at,
+              })),
             proposalBindings: bindings.rows
               .filter((binding) => binding.installation_id === installation.id)
               .map((binding) => ({

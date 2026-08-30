@@ -3,7 +3,7 @@ import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { ExportControls } from "./design-system/export-controls.js";
-import { useBrowserRuntime } from "./runtime.js";
+import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
 
 const primarySections = [
   ["command", "Command Bridge"],
@@ -18,6 +18,8 @@ const primarySections = [
 ] as const;
 
 type SectionId = (typeof primarySections)[number][0];
+type Installation = RuntimeBootstrap["installations"][number];
+type WorkItem = Installation["workItems"][number];
 
 const secondarySections: Record<SectionId, readonly string[]> = {
   command: ["Briefing", "Evidence", "Decisions", "Activity"],
@@ -38,14 +40,30 @@ function initialSection(): SectionId {
     : "command";
 }
 
+function initialSubsection(section: SectionId): string {
+  const requested = decodeURIComponent(
+    window.location.hash.slice(1).split("/")[1] ?? "",
+  );
+  return secondarySections[section].includes(requested)
+    ? requested
+    : secondarySections[section][0]!;
+}
+
 export function AuthenticApp() {
   const runtime = useBrowserRuntime();
   const [section, setSection] = useState<SectionId>(initialSection);
+  const [subsection, setSubsection] = useState(() =>
+    initialSubsection(initialSection()),
+  );
   const installationName =
     runtime.bootstrap.installations[0]?.displayName ?? "Private installation";
 
   useEffect(() => {
-    const onHashChange = () => setSection(initialSection());
+    const onHashChange = () => {
+      const nextSection = initialSection();
+      setSection(nextSection);
+      setSubsection(initialSubsection(nextSection));
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -55,8 +73,15 @@ export function AuthenticApp() {
   }, [installationName]);
 
   function navigate(next: SectionId) {
-    window.location.hash = next;
+    const nextSubsection = secondarySections[next][0]!;
+    window.location.hash = `${next}/${encodeURIComponent(nextSubsection)}`;
     setSection(next);
+    setSubsection(nextSubsection);
+  }
+
+  function navigateSubsection(next: string) {
+    window.location.hash = `${section}/${encodeURIComponent(next)}`;
+    setSubsection(next);
   }
 
   return (
@@ -99,13 +124,22 @@ export function AuthenticApp() {
           <ThemeControls />
         </div>
       </header>
-      <SecondaryNavigation section={section} />
+      <SecondaryNavigation
+        section={section}
+        subsection={subsection}
+        navigate={navigateSubsection}
+      />
       <PrivacyState
         installation={runtime.bootstrap.installations[0]?.displayName}
       />
       <main id="dashboard-content" className="view-frame" tabIndex={-1}>
         {section === "command" ? (
           <CommandBridge installationName={installationName} />
+        ) : section === "tasks" ? (
+          <WorkModule
+            installation={runtime.bootstrap.installations[0]}
+            view={subsection}
+          />
         ) : (
           <ModuleFoundation section={section} />
         )}
@@ -145,15 +179,25 @@ function PrimaryNavigation({
   );
 }
 
-function SecondaryNavigation({ section }: { section: SectionId }) {
+function SecondaryNavigation({
+  section,
+  subsection,
+  navigate,
+}: {
+  section: SectionId;
+  subsection: string;
+  navigate: (subsection: string) => void;
+}) {
   return (
     <div className="section-nav-bar">
       <nav className="secondary-navigation" aria-label={`${section} sections`}>
-        {secondarySections[section].map((label, index) => (
+        {secondarySections[section].map((label) => (
           <button
             key={label}
             type="button"
-            className={`nav-button secondary-nav-link ${index === 0 ? "active" : ""}`}
+            className={`nav-button secondary-nav-link ${subsection === label ? "active" : ""}`}
+            aria-current={subsection === label ? "page" : undefined}
+            onClick={() => navigate(label)}
           >
             {label}
           </button>
@@ -161,6 +205,181 @@ function SecondaryNavigation({ section }: { section: SectionId }) {
       </nav>
     </div>
   );
+}
+
+function WorkModule({
+  installation,
+  view,
+}: {
+  installation?: Installation;
+  view: string;
+}) {
+  const allWork = installation?.workItems ?? [];
+  const openWork = allWork.filter(
+    (work) => work.state !== "completed" && work.state !== "cancelled",
+  );
+  const visibleWork = allWork.filter((work) => {
+    if (view === "Blocked") return work.state === "blocked";
+    if (view === "History")
+      return work.state === "completed" || work.state === "cancelled";
+    return work.state !== "completed" && work.state !== "cancelled";
+  });
+  const blockedCount = allWork.filter(
+    (work) => work.state === "blocked",
+  ).length;
+  const leasedCount = allWork.filter((work) => work.state === "leased").length;
+
+  return (
+    <section className="work-module">
+      <header className="module-intro">
+        <div>
+          <p className="eyebrow">Vorton / Work</p>
+          <h1>Tasks</h1>
+          <p className="lede">
+            Governed commitments across people and workers, ordered by declared
+            priority. This view observes Work. It does not silently create,
+            lease, complete, or approve anything.
+          </p>
+        </div>
+        <dl className="work-summary" aria-label="Work summary">
+          <div>
+            <dt>Open</dt>
+            <dd>{openWork.length}</dd>
+          </div>
+          <div>
+            <dt>Blocked</dt>
+            <dd>{blockedCount}</dd>
+          </div>
+          <div>
+            <dt>Leased</dt>
+            <dd>{leasedCount}</dd>
+          </div>
+        </dl>
+      </header>
+
+      {visibleWork.length > 0 ? (
+        <div className="work-list" aria-label={`${view} Work`}>
+          {visibleWork.map((work) => (
+            <WorkCard
+              key={work.id}
+              installationName={installation?.displayName ?? "Installation"}
+              work={work}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="directional-empty-state">
+          <h2>{emptyWorkHeading(view)}</h2>
+          <p>{emptyWorkDetail(view)}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorkCard({
+  installationName,
+  work,
+}: {
+  installationName: string;
+  work: WorkItem;
+}) {
+  const updated = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(work.updatedAt));
+  const statusLabel = work.state.replaceAll("_", " ");
+  const custody = work.custodianName
+    ? `${work.custodianName} · ${work.custodianKind ?? "custodian"}`
+    : "Unassigned";
+
+  return (
+    <article className={`work-card state-${work.state}`}>
+      <header>
+        <div
+          className="work-card__priority"
+          aria-label={`Priority ${work.priority}`}
+        >
+          <span>{work.priority}</span>
+          <small>Priority</small>
+        </div>
+        <div className="work-card__title">
+          <p className="eyebrow">Work {shortId(work.id)}</p>
+          <h2>{work.title}</h2>
+        </div>
+        <span className="work-state">{statusLabel}</span>
+      </header>
+      <div className="work-card__body">
+        <div>
+          <p className="work-label">Requested outcome</p>
+          <p className="work-outcome">{work.requestedOutcome}</p>
+        </div>
+        <dl className="work-metadata">
+          <div>
+            <dt>Custody</dt>
+            <dd>{custody}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{updated}</dd>
+          </div>
+          <div>
+            <dt>Parent</dt>
+            <dd>{work.parentWorkId ? shortId(work.parentWorkId) : "None"}</dd>
+          </div>
+        </dl>
+      </div>
+      <details className="work-criteria">
+        <summary>
+          Acceptance criteria · {work.acceptanceCriteria.length}
+        </summary>
+        {work.acceptanceCriteria.length > 0 ? (
+          <ol>
+            {work.acceptanceCriteria.map((criterion) => (
+              <li key={criterion}>{criterion}</li>
+            ))}
+          </ol>
+        ) : (
+          <p>No acceptance criteria have been recorded.</p>
+        )}
+      </details>
+      <AgentPromptButton
+        compact
+        spec={{
+          installationName,
+          kind: "work item",
+          id: work.id,
+          title: work.title,
+          state: work.state,
+          objective: work.requestedOutcome,
+          closureEvidence: work.acceptanceCriteria.join(" "),
+          currentEvidence: `Priority ${work.priority}. Custody: ${custody}. Updated ${updated}.`,
+          authorityBoundary:
+            "Analyze and recommend only. Do not change state, custody, lease, priority, acceptance criteria, or external systems without applicable authority.",
+          relatedRecords: work.parentWorkId ? [work.parentWorkId] : [],
+        }}
+      />
+    </article>
+  );
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+function emptyWorkHeading(view: string): string {
+  if (view === "Blocked") return "Nothing is blocked";
+  if (view === "History") return "No Work has reached history";
+  return "No open Work is visible";
+}
+
+function emptyWorkDetail(view: string): string {
+  if (view === "Blocked")
+    return "No visible Work item currently declares the blocked state.";
+  if (view === "History")
+    return "Completed and cancelled Work will appear here with its durable state intact.";
+  return "Create Work through an authorized planning flow. Vorton will not manufacture tasks from silence.";
 }
 
 function PrivacyState({ installation }: { installation?: string }) {

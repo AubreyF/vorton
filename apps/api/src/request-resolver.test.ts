@@ -69,6 +69,21 @@ describe("database executive request resolver", () => {
       [
         {
           installation_id: input.installationId,
+          id: input.workId,
+          title: "Assess fixture",
+          requested_outcome: "Reach a grounded recommendation",
+          acceptance_criteria: ["Cite the synthetic evidence"],
+          state: "ready",
+          priority: 80,
+          parent_work_id: null,
+          custodian_name: "Synthetic worker",
+          custodian_kind: "worker",
+          updated_at: "2026-08-30T01:02:03.000Z",
+        },
+      ],
+      [
+        {
+          installation_id: input.installationId,
           work_id: input.workId,
           work_title: "Assess fixture",
           worker_id: input.workerId,
@@ -101,6 +116,15 @@ describe("database executive request resolver", () => {
         {
           id: input.installationId,
           personKind: "owner",
+          workItems: [
+            {
+              id: input.workId,
+              state: "ready",
+              priority: 80,
+              custodianName: "Synthetic worker",
+              acceptanceCriteria: ["Cite the synthetic evidence"],
+            },
+          ],
           proposalBindings: [
             {
               workId: input.workId,
@@ -113,7 +137,8 @@ describe("database executive request resolver", () => {
       ],
     });
     expect(database.statements[0]).toContain("person.auth_user_id = $1");
-    expect(database.statements[1]).toContain("executive.propose");
+    expect(database.statements[1]).toContain("from public.work work");
+    expect(database.statements[2]).toContain("executive.propose");
   });
 
   for (const condition of [
