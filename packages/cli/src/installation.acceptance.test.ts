@@ -43,7 +43,7 @@ function manifest(version: "0.1.0" | "0.1.1" | "0.2.0" | "0.3.0"): string {
   );
 }
 
-function releasedManifest(version: "0.2.1"): string {
+function releasedManifest(version: "0.2.1" | "0.3.1"): string {
   return join(repositoryRoot, "release/manifests", `${version}.json`);
 }
 
@@ -1122,6 +1122,69 @@ primary_region = "sea"
         { encoding: "utf8" },
       ),
     ).toContain("0.2.1 valid");
+  });
+
+  it("preserves a governed organization-owned Hindsight Dockerfile during upgrade", () => {
+    const root = blankInstallationRoot();
+    const initialized = planInit({
+      root,
+      organization: "Freed",
+      releaseManifestPath: manifest("0.3.0"),
+      releaseRoot: repositoryRoot,
+      allowCandidate: true,
+    });
+    applyPlan({ root, planHash: initialized.hash });
+
+    const hindsightPath = join(root, "deploy/hindsight.fly.toml");
+    const compatibilityDirectory = join(
+      root,
+      "deploy/hindsight-managed-postgres",
+    );
+    const dockerfilePath = join(compatibilityDirectory, "Dockerfile");
+    mkdirSync(compatibilityDirectory, { recursive: true });
+    writeFileSync(dockerfilePath, `FROM ${hindsightImage}\n\nUSER hindsight\n`);
+    const organizationHindsight = readFileSync(hindsightPath, "utf8").replace(
+      `  image = "${hindsightImage}"`,
+      '  dockerfile = "hindsight-managed-postgres/Dockerfile"',
+    );
+    writeFileSync(hindsightPath, organizationHindsight);
+    validateInstallation(root);
+
+    const upgraded = planUpgrade({
+      root,
+      releaseManifestPath: releasedManifest("0.3.1"),
+      releaseRoot: repositoryRoot,
+    });
+    expect(
+      upgraded.plan.actions.some(
+        (entry) => entry.path === "deploy/hindsight.fly.toml",
+      ),
+    ).toBe(false);
+    applyPlan({ root, planHash: upgraded.hash });
+    validateInstallation(root);
+    expect(readFileSync(hindsightPath, "utf8")).toBe(organizationHindsight);
+    expect(readFileSync(dockerfilePath, "utf8")).toBe(
+      `FROM ${hindsightImage}\n\nUSER hindsight\n`,
+    );
+
+    writeFileSync(
+      dockerfilePath,
+      "FROM ghcr.io/vectorize-io/hindsight:latest\n",
+    );
+    expect(() => validateInstallation(root)).toThrow(
+      /must use only the reviewed immutable image as its base/,
+    );
+    writeFileSync(dockerfilePath, `FROM ${hindsightImage}\n`);
+    writeFileSync(
+      hindsightPath,
+      organizationHindsight.replace(
+        'dockerfile = "hindsight-managed-postgres/Dockerfile"',
+        'dockerfile = "../Dockerfile"',
+      ),
+    );
+    expect(() => validateInstallation(root)).toThrow(
+      /Dockerfile path must be normalized and relative/,
+    );
   });
 
   it("adopts an exact release and resumes an interrupted apply idempotently", () => {

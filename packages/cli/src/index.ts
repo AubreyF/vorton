@@ -609,6 +609,72 @@ function buildImage(content: string, path: string): string {
   return images[0]!;
 }
 
+function hindsightBuildSource(
+  content: string,
+  path: string,
+): { kind: "image" | "dockerfile"; value: string } {
+  if (tomlSectionCount(content, "build") !== 1) {
+    throw new Error(`Fly configuration ${path} must contain one [build] table`);
+  }
+  const images = tomlSectionValues(content, "build", false, "image", "quoted");
+  const dockerfiles = tomlSectionValues(
+    content,
+    "build",
+    false,
+    "dockerfile",
+    "quoted",
+  );
+  if (images.length + dockerfiles.length !== 1) {
+    throw new Error(
+      `Fly configuration ${path} must contain exactly one [build] image or dockerfile`,
+    );
+  }
+  return images.length === 1
+    ? { kind: "image", value: images[0]! }
+    : { kind: "dockerfile", value: dockerfiles[0]! };
+}
+
+function assertHindsightBuildContract(
+  root: string,
+  content: string,
+  path: string,
+  allowedImages: readonly string[] = [HINDSIGHT_IMAGE],
+): void {
+  const source = hindsightBuildSource(content, path);
+  if (source.kind === "image") {
+    if (!allowedImages.includes(source.value)) {
+      throw new Error(`Hindsight image is not the reviewed immutable image`);
+    }
+    return;
+  }
+
+  const segments = source.value.split("/");
+  if (
+    isAbsolute(source.value) ||
+    source.value.includes("\\") ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(
+      `Hindsight Dockerfile path must be normalized and relative`,
+    );
+  }
+  const dockerfilePath = safeTarget(root, join(dirname(path), source.value));
+  const dockerfile = readText(dockerfilePath);
+  if (dockerfile === null) {
+    throw new Error(`Hindsight Dockerfile is missing: ${source.value}`);
+  }
+  const baseImages = [
+    ...dockerfile.matchAll(/^\s*FROM\s+([^\s]+)(?:\s+AS\s+[^\s]+)?\s*$/gim),
+  ].map((match) => match[1]!);
+  if (baseImages.length !== 1 || baseImages[0] !== HINDSIGHT_IMAGE) {
+    throw new Error(
+      `Hindsight Dockerfile must use only the reviewed immutable image as its base`,
+    );
+  }
+}
+
 function tomlSectionValues(
   content: string,
   section: string,
@@ -1154,9 +1220,17 @@ function deploymentUpgradeActions(
     if (existing === null) {
       return [action(root, path, "aubos-image", scaffold[path]!)];
     }
-    const previousImage =
+    const hindsightSource =
       path === "deploy/hindsight.fly.toml"
-        ? buildImage(existing, path)
+        ? hindsightBuildSource(existing, path)
+        : null;
+    if (hindsightSource?.kind === "dockerfile") {
+      assertHindsightBuildContract(root, existing, path);
+      return [];
+    }
+    const previousImage =
+      hindsightSource?.kind === "image"
+        ? hindsightSource.value
         : previous.images[firstPartyImageRole(path)!]?.reference;
     if (
       path === "deploy/hindsight.fly.toml" &&
@@ -1582,10 +1656,9 @@ function assertApplyDeploymentPreconditions(
   const api = plannedDeploymentContent(root, plan, apiPath);
   const worker = plannedDeploymentContent(root, plan, workerPath);
   const hindsight = plannedDeploymentContent(root, plan, hindsightPath);
-  if (buildImage(hindsight, hindsightPath) !== HINDSIGHT_IMAGE) {
-    throw new Error(
-      "Contract-3 apply requires the current immutable Hindsight image",
-    );
+  assertHindsightBuildContract(root, hindsight, hindsightPath);
+  if (hindsightBuildSource(hindsight, hindsightPath).kind === "image") {
+    assertPlannedHindsightValidatorContract(root, plan);
   }
   const desiredActions = plan.actions.filter(
     (entry) => entry.path === "aubos.yaml",
@@ -1596,7 +1669,6 @@ function assertApplyDeploymentPreconditions(
   const desired = installationManifestSchema.parse(
     parseYaml(desiredActions[0]!.content),
   );
-  assertPlannedHindsightValidatorContract(root, plan);
   assertHindsightRuntimeProfile(
     hindsight,
     hindsightPath,
@@ -1609,17 +1681,6 @@ function assertApplyDeploymentPreconditions(
     [workerPath]: worker,
     [hindsightPath]: hindsight,
   });
-
-  const currentHindsight = readText(safeTarget(root, hindsightPath));
-  if (
-    currentHindsight !== null &&
-    buildImage(currentHindsight, hindsightPath) !== HINDSIGHT_IMAGE
-  ) {
-    assertHindsightRollbackContract(
-      root,
-      buildImage(currentHindsight, hindsightPath),
-    );
-  }
 }
 
 function verifyActionContent(entry: PlanAction): void {
@@ -2112,28 +2173,19 @@ export function validateInstallation(root: string): void {
         "Contract-3 installations must bind the current Hindsight image",
       );
     }
-    const expectedHindsightImage = usesSubscriptionMemoryProfile
-      ? HINDSIGHT_IMAGE
-      : (validatorHindsightImage ?? HINDSIGHT_IMAGE);
+    const allowedHindsightImages = usesSubscriptionMemoryProfile
+      ? [HINDSIGHT_IMAGE]
+      : [validatorHindsightImage ?? HINDSIGHT_IMAGE];
     const requiresSubscriptionMemoryProfile = usesSubscriptionMemoryProfile;
     for (const path of deploymentPaths) {
       const content = readFileSync(safeTarget(root, path), "utf8");
-      const observed = buildImage(content, path);
-      const expected =
-        path === "deploy/hindsight.fly.toml"
-          ? [expectedHindsightImage]
-          : [lock.images[firstPartyImageRole(path)!]?.reference].filter(
-              (reference): reference is string => Boolean(reference),
-            );
-      if (!expected.includes(observed)) {
-        throw new Error(
-          `Deployment image validation failed at ${path}: expected ${expected.join(" or ") || "missing"}, observed ${observed}`,
-        );
-      }
-      if (/^\s*dockerfile\s*=/m.test(content)) {
-        throw new Error(`Source build is forbidden at ${path}`);
-      }
       if (path === "deploy/hindsight.fly.toml") {
+        assertHindsightBuildContract(
+          root,
+          content,
+          path,
+          allowedHindsightImages,
+        );
         const workerId = quotedTomlValue(
           content,
           "HINDSIGHT_API_WORKER_ID",
@@ -2155,6 +2207,17 @@ export function validateInstallation(root: string): void {
             readFileSync(safeTarget(root, workerPath), "utf8"),
             workerPath,
           );
+        }
+      } else {
+        const observed = buildImage(content, path);
+        const expected = lock.images[firstPartyImageRole(path)!]?.reference;
+        if (observed !== expected) {
+          throw new Error(
+            `Deployment image validation failed at ${path}: expected ${expected ?? "missing"}, observed ${observed}`,
+          );
+        }
+        if (/^\s*dockerfile\s*=/m.test(content)) {
+          throw new Error(`Source build is forbidden at ${path}`);
         }
       }
     }
