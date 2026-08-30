@@ -30,6 +30,25 @@ export interface RuntimeBootstrap {
     id: string;
     displayName: string;
     personKind: "owner" | "member";
+    workItems: Array<{
+      id: string;
+      title: string;
+      requestedOutcome: string;
+      acceptanceCriteria: string[];
+      state:
+        | "proposed"
+        | "ready"
+        | "leased"
+        | "blocked"
+        | "review"
+        | "completed"
+        | "cancelled";
+      priority: number;
+      parentWorkId: string | null;
+      custodianName: string | null;
+      custodianKind: "person" | "worker" | null;
+      updatedAt: string;
+    }>;
     proposalBindings: Array<{
       workId: string;
       workTitle: string;
