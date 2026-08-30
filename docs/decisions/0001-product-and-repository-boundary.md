@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Decision
 
-Vorton is the reusable product, upstream repository, and release line. FreedOS is the private Vorton installation for Freed. AubOS is the future private Vorton installation for Aubrey's personal life. Factory is a first-party Vorton module. Existing AubTown and FreedTown identifiers remain transitional while the current Linux pilot completes.
+Vorton is the reusable product, upstream repository, and release line. FreedOS is the private Vorton installation for Freed. AubOS is the future private Vorton installation for Aubrey's personal life. Factory is a first-party Vorton module. Legacy factory prototype names are not part of the product architecture.
 
 The upstream Vorton repository contains product source and immutable release machinery. Each installation repository contains organization-owned configuration and extensions. Installations consume exact artifacts through a manifest and lock. They do not maintain long-lived forks of the product source.
 

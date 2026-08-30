@@ -426,9 +426,9 @@ function ModuleFoundation({
       <p className="eyebrow">Vorton / {label}</p>
       <h1>{label}</h1>
       <p className="lede">
-        This module is being translated from the canonical AubOS interface onto
-        the reusable Vorton kernel. The previous generic preview has been
-        removed rather than presented as finished product.
+        This module is being translated into the reusable Vorton kernel from the
+        proven personal interface. The previous generic preview has been removed
+        rather than presented as finished product.
       </p>
       <div className="directional-empty-state">
         <h2>The interface migration is in progress</h2>
