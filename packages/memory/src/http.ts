@@ -4,7 +4,7 @@ import {
   sourceCitationSchema,
   type DataClassification,
   type SourceCitation,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 import type {
   HindsightAdapter,
@@ -48,19 +48,19 @@ function bankPath(bank: HindsightBank): string {
 
 function metadata(memory: HindsightMemory): Record<string, string> {
   return {
-    aubos_memory_id: memory.id,
-    aubos_citations: JSON.stringify(memory.citations),
-    aubos_source_revision_ids: JSON.stringify(memory.sourceRevisionIds),
-    aubos_invalidated_at: memory.invalidatedAt ?? "",
-    aubos_classification: memory.classification,
-    aubos_lineage_version: "1",
+    vorton_memory_id: memory.id,
+    vorton_citations: JSON.stringify(memory.citations),
+    vorton_source_revision_ids: JSON.stringify(memory.sourceRevisionIds),
+    vorton_invalidated_at: memory.invalidatedAt ?? "",
+    vorton_classification: memory.classification,
+    vorton_lineage_version: "1",
   };
 }
 
 function stableObservationScope(bank: HindsightBank): [string, string] {
   return [
-    `aubos-installation:${bank.installationId}`,
-    `aubos-realm:${bank.realm}`,
+    `vorton-installation:${bank.installationId}`,
+    `vorton-realm:${bank.realm}`,
   ];
 }
 
@@ -120,12 +120,12 @@ export class HttpHindsightAdapter implements HindsightAdapter {
 
   constructor(config: HttpHindsightConfig) {
     if (!config.baseUrl.trim())
-      throw new Error("AUBOS_HINDSIGHT_URL is required");
+      throw new Error("VORTON_HINDSIGHT_URL is required");
     if (!config.apiKey.trim())
-      throw new Error("AUBOS_HINDSIGHT_API_KEY is required");
+      throw new Error("VORTON_HINDSIGHT_API_KEY is required");
     const baseUrl = new URL(config.baseUrl);
     if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
-      throw new Error("AUBOS_HINDSIGHT_URL must use HTTP or HTTPS");
+      throw new Error("VORTON_HINDSIGHT_URL must use HTTP or HTTPS");
     }
     this.#baseUrl = baseUrl.toString().replace(/\/$/, "");
     this.#apiKey = config.apiKey;
@@ -172,7 +172,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
     sourceRevisionId: string,
     at: string,
   ): Promise<void> {
-    const sourceTag = `aubos-source:${sourceRevisionId}`;
+    const sourceTag = `vorton-source:${sourceRevisionId}`;
     const invalidated = new Set<string>();
     const maximumFacts = 100_000;
     while (true) {
@@ -199,7 +199,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
           !item.tags.includes(sourceTag)
         ) {
           throw new Error(
-            "Hindsight list omitted valid AubOS lineage required for invalidation",
+            "Hindsight list omitted valid Vorton lineage required for invalidation",
           );
         }
         if (invalidated.has(item.id)) {
@@ -212,7 +212,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
             method: "PATCH",
             body: JSON.stringify({
               state: "invalidated",
-              reason: `AubOS source revision invalidated at ${at}`,
+              reason: `Vorton source revision invalidated at ${at}`,
             }),
           },
         );
@@ -263,13 +263,13 @@ export class HttpHindsightAdapter implements HindsightAdapter {
         items: [
           {
             content: memory.text,
-            context: "aubos-derived-memory",
+            context: "vorton-derived-memory",
             document_id: memory.id,
             update_mode: "replace",
             tags: [
-              `aubos-installation:${bank.installationId}`,
-              `aubos-realm:${bank.realm}`,
-              ...memory.sourceRevisionIds.map((id) => `aubos-source:${id}`),
+              `vorton-installation:${bank.installationId}`,
+              `vorton-realm:${bank.realm}`,
+              ...memory.sourceRevisionIds.map((id) => `vorton-source:${id}`),
             ],
             observation_scopes: [stableObservationScope(bank)],
             metadata: metadata(memory),
@@ -327,8 +327,8 @@ export class HttpHindsightAdapter implements HindsightAdapter {
         ? (item.metadata as Record<string, unknown>)
         : {};
     const id =
-      typeof itemMetadata.aubos_memory_id === "string"
-        ? itemMetadata.aubos_memory_id
+      typeof itemMetadata.vorton_memory_id === "string"
+        ? itemMetadata.vorton_memory_id
         : typeof item.id === "string"
           ? item.id
           : null;
@@ -338,19 +338,19 @@ export class HttpHindsightAdapter implements HindsightAdapter {
         : typeof item.content === "string"
           ? item.content
           : null;
-    const citations = parseCitations(itemMetadata.aubos_citations);
+    const citations = parseCitations(itemMetadata.vorton_citations);
     const sourceRevisionIds = parseStringArray(
-      itemMetadata.aubos_source_revision_ids,
+      itemMetadata.vorton_source_revision_ids,
     );
-    const invalidatedAt = itemMetadata.aubos_invalidated_at;
+    const invalidatedAt = itemMetadata.vorton_invalidated_at;
     const classification = dataClassificationSchema.safeParse(
-      itemMetadata.aubos_classification,
+      itemMetadata.vorton_classification,
     );
     if (
       !id ||
       !text ||
       (item.type !== "world" && item.type !== "experience") ||
-      itemMetadata.aubos_lineage_version !== "1" ||
+      itemMetadata.vorton_lineage_version !== "1" ||
       !classification.success ||
       typeof invalidatedAt !== "string" ||
       item.document_id !== id ||
@@ -369,7 +369,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
     if (
       !stableObservationScope(bank).every((tag) => tags.has(tag)) ||
       ![...new Set(sourceRevisionIds)].every((sourceRevisionId) =>
-        tags.has(`aubos-source:${sourceRevisionId}`),
+        tags.has(`vorton-source:${sourceRevisionId}`),
       )
     ) {
       return null;
@@ -465,18 +465,18 @@ export class HttpHindsightAdapter implements HindsightAdapter {
     }
 
     const itemMetadata = sourceFact.metadata as Record<string, unknown>;
-    const memoryId = itemMetadata.aubos_memory_id;
-    const citations = parseCitations(itemMetadata.aubos_citations);
+    const memoryId = itemMetadata.vorton_memory_id;
+    const citations = parseCitations(itemMetadata.vorton_citations);
     const sourceRevisionIds = parseStringArray(
-      itemMetadata.aubos_source_revision_ids,
+      itemMetadata.vorton_source_revision_ids,
     );
     const classification = dataClassificationSchema.safeParse(
-      itemMetadata.aubos_classification,
+      itemMetadata.vorton_classification,
     );
     if (
-      itemMetadata.aubos_lineage_version !== "1" ||
+      itemMetadata.vorton_lineage_version !== "1" ||
       !classification.success ||
-      itemMetadata.aubos_invalidated_at !== "" ||
+      itemMetadata.vorton_invalidated_at !== "" ||
       typeof memoryId !== "string" ||
       !memoryId ||
       sourceFact.document_id !== memoryId ||
@@ -494,7 +494,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
     if (
       !stableObservationScope(bank).every((tag) => tags.has(tag)) ||
       ![...new Set(sourceRevisionIds)].every((sourceRevisionId) =>
-        tags.has(`aubos-source:${sourceRevisionId}`),
+        tags.has(`vorton-source:${sourceRevisionId}`),
       )
     ) {
       return null;
@@ -527,7 +527,7 @@ export function createHttpHindsightAdapterFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): HttpHindsightAdapter {
   return new HttpHindsightAdapter({
-    baseUrl: env.AUBOS_HINDSIGHT_URL ?? "",
-    apiKey: env.AUBOS_HINDSIGHT_API_KEY ?? "",
+    baseUrl: env.VORTON_HINDSIGHT_URL ?? "",
+    apiKey: env.VORTON_HINDSIGHT_API_KEY ?? "",
   });
 }

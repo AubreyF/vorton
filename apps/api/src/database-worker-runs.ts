@@ -3,8 +3,8 @@ import {
   executiveWorkerJobSchema,
   type ExecutiveWorkerJob,
   type ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
-import type { Database } from "@aubos/database";
+} from "@vorton/contracts";
+import type { Database } from "@vorton/database";
 
 /** Persists provider identity after the API verifies every job boundary. */
 export class DatabaseWorkerRunRecorder {

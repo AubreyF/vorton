@@ -42,7 +42,7 @@ export interface RuntimeBootstrap {
   }>;
 }
 
-interface RuntimeContextValue {
+export interface RuntimeContextValue {
   session: Session;
   bootstrap: RuntimeBootstrap;
   signOut(): Promise<void>;
@@ -53,6 +53,18 @@ interface RuntimeContextValue {
 }
 
 const RuntimeContext = createContext<RuntimeContextValue | null>(null);
+
+export function RuntimeProvider({
+  value,
+  children,
+}: {
+  value: RuntimeContextValue;
+  children: ReactNode;
+}) {
+  return (
+    <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>
+  );
+}
 
 export function readBrowserRuntimeConfig(
   source: BrowserRuntimeConfigSource = readInjectedRuntimeConfig(),
@@ -78,9 +90,9 @@ export function readBrowserRuntimeConfig(
 function readInjectedRuntimeConfig(): BrowserRuntimeConfigSource {
   const value = (
     globalThis as typeof globalThis & {
-      __AUBOS_RUNTIME_CONFIG__?: unknown;
+      __VORTON_RUNTIME_CONFIG__?: unknown;
     }
-  ).__AUBOS_RUNTIME_CONFIG__;
+  ).__VORTON_RUNTIME_CONFIG__;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Public runtime configuration is unavailable");
   }
@@ -180,7 +192,7 @@ export function BrowserRuntime({
       />
     );
   return (
-    <RuntimeContext.Provider
+    <RuntimeProvider
       value={{
         session,
         bootstrap,
@@ -197,7 +209,7 @@ export function BrowserRuntime({
       }}
     >
       {children}
-    </RuntimeContext.Provider>
+    </RuntimeProvider>
   );
 }
 
@@ -260,7 +272,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
   return (
     <main className="runtime-gate">
       <form onSubmit={(event) => void submit(event)}>
-        <p className="eyebrow">AubOS / Control plane</p>
+        <p className="eyebrow">Vorton / Control plane</p>
         <h1>Sign in</h1>
         <p>
           Supabase Auth verifies your identity. Roles describe competence. They
@@ -305,7 +317,7 @@ export function RuntimeState({
   return (
     <main className="runtime-gate">
       <section>
-        <p className="eyebrow">AubOS / Runtime</p>
+        <p className="eyebrow">Vorton / Runtime</p>
         <h1>{title}</h1>
         <p>{detail}</p>
       </section>

@@ -11,24 +11,24 @@ const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 
 function environment(): NodeJS.ProcessEnv {
   return {
-    AUBOS_BOOTSTRAP_AUTH_USER_ID: authUserId,
-    AUBOS_WORKER_PROVIDER: "openai-responses",
-    AUBOS_WORKER_MODEL: "gpt-5.4",
-    AUBOS_OPENAI_MODEL: "gpt-5.4",
-    AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
-    AUBOS_OPENAI_CLASSIFICATION_CEILING: "internal",
+    VORTON_BOOTSTRAP_AUTH_USER_ID: authUserId,
+    VORTON_WORKER_PROVIDER: "openai-responses",
+    VORTON_WORKER_MODEL: "gpt-5.4",
+    VORTON_OPENAI_MODEL: "gpt-5.4",
+    VORTON_WORKER_CLASSIFICATION_CEILING: "internal",
+    VORTON_OPENAI_CLASSIFICATION_CEILING: "internal",
   };
 }
 
 function codexEnvironment(): NodeJS.ProcessEnv {
   return {
-    AUBOS_BOOTSTRAP_AUTH_USER_ID: authUserId,
-    AUBOS_WORKER_PROVIDER: "codex-subscription",
-    AUBOS_WORKER_MODEL: "gpt-5.6-terra",
-    AUBOS_CODEX_MODEL: "gpt-5.6-terra",
-    AUBOS_CODEX_REASONING_EFFORT: "high",
-    AUBOS_WORKER_CLASSIFICATION_CEILING: "internal",
-    AUBOS_CODEX_CLASSIFICATION_CEILING: "internal",
+    VORTON_BOOTSTRAP_AUTH_USER_ID: authUserId,
+    VORTON_WORKER_PROVIDER: "codex-subscription",
+    VORTON_WORKER_MODEL: "gpt-5.6-terra",
+    VORTON_CODEX_MODEL: "gpt-5.6-terra",
+    VORTON_CODEX_REASONING_EFFORT: "high",
+    VORTON_WORKER_CLASSIFICATION_CEILING: "internal",
+    VORTON_CODEX_CLASSIFICATION_CEILING: "internal",
   };
 }
 
@@ -55,19 +55,19 @@ describe("first-install bootstrap", () => {
     await expect(
       readBootstrapConfig({
         ...environment(),
-        AUBOS_WORKER_PROVIDER: "synthetic",
+        VORTON_WORKER_PROVIDER: "synthetic",
       }),
     ).rejects.toThrow("openai-responses or codex-subscription");
     await expect(
       readBootstrapConfig({
         ...environment(),
-        AUBOS_OPENAI_MODEL: "another-model",
+        VORTON_OPENAI_MODEL: "another-model",
       }),
     ).rejects.toThrow("must exactly match");
     await expect(
       readBootstrapConfig({
         ...environment(),
-        AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION: "restricted",
+        VORTON_BOOTSTRAP_EVIDENCE_CLASSIFICATION: "restricted",
       }),
     ).rejects.toThrow("exceeds");
   });
@@ -89,42 +89,43 @@ describe("first-install bootstrap", () => {
     await expect(
       readBootstrapConfig({
         ...codexEnvironment(),
-        AUBOS_CODEX_REASONING_EFFORT: "unbounded",
+        VORTON_CODEX_REASONING_EFFORT: "unbounded",
       }),
-    ).rejects.toThrow("AUBOS_CODEX_REASONING_EFFORT must be");
+    ).rejects.toThrow("VORTON_CODEX_REASONING_EFFORT must be");
   });
 
   it("requires bootstrap and runtime database secrets only for apply", () => {
     expect(() => readBootstrapSecrets({})).toThrow(
-      "AUBOS_BOOTSTRAP_DATABASE_URL is required",
+      "VORTON_BOOTSTRAP_DATABASE_URL is required",
     );
     expect(() =>
       readBootstrapSecrets({
-        AUBOS_BOOTSTRAP_DATABASE_URL:
-          "postgresql://admin@example.invalid/aubos",
-        AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: "short",
-        AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET: "c".repeat(32),
+        VORTON_BOOTSTRAP_DATABASE_URL:
+          "postgresql://admin@example.invalid/vorton",
+        VORTON_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: "short",
+        VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET: "c".repeat(32),
       }),
     ).toThrow("at least 32 characters");
   });
 
   it("defaults bootstrap database TLS on and accepts only an explicit local opt-out", () => {
     const secrets = {
-      AUBOS_BOOTSTRAP_DATABASE_URL: "postgresql://admin@example.invalid/aubos",
-      AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: "p".repeat(32),
-      AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET: "c".repeat(32),
+      VORTON_BOOTSTRAP_DATABASE_URL:
+        "postgresql://admin@example.invalid/vorton",
+      VORTON_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: "p".repeat(32),
+      VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET: "c".repeat(32),
     };
     expect(readBootstrapSecrets(secrets).administratorDatabaseSsl).toBe(true);
     expect(
       readBootstrapSecrets({
         ...secrets,
-        AUBOS_BOOTSTRAP_DATABASE_SSL: "false",
+        VORTON_BOOTSTRAP_DATABASE_SSL: "false",
       }).administratorDatabaseSsl,
     ).toBe(false);
     expect(() =>
       readBootstrapSecrets({
         ...secrets,
-        AUBOS_BOOTSTRAP_DATABASE_SSL: "disabled",
+        VORTON_BOOTSTRAP_DATABASE_SSL: "disabled",
       }),
     ).toThrow("must be exactly true or false");
   });

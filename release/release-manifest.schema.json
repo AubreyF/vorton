@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aubos.dev/schemas/release-manifest-v1.json",
-  "title": "AubOS release manifest",
+  "$id": "https://vorton.dev/schemas/release-manifest-v1.json",
+  "title": "Vorton release manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [

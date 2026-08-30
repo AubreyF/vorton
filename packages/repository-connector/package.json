@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/repository-connector",
+  "name": "@vorton/repository-connector",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "0.0.0"
+    "@vorton/contracts": "0.0.0"
   }
 }

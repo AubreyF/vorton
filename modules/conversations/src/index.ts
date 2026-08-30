@@ -8,7 +8,7 @@ import type {
   TranscriptProvider,
   TranscriptRevision,
   TranscriptUtterance,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 export type ProviderTranscript = {
   objectId: string;

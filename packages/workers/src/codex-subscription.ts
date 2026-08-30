@@ -13,7 +13,7 @@ import {
   type ExecutiveRecommendation,
   type ExecutiveWorkerJob,
   type ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 import {
   assertRequestWithinCeiling,
@@ -335,7 +335,7 @@ export class CodexSubscriptionAdapter implements ExecutiveWorkerProvider {
             throw new Error("Codex CLI exceeded its execution timeout");
           }
           const temporaryDirectory = await mkdtemp(
-            join(tmpdir(), "aubos-codex-subscription-"),
+            join(tmpdir(), "vorton-codex-subscription-"),
           );
           const schemaFile = join(
             temporaryDirectory,
@@ -448,16 +448,16 @@ export function createCodexSubscriptionAdapterFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): CodexSubscriptionAdapter {
   return new CodexSubscriptionAdapter({
-    model: env.AUBOS_CODEX_MODEL ?? "",
+    model: env.VORTON_CODEX_MODEL ?? "",
     reasoningEffort: requireReasoningEffort(
-      env.AUBOS_CODEX_REASONING_EFFORT ?? "",
+      env.VORTON_CODEX_REASONING_EFFORT ?? "",
     ),
-    codexHome: env.AUBOS_CODEX_HOME ?? "",
-    codexPath: env.AUBOS_CODEX_PATH,
-    cwd: env.AUBOS_CODEX_WORKDIR,
-    executionTimeoutMs: Number(env.AUBOS_CODEX_EXECUTION_TIMEOUT_MS),
+    codexHome: env.VORTON_CODEX_HOME ?? "",
+    codexPath: env.VORTON_CODEX_PATH,
+    cwd: env.VORTON_CODEX_WORKDIR,
+    executionTimeoutMs: Number(env.VORTON_CODEX_EXECUTION_TIMEOUT_MS),
     dataClassificationCeiling: dataClassificationSchema.parse(
-      env.AUBOS_CODEX_CLASSIFICATION_CEILING ?? "internal",
+      env.VORTON_CODEX_CLASSIFICATION_CEILING ?? "internal",
     ),
   });
 }

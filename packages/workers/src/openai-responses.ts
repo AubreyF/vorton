@@ -7,7 +7,7 @@ import {
   type ExecutiveWorkerJobRequest,
   type DataClassification,
   type WorkerJobStatus,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 import {
   assertRequestWithinCeiling,
@@ -92,7 +92,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
       config.dataClassificationCeiling ?? "internal";
     this.#apiKey =
       config.apiKey ??
-      process.env.AUBOS_OPENAI_API_KEY ??
+      process.env.VORTON_OPENAI_API_KEY ??
       process.env.OPENAI_API_KEY ??
       "";
     if (!this.#apiKey) {
@@ -134,7 +134,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
         text: {
           format: {
             type: "json_schema",
-            name: "aubos_executive_recommendation",
+            name: "vorton_executive_recommendation",
             strict: true,
             schema: executiveRecommendationJsonSchema,
           },
@@ -221,11 +221,11 @@ export function createOpenAIResponsesAdapterFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): OpenAIResponsesAdapter {
   return new OpenAIResponsesAdapter({
-    model: env.AUBOS_OPENAI_MODEL ?? "",
-    apiKey: env.AUBOS_OPENAI_API_KEY ?? env.OPENAI_API_KEY,
-    store: env.AUBOS_OPENAI_STORE_RESPONSES === "true",
+    model: env.VORTON_OPENAI_MODEL ?? "",
+    apiKey: env.VORTON_OPENAI_API_KEY ?? env.OPENAI_API_KEY,
+    store: env.VORTON_OPENAI_STORE_RESPONSES === "true",
     dataClassificationCeiling: dataClassificationSchema.parse(
-      env.AUBOS_OPENAI_CLASSIFICATION_CEILING ?? "internal",
+      env.VORTON_OPENAI_CLASSIFICATION_CEILING ?? "internal",
     ),
   });
 }

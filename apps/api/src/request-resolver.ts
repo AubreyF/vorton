@@ -7,13 +7,13 @@ import {
   type ExecutionAuthority,
   type RetrievedContext,
   type SourceCitation,
-} from "@aubos/contracts";
-import type { Database, PersonContext } from "@aubos/database";
+} from "@vorton/contracts";
+import type { Database, PersonContext } from "@vorton/database";
 import {
   installationHindsightBank,
   type HindsightAdapter,
   type HindsightMemory,
-} from "@aubos/memory";
+} from "@vorton/memory";
 
 export interface ProposalInput {
   installationId: string;
@@ -106,7 +106,7 @@ export class DatabaseExecutiveRequestResolver {
     private readonly memory: HindsightAdapter,
     private readonly onMemoryWarning: (error: unknown) => void = (error) =>
       console.warn(
-        "AubOS derived memory recall is unavailable; continuing with authoritative evidence only",
+        "Vorton derived memory recall is unavailable; continuing with authoritative evidence only",
         error,
       ),
   ) {}

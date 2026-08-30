@@ -2,7 +2,7 @@ import {
   CodexSubscriptionAdapter,
   OpenAIResponsesAdapter,
   type ExecutiveWorkerProvider,
-} from "@aubos/workers";
+} from "@vorton/workers";
 
 import {
   dropRuntimePrivileges,
@@ -44,7 +44,7 @@ async function createProvider(): Promise<{
     workdir: env.codexWorkdir!,
     authSeed: env.codexAuthJson,
   });
-  delete process.env.AUBOS_CODEX_AUTH_JSON;
+  delete process.env.VORTON_CODEX_AUTH_JSON;
   dropRuntimePrivileges();
   return {
     provider: new CodexSubscriptionAdapter({
@@ -71,11 +71,11 @@ async function main(): Promise<void> {
   });
 
   server.listen(runtime.port, "::", () => {
-    console.log(`AubOS worker listening on port ${String(runtime.port)}`);
+    console.log(`Vorton worker listening on port ${String(runtime.port)}`);
   });
 
   async function shutdown(signal: string): Promise<void> {
-    console.log(`AubOS worker received ${signal}`);
+    console.log(`Vorton worker received ${signal}`);
     server.close();
   }
 
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
 
 void main().catch((error: unknown) => {
   console.error(
-    "AubOS worker failed to start",
+    "Vorton worker failed to start",
     error instanceof Error ? error.message : "unknown error",
   );
   process.exitCode = 1;

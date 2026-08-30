@@ -155,7 +155,7 @@ describe("executive worker providers", () => {
           citations: [
             {
               sourceRevisionId: evidenceRecordId,
-              sourceUri: "urn:aubos:synthetic",
+              sourceUri: "urn:vorton:synthetic",
               revisionHash: "b".repeat(64),
               locator: "fixture:1",
             },
@@ -271,7 +271,7 @@ describe("executive worker providers", () => {
             citations: [
               {
                 sourceRevisionId: evidenceRecordId,
-                sourceUri: "urn:aubos:synthetic",
+                sourceUri: "urn:vorton:synthetic",
                 revisionHash: "b".repeat(64),
                 locator: "fixture:restricted",
               },

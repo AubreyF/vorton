@@ -4,7 +4,7 @@ insert into aubos_private.runtime_context_keys (role_name, secret)
 values (session_user, convert_to('synthetic-test-context-secret-32-chars', 'UTF8'))
 on conflict (role_name) do update set secret = excluded.secret;
 
-create function pg_temp.set_aubos_context(
+create function pg_temp.set_vorton_context(
   context_kind text,
   installation text,
   subject text,
@@ -18,9 +18,9 @@ declare
   payload text;
 begin
   perform set_config('aubos.context_kind', context_kind, true);
-  perform set_config('aubos.installation_id', installation, true);
-  perform set_config('aubos.subject_id', subject, true);
-  perform set_config('aubos.credential_id', credential, true);
+  perform set_config('vorton.installation_id', installation, true);
+  perform set_config('vorton.subject_id', subject, true);
+  perform set_config('vorton.credential_id', credential, true);
   payload := txid_current()::text || '|' || context_kind || '|' ||
     installation || '|' || subject || '|' || credential;
   perform set_config(
@@ -84,7 +84,7 @@ begin
 end
 $$;
 
-select pg_temp.set_aubos_context(
+select pg_temp.set_vorton_context(
   'person',
   '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
   '0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5'
@@ -178,7 +178,7 @@ insert into public.work (
 
 set local request.jwt.claims =
   '{"sub":"1be8ac6f-bafd-480d-99a7-cb94258a9a1a","role":"authenticated","installation_id":"7fae0c60-6682-41ec-b231-26bbaf7fde8e"}';
-select pg_temp.set_aubos_context(
+select pg_temp.set_vorton_context(
   'person',
   '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
   '1be8ac6f-bafd-480d-99a7-cb94258a9a1a'
@@ -206,7 +206,7 @@ where id = 'eaf3cb24-b4eb-438a-819f-f27a819ee71d';
 
 set local request.jwt.claims =
   '{"sub":"0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5","role":"authenticated","installation_id":"7fae0c60-6682-41ec-b231-26bbaf7fde8e"}';
-select pg_temp.set_aubos_context(
+select pg_temp.set_vorton_context(
   'person',
   '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
   '0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5'
@@ -234,7 +234,7 @@ end
 $$;
 
 reset role;
-select pg_temp.set_aubos_context(
+select pg_temp.set_vorton_context(
   'worker',
   '7fae0c60-6682-41ec-b231-26bbaf7fde8e',
   'b5611dc4-07e4-4388-a7d0-ddf7bb452499',

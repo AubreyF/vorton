@@ -4,7 +4,7 @@ import {
   HttpHindsightAdapter,
   type HindsightBank,
   type HindsightMemory,
-} from "@aubos/memory";
+} from "@vorton/memory";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
@@ -104,15 +104,17 @@ function parseOptionalInteger(
 }
 
 function normalizeBaseUrl(value: string): string {
-  const parsed = new URL(required(value, "AUBOS_HINDSIGHT_URL"));
+  const parsed = new URL(required(value, "VORTON_HINDSIGHT_URL"));
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("AUBOS_HINDSIGHT_URL must use HTTP or HTTPS");
+    throw new Error("VORTON_HINDSIGHT_URL must use HTTP or HTTPS");
   }
   if (parsed.username || parsed.password) {
-    throw new Error("AUBOS_HINDSIGHT_URL must not contain credentials");
+    throw new Error("VORTON_HINDSIGHT_URL must not contain credentials");
   }
   if (parsed.search || parsed.hash) {
-    throw new Error("AUBOS_HINDSIGHT_URL must not contain a query or fragment");
+    throw new Error(
+      "VORTON_HINDSIGHT_URL must not contain a query or fragment",
+    );
   }
   return parsed.toString().replace(/\/$/, "");
 }
@@ -174,7 +176,7 @@ function createSource(input: {
   text: string;
 }): CanarySource {
   const sourceRevisionId = randomUuidFrom(input.runId, input.suffix);
-  const sourceUri = `urn:aubos:synthetic:hindsight-release-canary:${input.runId}:source-${input.suffix}`;
+  const sourceUri = `urn:vorton:synthetic:hindsight-release-canary:${input.runId}:source-${input.suffix}`;
   const citation: SourceCitation = {
     sourceRevisionId,
     sourceUri,
@@ -183,7 +185,7 @@ function createSource(input: {
   };
   return {
     citation,
-    sourceTag: `aubos-source:${sourceRevisionId}`,
+    sourceTag: `vorton-source:${sourceRevisionId}`,
     memory: {
       id: `hindsight-release-canary-${input.runId}-source-${input.suffix}`,
       text: input.text,
@@ -304,19 +306,19 @@ function validateLineage(
     `Hindsight fact ${fact.id} metadata`,
   );
   if (
-    metadata.aubos_memory_id !== source.memory.id ||
-    metadata.aubos_classification !== "synthetic" ||
-    metadata.aubos_lineage_version !== "1" ||
-    metadata.aubos_invalidated_at !== ""
+    metadata.vorton_memory_id !== source.memory.id ||
+    metadata.vorton_classification !== "synthetic" ||
+    metadata.vorton_lineage_version !== "1" ||
+    metadata.vorton_invalidated_at !== ""
   ) {
-    throw new Error(`Hindsight fact ${fact.id} lost AubOS lineage metadata`);
+    throw new Error(`Hindsight fact ${fact.id} lost Vorton lineage metadata`);
   }
   const citations = parseJson(
-    metadata.aubos_citations,
+    metadata.vorton_citations,
     `Hindsight fact ${fact.id} citations`,
   );
   const sourceRevisionIds = parseJson(
-    metadata.aubos_source_revision_ids,
+    metadata.vorton_source_revision_ids,
     `Hindsight fact ${fact.id} source revisions`,
   );
   if (
@@ -523,16 +525,16 @@ export async function runHindsightCanary(
   options: HindsightCanaryOptions,
 ): Promise<HindsightCanaryResult> {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
-  const apiKey = required(options.apiKey, "AUBOS_HINDSIGHT_API_KEY");
+  const apiKey = required(options.apiKey, "VORTON_HINDSIGHT_API_KEY");
   const timeoutMs = boundedInteger(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    "AUBOS_HINDSIGHT_CANARY_TIMEOUT_MS",
+    "VORTON_HINDSIGHT_CANARY_TIMEOUT_MS",
     5_000,
     1_800_000,
   );
   const pollIntervalMs = boundedInteger(
     options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
-    "AUBOS_HINDSIGHT_CANARY_POLL_INTERVAL_MS",
+    "VORTON_HINDSIGHT_CANARY_POLL_INTERVAL_MS",
     100,
     30_000,
   );
@@ -545,7 +547,7 @@ export async function runHindsightCanary(
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const runId = (options.uuid ?? randomUUID)();
   const installationId = (options.uuid ?? randomUUID)();
-  const marker = `AubOSCanary${runId.replaceAll("-", "").slice(0, 12)}`;
+  const marker = `VortonCanary${runId.replaceAll("-", "").slice(0, 12)}`;
   const bank: HindsightBank = {
     id: `organizational:${installationId}:hindsight-release-canary-${runId}`,
     installationId,
@@ -553,8 +555,8 @@ export async function runHindsightCanary(
   };
   const path = bankPath(bank);
   const scopeTags = [
-    `aubos-installation:${installationId}`,
-    "aubos-realm:organizational",
+    `vorton-installation:${installationId}`,
+    "vorton-realm:organizational",
   ];
   const firstText =
     `Synthetic release canary ${marker}. Project ${marker} selected cobalt blue as its synthetic launch color. ` +
@@ -675,18 +677,18 @@ export async function runHindsightCanary(
 
 export async function runHindsightCanaryCommand(): Promise<void> {
   const result = await runHindsightCanary({
-    baseUrl: process.env.AUBOS_HINDSIGHT_URL ?? "",
-    apiKey: process.env.AUBOS_HINDSIGHT_API_KEY ?? "",
+    baseUrl: process.env.VORTON_HINDSIGHT_URL ?? "",
+    apiKey: process.env.VORTON_HINDSIGHT_API_KEY ?? "",
     timeoutMs: parseOptionalInteger(
-      process.env.AUBOS_HINDSIGHT_CANARY_TIMEOUT_MS,
-      "AUBOS_HINDSIGHT_CANARY_TIMEOUT_MS",
+      process.env.VORTON_HINDSIGHT_CANARY_TIMEOUT_MS,
+      "VORTON_HINDSIGHT_CANARY_TIMEOUT_MS",
       DEFAULT_TIMEOUT_MS,
       5_000,
       1_800_000,
     ),
     pollIntervalMs: parseOptionalInteger(
-      process.env.AUBOS_HINDSIGHT_CANARY_POLL_INTERVAL_MS,
-      "AUBOS_HINDSIGHT_CANARY_POLL_INTERVAL_MS",
+      process.env.VORTON_HINDSIGHT_CANARY_POLL_INTERVAL_MS,
+      "VORTON_HINDSIGHT_CANARY_POLL_INTERVAL_MS",
       DEFAULT_POLL_INTERVAL_MS,
       100,
       30_000,

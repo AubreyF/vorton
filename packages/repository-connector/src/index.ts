@@ -1,11 +1,11 @@
 import {
   factoryReconciliationReceiptSchema,
   type FactoryReconciliationReceipt,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 import type {
   FactoryAuthorityMap,
   FactoryReconciliationCursor,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 export type RepositoryCheck = {
   name: string;

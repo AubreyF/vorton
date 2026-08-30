@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Database, SqlExecutor } from "@aubos/database";
-import { InMemoryHindsightAdapter, type HindsightAdapter } from "@aubos/memory";
+import type { Database, SqlExecutor } from "@vorton/database";
+import {
+  InMemoryHindsightAdapter,
+  type HindsightAdapter,
+} from "@vorton/memory";
 
 import {
   DatabaseExecutiveRequestResolver,
@@ -178,7 +181,7 @@ describe("database executive request resolver", () => {
       citations: [
         {
           sourceRevisionId: input.evidenceRecordIds[0]!,
-          sourceUri: "urn:aubos:synthetic",
+          sourceUri: "urn:vorton:synthetic",
           revisionHash: "c".repeat(64),
           locator: "fixture:1",
         },
@@ -210,7 +213,7 @@ describe("database executive request resolver", () => {
         {
           source_revision_id: input.evidenceRecordIds[0],
           classification: "synthetic",
-          source_uri: "urn:aubos:synthetic",
+          source_uri: "urn:vorton:synthetic",
           revision_hash: "c".repeat(64),
           locator: "fixture:1",
         },
@@ -276,14 +279,14 @@ describe("database executive request resolver", () => {
         {
           source_revision_id: input.evidenceRecordIds[0],
           classification: "public",
-          source_uri: "urn:aubos:synthetic",
+          source_uri: "urn:vorton:synthetic",
           revision_hash: "c".repeat(64),
           locator: "fixture:1",
         },
         {
           source_revision_id: secondSourceRevisionId,
           classification: "restricted",
-          source_uri: "urn:aubos:restricted",
+          source_uri: "urn:vorton:restricted",
           revision_hash: "d".repeat(64),
           locator: "fixture:2",
         },
@@ -300,13 +303,13 @@ describe("database executive request resolver", () => {
           citations: [
             {
               sourceRevisionId: input.evidenceRecordIds[0]!,
-              sourceUri: "urn:aubos:synthetic",
+              sourceUri: "urn:vorton:synthetic",
               revisionHash: "c".repeat(64),
               locator: "fixture:1",
             },
             {
               sourceRevisionId: secondSourceRevisionId,
-              sourceUri: "urn:aubos:restricted",
+              sourceUri: "urn:vorton:restricted",
               revisionHash: "d".repeat(64),
               locator: "fixture:2",
             },

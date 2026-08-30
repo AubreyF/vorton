@@ -3,7 +3,7 @@ import { z } from "zod";
 export const factoryAuthorityOwnerSchema = z.enum([
   "github",
   "repository-execution",
-  "aubos",
+  "vorton",
 ]);
 
 export const factoryAuthorityMapSchema = z.object({

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "@aubos/database";
+import type { Database } from "@vorton/database";
 
 import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 

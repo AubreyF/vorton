@@ -75,7 +75,7 @@ function runReleaseDiscovery(
   options: { repository?: string; workflow?: string } = {},
 ): ReleaseDiscoveryRun {
   const repository =
-    options.repository ?? mkdtempSync(join(tmpdir(), "aubos-discovery-test-"));
+    options.repository ?? mkdtempSync(join(tmpdir(), "vorton-discovery-test-"));
   const workflow =
     options.workflow ??
     readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
@@ -137,7 +137,7 @@ function runReleaseDiscovery(
         FAKE_GH_CREATE_COUNT: createCountFile,
         FAKE_GH_LISTINGS: listingsFile,
         FAKE_SLEEP_LOG: sleepLog,
-        GITHUB_REPOSITORY: "moonbase-labs/aubos",
+        GITHUB_REPOSITORY: "moonbase-labs/vorton",
         PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
         TAG_NAME: "v0.3.0",
       },
@@ -169,7 +169,7 @@ function releaseFixture(
   releaseCommit: string;
   sourceCommit: string;
 } {
-  const repository = mkdtempSync(join(tmpdir(), "aubos-preflight-test-"));
+  const repository = mkdtempSync(join(tmpdir(), "vorton-preflight-test-"));
   command(repository, ["init", "-q"]);
   command(repository, ["config", "user.name", "Release Test"]);
   command(repository, ["config", "user.email", "release-test@example.invalid"]);
@@ -213,7 +213,7 @@ function releaseFixture(
           ["control-plane", "web", "worker"].map((name) => [
             name,
             {
-              reference: `ghcr.io/moonbase-labs/aubos-${name}@${digest}`,
+              reference: `ghcr.io/moonbase-labs/vorton-${name}@${digest}`,
               digest,
             },
           ]),
@@ -298,7 +298,7 @@ describe("release preflight", () => {
   it("normalizes Syft entropy and SPDX set ordering into stable release bytes", () => {
     const identity = {
       artifactDigest: `sha256:${"b".repeat(64)}`,
-      artifactName: "aubos-1.2.3-contracts.tgz",
+      artifactName: "vorton-1.2.3-contracts.tgz",
       createdAt: "2026-08-29T12:00:00.000Z",
       version: "1.2.3",
     };
@@ -306,7 +306,7 @@ describe("release preflight", () => {
       spdxVersion: "SPDX-2.3",
       SPDXID: "SPDXRef-DOCUMENT",
       dataLicense: "CC0-1.0",
-      name: "aubos-1.2.3-contracts.tgz",
+      name: "vorton-1.2.3-contracts.tgz",
       documentNamespace: "https://anchore.com/syft/random-one",
       creationInfo: {
         creators: ["Tool: syft", "Organization: Anchore, Inc"],
@@ -324,7 +324,7 @@ describe("release preflight", () => {
         },
         {
           SPDXID: "SPDXRef-A",
-          name: "aubos-1.2.3-contracts.tgz",
+          name: "vorton-1.2.3-contracts.tgz",
           checksums: [
             { algorithm: "SHA256", checksumValue: "b".repeat(64) },
             { algorithm: "SHA1", checksumValue: "3" },
@@ -385,13 +385,13 @@ describe("release preflight", () => {
       spdxVersion: "SPDX-2.3",
       SPDXID: "SPDXRef-DOCUMENT",
       dataLicense: "CC0-1.0",
-      name: "aubos-1.2.3-contracts.tgz",
+      name: "vorton-1.2.3-contracts.tgz",
     };
 
     const normalized = normalizeSpdxDocument(first, identity);
     expect(normalizeSpdxDocument(second, identity)).toBe(normalized);
     expect(normalized).toContain(
-      `"documentNamespace": "https://aubos.dev/releases/v1.2.3/sbom/sha256-${"b".repeat(64)}"`,
+      `"documentNamespace": "https://vorton.dev/releases/v1.2.3/sbom/sha256-${"b".repeat(64)}"`,
     );
     expect(normalized).toContain(`"created": "2026-08-29T12:00:00Z"`);
     expect(() =>
@@ -410,8 +410,8 @@ describe("release preflight", () => {
 
   it("binds normalized SPDX identity to the exact contract artifact bytes", () => {
     const { repository } = releaseFixture();
-    const artifactPath = join(repository, "aubos-1.2.3-contracts.tgz");
-    const sbomPath = join(repository, "aubos-1.2.3.spdx.json");
+    const artifactPath = join(repository, "vorton-1.2.3-contracts.tgz");
+    const sbomPath = join(repository, "vorton-1.2.3.spdx.json");
     const artifact = "synthetic contract artifact\n";
     const artifactDigest = sha256(artifact);
     writeFileSync(artifactPath, artifact);
@@ -421,7 +421,7 @@ describe("release preflight", () => {
         spdxVersion: "SPDX-2.3",
         SPDXID: "SPDXRef-DOCUMENT",
         dataLicense: "CC0-1.0",
-        name: "aubos-1.2.3-contracts.tgz",
+        name: "vorton-1.2.3-contracts.tgz",
         documentNamespace: "https://anchore.com/syft/random",
         creationInfo: {
           created: "2026-08-29T13:00:00Z",
@@ -430,7 +430,7 @@ describe("release preflight", () => {
         packages: [
           {
             SPDXID: "SPDXRef-DocumentRoot",
-            name: "aubos-1.2.3-contracts.tgz",
+            name: "vorton-1.2.3-contracts.tgz",
             checksums: [
               {
                 algorithm: "SHA256",
@@ -456,7 +456,7 @@ describe("release preflight", () => {
     });
 
     expect(readFileSync(sbomPath, "utf8")).toContain(
-      `"documentNamespace": "https://aubos.dev/releases/v1.2.3/sbom/${artifactDigest.replace(":", "-")}"`,
+      `"documentNamespace": "https://vorton.dev/releases/v1.2.3/sbom/${artifactDigest.replace(":", "-")}"`,
     );
   });
 
@@ -666,7 +666,7 @@ describe("release preflight", () => {
         version: "1.2.3",
         inspector: inspector(sourceCommit),
       }),
-    ).toThrow(/Fly contract and AubOS CLI HINDSIGHT_IMAGE must match exactly/);
+    ).toThrow(/Fly contract and Vorton CLI HINDSIGHT_IMAGE must match exactly/);
   });
 
   it("discovers a delayed draft after one creation and bounded read-only checks", () => {
@@ -725,7 +725,7 @@ describe("release preflight", () => {
   });
 
   it("replays a pre-helper tag with resolver logic carried by the active workflow", () => {
-    const repository = mkdtempSync(join(tmpdir(), "aubos-replay-test-"));
+    const repository = mkdtempSync(join(tmpdir(), "vorton-replay-test-"));
     command(repository, ["init", "-q"]);
     command(repository, ["config", "user.name", "Release Test"]);
     command(repository, [
@@ -810,7 +810,7 @@ describe("release preflight", () => {
     expect(release).toContain("syft-version: v1.42.3");
     expect(release).toContain("upload-artifact: false");
     expect(release).toContain(
-      'test "$(jq -r \'.[0].name\' matching-releases.json)" = "AubOS $TAG_NAME"',
+      'test "$(jq -r \'.[0].name\' matching-releases.json)" = "Vorton $TAG_NAME"',
     );
     expect(release).toContain(
       "cmp --silent release-notes.md existing-release-notes.md",

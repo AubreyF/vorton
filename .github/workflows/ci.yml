@@ -70,12 +70,12 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: aubos_authority
+          POSTGRES_DB: vorton_authority
           POSTGRES_PASSWORD: synthetic-admin-password-000000000001
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d aubos_authority"
+          --health-cmd "pg_isready -U postgres -d vorton_authority"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -88,4 +88,4 @@ jobs:
       - run: npm ci
       - run: npm run test:postgres-authority
         env:
-          AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority
+          VORTON_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/vorton_authority

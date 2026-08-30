@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { releaseManifestSchema, type ReleaseManifest } from "@aubos/contracts";
+import { releaseManifestSchema, type ReleaseManifest } from "@vorton/contracts";
 
 import {
   git,
@@ -215,7 +215,7 @@ export function normalizeSpdxDocument(
   }
   (creationInfo as Record<string, unknown>).created = spdxCreatedAt;
   mutable.documentNamespace =
-    `https://aubos.dev/releases/v${identity.version}/sbom/` +
+    `https://vorton.dev/releases/v${identity.version}/sbom/` +
     identity.artifactDigest.replace(":", "-");
   return `${JSON.stringify(canonicalizeSpdx(mutable), null, 2)}\n`;
 }
@@ -444,12 +444,12 @@ export function parseCliHindsightImageReference(source: string): string {
     ...source.matchAll(/\bconst\s+HINDSIGHT_IMAGE\s*=\s*"([^"]+)"\s*;/g),
   ].map((match) => match[1]!);
   if (references.length !== 1) {
-    throw new Error(`AubOS CLI must declare exactly one HINDSIGHT_IMAGE`);
+    throw new Error(`Vorton CLI must declare exactly one HINDSIGHT_IMAGE`);
   }
   const reference = references[0]!;
   if (!hindsightImagePattern.test(reference)) {
     throw new Error(
-      `AubOS CLI HINDSIGHT_IMAGE must use ghcr.io/vectorize-io/hindsight pinned by sha256 digest`,
+      `Vorton CLI HINDSIGHT_IMAGE must use ghcr.io/vectorize-io/hindsight pinned by sha256 digest`,
     );
   }
   return reference;
@@ -637,7 +637,7 @@ export function runReleasePreflight(options: {
   );
   if (cliHindsightReference !== hindsightReference) {
     throw new Error(
-      `Hindsight Fly contract and AubOS CLI HINDSIGHT_IMAGE must match exactly`,
+      `Hindsight Fly contract and Vorton CLI HINDSIGHT_IMAGE must match exactly`,
     );
   }
   requireHindsightPlatforms(inspector.raw(hindsightReference));

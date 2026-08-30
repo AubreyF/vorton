@@ -44,30 +44,30 @@ describe("browser runtime boundary", () => {
 
   it("does not fall back to installation-specific Vite build variables", () => {
     const runtimeGlobal = globalThis as typeof globalThis & {
-      __AUBOS_RUNTIME_CONFIG__?: unknown;
+      __VORTON_RUNTIME_CONFIG__?: unknown;
     };
-    const previous = runtimeGlobal.__AUBOS_RUNTIME_CONFIG__;
-    delete runtimeGlobal.__AUBOS_RUNTIME_CONFIG__;
+    const previous = runtimeGlobal.__VORTON_RUNTIME_CONFIG__;
+    delete runtimeGlobal.__VORTON_RUNTIME_CONFIG__;
     try {
       expect(() => readBrowserRuntimeConfig()).toThrow(
         "Public runtime configuration is unavailable",
       );
     } finally {
-      runtimeGlobal.__AUBOS_RUNTIME_CONFIG__ = previous;
+      runtimeGlobal.__VORTON_RUNTIME_CONFIG__ = previous;
     }
   });
 
   it("forwards only the verified session bearer token to governed executive routes", async () => {
     const requestFetch = vi.fn(async () => Response.json({ id: "proposal-1" }));
     await postExecutiveRequest(
-      "https://api.aubos.example",
+      "https://api.vorton.example",
       "verified-session-token",
       "reviews",
       { proposalRecordId: "synthetic" },
       requestFetch as typeof fetch,
     );
     expect(requestFetch).toHaveBeenCalledWith(
-      "https://api.aubos.example/v1/executive/reviews",
+      "https://api.vorton.example/v1/executive/reviews",
       expect.objectContaining({
         headers: {
           authorization: "Bearer verified-session-token",
@@ -82,12 +82,12 @@ describe("browser runtime boundary", () => {
       Response.json({ installations: [] }),
     );
     await getRuntimeBootstrap(
-      "https://api.aubos.example",
+      "https://api.vorton.example",
       "verified-session-token",
       requestFetch as typeof fetch,
     );
     expect(requestFetch).toHaveBeenCalledWith(
-      "https://api.aubos.example/v1/runtime/bootstrap",
+      "https://api.vorton.example/v1/runtime/bootstrap",
       { headers: { authorization: "Bearer verified-session-token" } },
     );
   });

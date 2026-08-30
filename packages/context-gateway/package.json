@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/context-gateway",
+  "name": "@vorton/context-gateway",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "*",
-    "@aubos/memory": "*"
+    "@vorton/contracts": "*",
+    "@vorton/memory": "*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

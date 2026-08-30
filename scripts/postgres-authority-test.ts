@@ -74,11 +74,11 @@ async function startLocalPostgres(): Promise<LocalPostgres> {
     }).trim();
   } catch {
     throw new Error(
-      "pg_config is required when AUBOS_AUTHORITY_TEST_DATABASE_URL is not set",
+      "pg_config is required when VORTON_AUTHORITY_TEST_DATABASE_URL is not set",
     );
   }
 
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "aubos-pg-authority-"));
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "vorton-pg-authority-"));
   const dataDirectory = join(temporaryRoot, "data");
   const socketDirectory = join(temporaryRoot, "socket");
   const passwordFile = join(temporaryRoot, "admin-password");
@@ -130,13 +130,13 @@ async function startLocalPostgres(): Promise<LocalPostgres> {
   });
   try {
     await bootstrapConnection.connect();
-    await bootstrapConnection.query("create database aubos_authority");
+    await bootstrapConnection.query("create database vorton_authority");
   } finally {
     await bootstrapConnection.end();
   }
 
   return {
-    adminDatabaseUrl: `postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:${port}/aubos_authority`,
+    adminDatabaseUrl: `postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:${port}/vorton_authority`,
     async stop(): Promise<void> {
       try {
         execFileSync(pgCtl, ["-D", dataDirectory, "-m", "fast", "-w", "stop"], {
@@ -174,7 +174,10 @@ async function applyMigrations(admin: Client): Promise<string[]> {
   const migrationNames = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name))
     .sort();
-  requireCondition(migrationNames.length > 0, "No AubOS migrations were found");
+  requireCondition(
+    migrationNames.length > 0,
+    "No Vorton migrations were found",
+  );
   for (const migrationName of migrationNames) {
     await admin.query(
       await readFile(join(migrationDirectory, migrationName), "utf8"),
@@ -195,20 +198,20 @@ async function runBootstrap(
       cwd: repositoryRoot,
       env: {
         ...process.env,
-        AUBOS_BOOTSTRAP_DATABASE_URL: adminDatabaseUrl,
-        AUBOS_BOOTSTRAP_DATABASE_SSL: "false",
-        AUBOS_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: proposedRuntimePassword,
-        AUBOS_BOOTSTRAP_CONTEXT_SIGNING_SECRET: contextSecret,
-        AUBOS_BOOTSTRAP_AUTH_USER_ID: ownerAuthUserId,
-        AUBOS_BOOTSTRAP_INSTALLATION_SLUG: "postgres-authority-lab",
-        AUBOS_BOOTSTRAP_INSTALLATION_NAME: "Postgres Authority Lab",
-        AUBOS_BOOTSTRAP_OWNER_DISPLAY_NAME: "Synthetic Authority Owner",
-        AUBOS_WORKER_PROVIDER: "openai-responses",
-        AUBOS_WORKER_MODEL: "synthetic-model",
-        AUBOS_OPENAI_MODEL: "synthetic-model",
-        AUBOS_WORKER_CLASSIFICATION_CEILING: "synthetic",
-        AUBOS_OPENAI_CLASSIFICATION_CEILING: "synthetic",
-        AUBOS_BOOTSTRAP_EVIDENCE_CLASSIFICATION: "synthetic",
+        VORTON_BOOTSTRAP_DATABASE_URL: adminDatabaseUrl,
+        VORTON_BOOTSTRAP_DATABASE_SSL: "false",
+        VORTON_BOOTSTRAP_RUNTIME_DATABASE_PASSWORD: proposedRuntimePassword,
+        VORTON_BOOTSTRAP_CONTEXT_SIGNING_SECRET: contextSecret,
+        VORTON_BOOTSTRAP_AUTH_USER_ID: ownerAuthUserId,
+        VORTON_BOOTSTRAP_INSTALLATION_SLUG: "postgres-authority-lab",
+        VORTON_BOOTSTRAP_INSTALLATION_NAME: "Postgres Authority Lab",
+        VORTON_BOOTSTRAP_OWNER_DISPLAY_NAME: "Synthetic Authority Owner",
+        VORTON_WORKER_PROVIDER: "openai-responses",
+        VORTON_WORKER_MODEL: "synthetic-model",
+        VORTON_OPENAI_MODEL: "synthetic-model",
+        VORTON_WORKER_CLASSIFICATION_CEILING: "synthetic",
+        VORTON_OPENAI_CLASSIFICATION_CEILING: "synthetic",
+        VORTON_BOOTSTRAP_EVIDENCE_CLASSIFICATION: "synthetic",
       },
       maxBuffer: 1024 * 1024,
     },
@@ -621,7 +624,7 @@ async function proveWorkerBoundary(
 
 async function main(): Promise<void> {
   const externalDatabaseUrl =
-    process.env.AUBOS_AUTHORITY_TEST_DATABASE_URL?.trim();
+    process.env.VORTON_AUTHORITY_TEST_DATABASE_URL?.trim();
   const localPostgres = externalDatabaseUrl
     ? undefined
     : await startLocalPostgres();

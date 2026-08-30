@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aubos.dev/schemas/fly-deployment-v1.json",
-  "title": "AubOS Fly deployment contract",
+  "$id": "https://vorton.dev/schemas/fly-deployment-v1.json",
+  "title": "Vorton Fly deployment contract",
   "type": "object",
   "additionalProperties": false,
   "required": [

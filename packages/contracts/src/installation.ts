@@ -23,7 +23,7 @@ const relativePath = z
   );
 
 export const installationManifestSchema = z.object({
-  apiVersion: z.literal("aubos.dev/v1alpha1"),
+  apiVersion: z.literal("vorton.dev/v1alpha1"),
   kind: z.literal("Installation"),
   metadata: z.object({
     name: identifier,

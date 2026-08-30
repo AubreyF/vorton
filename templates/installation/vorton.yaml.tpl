@@ -1,12 +1,12 @@
-apiVersion: aubos.dev/v1alpha1
+apiVersion: vorton.dev/v1alpha1
 kind: Installation
 metadata:
-  name: moonbase-lab
+  name: {{INSTALLATION_NAME}}
 spec:
   realm: organizational
   release:
     channel: pinned
-    version: 0.1.0
+    version: {{RELEASE_VERSION}}
   modules:
     - admin
     - tasks
@@ -26,8 +26,8 @@ spec:
       - name: Moonbase Triage
         installed: false
   secrets:
-    supabase-url: AUBOS_SUPABASE_URL
-    supabase-anon-key: AUBOS_SUPABASE_ANON_KEY
-    database-url: AUBOS_DATABASE_URL
-    hindsight-url: AUBOS_HINDSIGHT_URL
-    hindsight-api-key: AUBOS_HINDSIGHT_API_KEY
+    supabase-url: VORTON_SUPABASE_URL
+    supabase-anon-key: VORTON_SUPABASE_ANON_KEY
+    database-url: VORTON_DATABASE_URL
+    hindsight-url: VORTON_HINDSIGHT_URL
+    hindsight-api-key: VORTON_HINDSIGHT_API_KEY

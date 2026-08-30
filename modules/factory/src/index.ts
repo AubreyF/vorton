@@ -2,11 +2,11 @@ import {
   reconcileRepositoryTicket,
   type FactoryTicketSnapshot,
   type RepositoryExecutionObservation,
-} from "@aubos/repository-connector";
+} from "@vorton/repository-connector";
 import {
   createGitHubReadOnlyConnector,
   type GitHubCheckFixture,
-} from "@aubos/repository-connector-github";
+} from "@vorton/repository-connector-github";
 
 export type FactorySnapshot = {
   installation: string;

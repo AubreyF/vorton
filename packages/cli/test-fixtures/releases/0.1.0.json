@@ -13,19 +13,19 @@
   "coreMigrationHead": "fixture_0001_kernel",
   "images": {
     "control-plane": {
-      "reference": "registry.invalid/aubos-fixture/control-plane@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "reference": "registry.invalid/vorton-fixture/control-plane@sha256:1111111111111111111111111111111111111111111111111111111111111111",
       "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
     },
     "worker": {
-      "reference": "registry.invalid/aubos-fixture/worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "reference": "registry.invalid/vorton-fixture/worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
     }
   },
   "managedFiles": [
     {
-      "path": "host/aubos-runtime.json",
-      "template": "templates/releases/0.1.0/host/aubos-runtime.json",
-      "digest": "sha256:6a2aab672dc8540d18c8b84e66c40cf25e68db2149c648c163ee871f42469572"
+      "path": "host/vorton-runtime.json",
+      "template": "packages/cli/test-fixtures/templates/releases/0.1.0/host/vorton-runtime.json",
+      "digest": "sha256:d354b5f7c7c1012988d13505b9cde29b18b7cbb088bdef0e9eb1796ea69ba609"
     }
   ]
 }

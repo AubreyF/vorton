@@ -1,0 +1,294 @@
+import { Download } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+
+type ExportFormat = "png" | "pdf";
+
+const EXPORT_WIDTH = 1400;
+const PDF_MARGIN = 24;
+
+function nextPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+async function waitForPageStability(shell: HTMLElement) {
+  let previousSignature = "";
+  let stableSamples = 0;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await nextPaint();
+    const signature = [
+      shell.scrollWidth,
+      shell.scrollHeight,
+      shell.textContent?.length ?? 0,
+      shell.querySelectorAll("tr").length,
+    ].join(":");
+    const busy = shell.querySelector('[aria-busy="true"]');
+    stableSamples =
+      !busy && signature === previousSignature ? stableSamples + 1 : 0;
+    if (stableSamples >= 2) return;
+    previousSignature = signature;
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+  }
+}
+
+function exportFileStem() {
+  const route =
+    window.location.hash
+      .replace(/^#/, "")
+      .replace(/[^a-z0-9-]+/gi, "-")
+      .toLowerCase() || "command-bridge";
+  return `vorton-${route}-${new Date().toISOString().slice(0, 10)}`;
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.download = filename;
+  link.href = objectUrl;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("The browser could not encode the page image."));
+    }, type);
+  });
+}
+
+async function capturePage() {
+  const shell = document.querySelector<HTMLElement>(".dashboard-shell");
+  if (!shell) throw new Error("The Vorton page shell is unavailable.");
+
+  document
+    .querySelectorAll<HTMLDetailsElement>(".topbar-actions details[open]")
+    .forEach((details) => details.removeAttribute("open"));
+  const root = document.documentElement;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const previousScrollBehavior = root.style.scrollBehavior;
+  root.style.setProperty("scroll-behavior", "auto", "important");
+
+  try {
+    window.scrollTo(0, 0);
+    await document.fonts?.ready;
+    await waitForPageStability(shell);
+    const { domToCanvas } = await import("modern-screenshot");
+    const bounds = shell.getBoundingClientRect();
+    const width = Math.max(
+      1,
+      Math.ceil(Math.max(bounds.width, shell.scrollWidth)),
+    );
+    const height = Math.max(
+      1,
+      Math.ceil(Math.max(bounds.height, shell.scrollHeight)),
+    );
+    const backgroundColor = getComputedStyle(document.body).backgroundColor;
+    const canvas = await domToCanvas(shell, {
+      backgroundColor:
+        backgroundColor === "rgba(0, 0, 0, 0)" ? "#ffffff" : backgroundColor,
+      width,
+      height,
+      scale: EXPORT_WIDTH / width,
+      style: { overflow: "visible" },
+      filter: (node) =>
+        !(node instanceof Element) ||
+        !node.matches(".skip-link, .privacy-state"),
+      features: { restoreScrollPosition: true },
+      onCloneEachNode: (node) => {
+        if (!(node instanceof HTMLElement)) return;
+        node.style.setProperty("backdrop-filter", "none", "important");
+        node.style.setProperty("box-shadow", "none", "important");
+      },
+    });
+    return { canvas, backgroundColor };
+  } finally {
+    window.scrollTo(scrollX, scrollY);
+    root.style.scrollBehavior = previousScrollBehavior;
+  }
+}
+
+async function savePdf(canvas: HTMLCanvasElement, filename: string) {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ compress: true, format: "a4", unit: "pt" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const printableWidth = pageWidth - PDF_MARGIN * 2;
+  const printableHeight = pageHeight - PDF_MARGIN * 2;
+  const sourcePageHeight = Math.max(
+    1,
+    Math.floor(canvas.width * (printableHeight / printableWidth)),
+  );
+  let sourceY = 0;
+  let pageIndex = 0;
+
+  while (sourceY < canvas.height) {
+    const sliceHeight = Math.min(sourcePageHeight, canvas.height - sourceY);
+    const slice = document.createElement("canvas");
+    slice.width = canvas.width;
+    slice.height = sliceHeight;
+    const context = slice.getContext("2d");
+    if (!context) throw new Error("The browser could not prepare a PDF page.");
+    context.drawImage(
+      canvas,
+      0,
+      sourceY,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight,
+    );
+    if (pageIndex > 0) pdf.addPage();
+    pdf.addImage(
+      slice.toDataURL("image/jpeg", 0.94),
+      "JPEG",
+      PDF_MARGIN,
+      PDF_MARGIN,
+      printableWidth,
+      sliceHeight * (printableWidth / canvas.width),
+    );
+    sourceY += sliceHeight;
+    pageIndex += 1;
+  }
+  pdf.save(`${filename}.pdf`);
+}
+
+export function ExportControls() {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const tooltipId = useId();
+  const statusId = useId();
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (
+        detailsRef.current?.open &&
+        !detailsRef.current.contains(event.target as Node)
+      ) {
+        detailsRef.current.removeAttribute("open");
+      }
+    };
+    const dismissWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && detailsRef.current?.open) {
+        detailsRef.current.removeAttribute("open");
+        summaryRef.current?.focus({ preventScroll: true });
+      }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", dismissWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", dismissWithKeyboard);
+    };
+  }, []);
+
+  const exportPage = useCallback(
+    async (format: ExportFormat) => {
+      if (exporting) return;
+      setError("");
+      setExporting(format);
+      detailsRef.current?.removeAttribute("open");
+      try {
+        const { canvas } = await capturePage();
+        const filename = exportFileStem();
+        if (format === "png") {
+          triggerDownload(
+            await canvasToBlob(canvas, "image/png"),
+            `${filename}.png`,
+          );
+        } else {
+          await savePdf(canvas, filename);
+        }
+      } catch (reason) {
+        setError(
+          reason instanceof Error ? reason.message : "The page export failed.",
+        );
+        detailsRef.current?.setAttribute("open", "");
+      } finally {
+        setExporting(null);
+        summaryRef.current?.focus({ preventScroll: true });
+      }
+    },
+    [exporting],
+  );
+
+  const status = exporting
+    ? `Preparing ${exporting.toUpperCase()} export`
+    : error || "Export page";
+
+  return (
+    <div className="export-control-shell">
+      <details className="export-controls" ref={detailsRef}>
+        <summary
+          className="appearance-button export-button"
+          ref={summaryRef}
+          aria-busy={exporting ? "true" : undefined}
+          aria-describedby={`${tooltipId} ${statusId}`}
+          aria-label="Export page"
+          onClick={(event) => {
+            if (exporting) event.preventDefault();
+          }}
+        >
+          <span className="appearance-button-icon" aria-hidden="true">
+            <Download size={20} strokeWidth={1.8} />
+          </span>
+          <span className="appearance-tooltip" id={tooltipId} role="tooltip">
+            Export page
+          </span>
+        </summary>
+        <div className="appearance-menu export-menu">
+          <section
+            className="appearance-menu-section"
+            aria-labelledby="export-menu-heading"
+          >
+            <p id="export-menu-heading">Export page</p>
+            <div className="export-options">
+              <button
+                className="export-option"
+                type="button"
+                disabled={Boolean(exporting)}
+                onClick={() => void exportPage("png")}
+              >
+                <span className="export-option-name">PNG</span>
+                <span className="export-option-detail">
+                  Full page, 1400 px wide
+                </span>
+              </button>
+              <button
+                className="export-option"
+                type="button"
+                disabled={Boolean(exporting)}
+                onClick={() => void exportPage("pdf")}
+              >
+                <span className="export-option-name">PDF</span>
+                <span className="export-option-detail">
+                  Full page, A4 pagination
+                </span>
+              </button>
+            </div>
+            {error && (
+              <p className="export-menu-error" role="alert">
+                {error}
+              </p>
+            )}
+          </section>
+        </div>
+      </details>
+      <span
+        className="export-live-region"
+        id={statusId}
+        role="status"
+        aria-live="polite"
+      >
+        {status}
+      </span>
+    </div>
+  );
+}

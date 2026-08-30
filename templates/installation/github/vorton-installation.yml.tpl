@@ -1,4 +1,4 @@
-name: AubOS installation
+name: Vorton installation
 
 on:
   pull_request:

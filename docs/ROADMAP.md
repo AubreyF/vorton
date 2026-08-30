@@ -1,10 +1,10 @@
 # Roadmap
 
-This roadmap separates the durable product direction from the work currently underway. Completed foundations describe what exists in the repository. They do not imply that AubOS is ready for sensitive or production use.
+This roadmap separates the durable product direction from the work currently underway. Completed foundations describe what exists in the repository. They do not imply that Vorton is ready for sensitive or production use.
 
 ## Long-term direction
 
-AubOS is intended to become a modular operating system for a person or organization. Each installation should coordinate people, AI workers, knowledge, software, tools, and infrastructure without surrendering control to one model provider or execution host.
+Vorton is intended to become a modular operating system for a person or organization. Each installation should coordinate people, AI workers, knowledge, software, tools, and infrastructure without surrendering control to one model provider or execution host.
 
 The mature system should provide:
 
@@ -29,12 +29,14 @@ The mature system should provide:
 ### Factory pilot
 
 - [ ] Display live tickets, workers, claims, pull requests, checks, blockers, and recovery state.
-- [ ] Reconcile external ticket state with AubOS Work without inventing a second queue.
+- [ ] Reconcile external ticket state with Vorton Work without inventing a second queue.
 - [ ] Validate the read-only connector before approving authority-changing operations.
 - [ ] Generalize proven connector behavior without adding pilot-specific policy to the kernel.
 
 ### Release hardening
 
+- [ ] Publish the first Vorton release with a tested upgrade edge from the immutable 0.3.2 legacy release.
+- [ ] Retain historical manifests, migrations, database roles, and protocol keys until a forward migration proves replacement and rollback.
 - [ ] Exercise installation from a clean consumer repository.
 - [ ] Verify exact rollback after successful and interrupted upgrades.
 - [ ] Complete full Supabase Auth, API, Realtime, storage, and Row Level Security validation.
@@ -59,7 +61,7 @@ These capabilities exist but remain subject to integration testing and change:
 
 ### Governed memory
 
-- AubOS-owned scheduling, retries, budgets, staged consolidation, and replay.
+- Vorton-owned scheduling, retries, budgets, staged consolidation, and replay.
 - Contradiction detection, review, promotion, lineage, invalidation, retention, and selective forgetting.
 - Temporal, entity, episode, decision, causal, contradiction, semantic, and lexical indexes.
 - Quality, drift, latency, cost, and failure evaluations across frontier and local models.

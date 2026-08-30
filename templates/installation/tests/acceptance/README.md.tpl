@@ -1,4 +1,4 @@
 # Installation acceptance tests
 
-Place organization-owned acceptance tests here. AubOS upgrades do not modify
+Place organization-owned acceptance tests here. Vorton upgrades do not modify
 this directory.

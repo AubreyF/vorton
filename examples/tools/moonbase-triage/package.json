@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/example-moonbase-triage",
+  "name": "@vorton/example-moonbase-triage",
   "version": "0.0.0",
   "private": true,
   "type": "module",

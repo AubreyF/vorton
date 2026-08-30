@@ -5,7 +5,7 @@ import {
   type ExecutiveRecommendation,
   type ExecutiveWorkerJob,
   type ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 
 import {
   assertRequestWithinCeiling,

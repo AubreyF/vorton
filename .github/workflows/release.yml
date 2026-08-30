@@ -26,12 +26,12 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: aubos_authority
+          POSTGRES_DB: vorton_authority
           POSTGRES_PASSWORD: synthetic-admin-password-000000000001
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d aubos_authority"
+          --health-cmd "pg_isready -U postgres -d vorton_authority"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -59,7 +59,7 @@ jobs:
       - name: Verify PostgreSQL authority boundary
         run: npm run test:postgres-authority
         env:
-          AUBOS_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/aubos_authority
+          VORTON_AUTHORITY_TEST_DATABASE_URL: postgresql://postgres:synthetic-admin-password-000000000001@127.0.0.1:5432/vorton_authority
       - run: npm run check
       - run: npm run format:check
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -78,7 +78,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          artifact="aubos-$VERSION-contracts.tgz"
+          artifact="vorton-$VERSION-contracts.tgz"
           staging_directory=$(mktemp -d)
           npx tsx release/stage-contract-archive.ts "$staging_directory"
           tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
@@ -88,9 +88,9 @@ jobs:
       - name: Generate release SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
-          file: aubos-${{ steps.version.outputs.value }}-contracts.tgz
-          output-file: aubos-${{ steps.version.outputs.value }}.spdx.json
-          artifact-name: aubos-${{ steps.version.outputs.value }}-sbom
+          file: vorton-${{ steps.version.outputs.value }}-contracts.tgz
+          output-file: vorton-${{ steps.version.outputs.value }}.spdx.json
+          artifact-name: vorton-${{ steps.version.outputs.value }}-sbom
           syft-version: v1.42.3
           upload-artifact: false
           upload-release-assets: false
@@ -98,9 +98,9 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          sbom="aubos-$VERSION.spdx.json"
+          sbom="vorton-$VERSION.spdx.json"
           npm run release:normalize-sbom -- \
-            --artifact "aubos-$VERSION-contracts.tgz" \
+            --artifact "vorton-$VERSION-contracts.tgz" \
             --manifest "release/manifests/$VERSION.json" \
             --sbom "$sbom"
       - name: Publish or recover the exact GitHub Release
@@ -109,12 +109,12 @@ jobs:
           TAG_NAME: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          artifact="aubos-$VERSION-contracts.tgz"
+          artifact="vorton-$VERSION-contracts.tgz"
           checksum="$artifact.sha256"
-          sbom="aubos-$VERSION.spdx.json"
+          sbom="vorton-$VERSION.spdx.json"
           printf '%s\n\n%s\n\n%s' \
             '(AI Generated).' \
-            "Immutable AubOS $VERSION release contracts and software bill of materials." \
+            "Immutable Vorton $VERSION release contracts and software bill of materials." \
             'Runtime images are identified only by the digest-pinned GHCR references in the release manifest.' \
             > release-notes.md
 
@@ -139,7 +139,7 @@ jobs:
             gh release create "$TAG_NAME" \
               --draft \
               --verify-tag \
-              --title "AubOS $TAG_NAME" \
+              --title "Vorton $TAG_NAME" \
               --notes-file release-notes.md
             for visibility_check in 1 2 3 4 5 6; do
               find_release
@@ -156,7 +156,7 @@ jobs:
           # END bounded release discovery
           test "$(jq -r '.[0].tag_name' matching-releases.json)" = "$TAG_NAME"
           test "$(jq -r '.[0].prerelease' matching-releases.json)" = "false"
-          test "$(jq -r '.[0].name' matching-releases.json)" = "AubOS $TAG_NAME"
+          test "$(jq -r '.[0].name' matching-releases.json)" = "Vorton $TAG_NAME"
           jq -j '.[0].body' matching-releases.json > existing-release-notes.md
           cmp --silent release-notes.md existing-release-notes.md
           release_id=$(jq -r '.[0].id' matching-releases.json)

@@ -17,7 +17,7 @@ import {
   releaseManifestSchema,
   type InstallationLock,
   type ReleaseManifest,
-} from "@aubos/contracts";
+} from "@vorton/contracts";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -38,10 +38,10 @@ const planPathSchema = z
 const actionSchema = z.object({
   path: planPathSchema,
   ownership: z.enum([
-    "aubos",
-    "aubos-image",
-    "aubos-validator",
-    "aubos-version",
+    "vorton",
+    "vorton-image",
+    "vorton-validator",
+    "vorton-version",
     "organization",
   ]),
   operation: z.enum(["create", "update", "delete"]),
@@ -213,7 +213,7 @@ function atomicWrite(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = join(
     dirname(path),
-    `.aubos-write-${process.pid}-${Date.now()}`,
+    `.vorton-write-${process.pid}-${Date.now()}`,
   );
   writeFileSync(temporary, content, {
     encoding: "utf8",
@@ -236,7 +236,7 @@ function loadRelease(
   );
   if (expectedCliVersion && release.cliVersion !== expectedCliVersion) {
     throw new Error(
-      `Release manifest requires AubOS CLI ${release.cliVersion}, but the running CLI is ${expectedCliVersion}`,
+      `Release manifest requires Vorton CLI ${release.cliVersion}, but the running CLI is ${expectedCliVersion}`,
     );
   }
   return release;
@@ -261,10 +261,10 @@ function action(
   root: string,
   path: string,
   ownership:
-    | "aubos"
-    | "aubos-image"
-    | "aubos-validator"
-    | "aubos-version"
+    | "vorton"
+    | "vorton-image"
+    | "vorton-validator"
+    | "vorton-version"
     | "organization",
   content: string | null,
 ): PlanAction {
@@ -318,7 +318,7 @@ function organizationScaffold(
       .replaceAll("{{HINDSIGHT_IMAGE}}", HINDSIGHT_IMAGE);
   const scaffold: Record<string, string> = {
     ".gitignore": render("gitignore.tpl"),
-    "aubos.yaml": render("aubos.yaml.tpl"),
+    "vorton.yaml": render("vorton.yaml.tpl"),
     "organization/identity.yaml": render("organization/identity.yaml.tpl"),
     "organization/modules.yaml": render("organization/modules.yaml.tpl"),
     "organization/memory.yaml": render("organization/memory.yaml.tpl"),
@@ -334,8 +334,8 @@ function organizationScaffold(
     "tests/acceptance/validate-installation.rb": render(
       "scripts/validate-installation.rb.tpl",
     ),
-    ".github/workflows/aubos-installation.yml": render(
-      "github/aubos-installation.yml.tpl",
+    ".github/workflows/vorton-installation.yml": render(
+      "github/vorton-installation.yml.tpl",
     ),
   };
   if (release.schemaVersion === 1) {
@@ -387,7 +387,7 @@ function replaceDesiredVersion(
   });
   if (replaced !== 1) {
     throw new Error(
-      `aubos.yaml must contain exactly one spec.release.version field`,
+      `vorton.yaml must contain exactly one spec.release.version field`,
     );
   }
   const result = updated.join("\n");
@@ -542,12 +542,12 @@ function updateValidatorContract(
 function normalizeValidatorContract(content: string): string {
   const fragments = validatorContractFragments(content);
   let normalized = content
-    .replace(fragments.migration, "{{AUBOS_MIGRATION_CONTRACT}}")
-    .replace(fragments.images, "{{AUBOS_IMAGE_CONTRACT}}");
+    .replace(fragments.migration, "{{VORTON_MIGRATION_CONTRACT}}")
+    .replace(fragments.images, "{{VORTON_IMAGE_CONTRACT}}");
   if (fragments.hindsight !== null) {
     normalized = normalized.replace(
       fragments.hindsight,
-      "{{AUBOS_HINDSIGHT_IMAGE_CONTRACT}}",
+      "{{VORTON_HINDSIGHT_IMAGE_CONTRACT}}",
     );
   }
   return normalized;
@@ -802,7 +802,7 @@ function assertSubscriptionFlyBoundary(
   const api =
     overrides[apiPath] ?? readFileSync(safeTarget(root, apiPath), "utf8");
   if (
-    optionalQuotedTomlValue(api, "AUBOS_WORKER_PROVIDER", apiPath, "env") !==
+    optionalQuotedTomlValue(api, "VORTON_WORKER_PROVIDER", apiPath, "env") !==
     "codex-subscription"
   ) {
     return;
@@ -814,10 +814,10 @@ function assertSubscriptionFlyBoundary(
     overrides[hindsightPath] ??
     readFileSync(safeTarget(root, hindsightPath), "utf8");
   if (
-    quotedTomlValue(worker, "AUBOS_WORKER_PROVIDER", workerPath, "env") !==
+    quotedTomlValue(worker, "VORTON_WORKER_PROVIDER", workerPath, "env") !==
       "codex-subscription" ||
-    quotedTomlValue(api, "AUBOS_WORKER_MODEL", apiPath, "env") !==
-      quotedTomlValue(worker, "AUBOS_CODEX_MODEL", workerPath, "env")
+    quotedTomlValue(api, "VORTON_WORKER_MODEL", apiPath, "env") !==
+      quotedTomlValue(worker, "VORTON_CODEX_MODEL", workerPath, "env")
   ) {
     throw new Error(
       "API and worker must use the same subscription provider and exact model",
@@ -844,14 +844,14 @@ function assertSubscriptionFlyBoundary(
   };
   const requestTimeoutMs = boundedMilliseconds(
     api,
-    "AUBOS_WORKER_REQUEST_TIMEOUT_MS",
+    "VORTON_WORKER_REQUEST_TIMEOUT_MS",
     apiPath,
     60_000,
     1_860_000,
   );
   const executionTimeoutMs = boundedMilliseconds(
     worker,
-    "AUBOS_CODEX_EXECUTION_TIMEOUT_MS",
+    "VORTON_CODEX_EXECUTION_TIMEOUT_MS",
     workerPath,
     60_000,
     1_800_000,
@@ -874,10 +874,10 @@ function assertSubscriptionFlyBoundary(
     }
   }
   const workerUrl = new URL(
-    quotedTomlValue(api, "AUBOS_WORKER_URL", apiPath, "env"),
+    quotedTomlValue(api, "VORTON_WORKER_URL", apiPath, "env"),
   );
   const hindsightUrl = new URL(
-    quotedTomlValue(api, "AUBOS_HINDSIGHT_URL", apiPath, "env"),
+    quotedTomlValue(api, "VORTON_HINDSIGHT_URL", apiPath, "env"),
   );
   if (
     workerUrl.protocol !== "http:" ||
@@ -903,13 +903,13 @@ function assertSubscriptionFlyBoundary(
   }
   const apiCeiling = quotedTomlValue(
     api,
-    "AUBOS_WORKER_CLASSIFICATION_CEILING",
+    "VORTON_WORKER_CLASSIFICATION_CEILING",
     apiPath,
     "env",
   );
   const workerCeiling = quotedTomlValue(
     worker,
-    "AUBOS_CODEX_CLASSIFICATION_CEILING",
+    "VORTON_CODEX_CLASSIFICATION_CEILING",
     workerPath,
     "env",
   );
@@ -999,7 +999,7 @@ function runtimeDeploymentContract(
   release: ReleaseManifest,
 ): number | null {
   const host = release.managedFiles.find(
-    (entry) => entry.path === "host/aubos-runtime.json",
+    (entry) => entry.path === "host/vorton-runtime.json",
   );
   if (!host) return null;
   const content = readFileSync(safeTarget(releaseRoot, host.template), "utf8");
@@ -1055,7 +1055,7 @@ function assertHindsightRuntimeProfile(
   if (
     optionalQuotedTomlValue(
       workerContent,
-      "AUBOS_WORKER_PROVIDER",
+      "VORTON_WORKER_PROVIDER",
       workerPath,
       "env",
     ) === "codex-subscription"
@@ -1218,7 +1218,7 @@ function deploymentUpgradeActions(
     const existing = readText(target);
     const nextImage = imageForDeploymentPath(release, path);
     if (existing === null) {
-      return [action(root, path, "aubos-image", scaffold[path]!)];
+      return [action(root, path, "vorton-image", scaffold[path]!)];
     }
     const hindsightSource =
       path === "deploy/hindsight.fly.toml"
@@ -1257,7 +1257,7 @@ function deploymentUpgradeActions(
     const updated = replaceBuildImage(existing, path, previousImage, nextImage);
     return updated === existing
       ? []
-      : [action(root, path, "aubos-image", updated)];
+      : [action(root, path, "vorton-image", updated)];
   });
 }
 
@@ -1274,7 +1274,7 @@ function validatorUpgradeActions(
     const updated = updateValidatorContract(existing, release);
     return updated === existing
       ? []
-      : [action(root, path, "aubos-validator", updated)];
+      : [action(root, path, "vorton-validator", updated)];
   });
 }
 
@@ -1290,7 +1290,7 @@ function managedActions(
       if (sha256(content) !== file.digest) {
         throw new Error(`Template digest mismatch: ${file.template}`);
       }
-      return action(root, file.path, "aubos", content);
+      return action(root, file.path, "vorton", content);
     })
     .sort((left, right) => compareText(left.path, right.path));
 }
@@ -1322,7 +1322,7 @@ function installationLock(
 
 function persistPlan(root: string, plan: DistributionPlan): PlannedResult {
   const hash = hashPlan(plan);
-  const path = safeTarget(root, `.aubos/plans/${hash}.json`);
+  const path = safeTarget(root, `.vorton/plans/${hash}.json`);
   writeJson(path, { ...plan, planHash: hash });
   return { hash, path, plan };
 }
@@ -1338,24 +1338,24 @@ export function planInit(options: {
   const release = loadRelease(options.releaseManifestPath, options.cliVersion);
   requireReleasedManifest(release, options.allowCandidate);
   const name = slugifyOrganization(options.organization);
-  const existingManifestPath = safeTarget(options.root, "aubos.yaml");
+  const existingManifestPath = safeTarget(options.root, "vorton.yaml");
   if (existsSync(existingManifestPath)) {
     const existingManifest = installationManifestSchema.parse(
       parseYaml(readFileSync(existingManifestPath, "utf8")),
     );
     if (existingManifest.metadata.name !== name) {
       throw new Error(
-        `Existing aubos.yaml names ${existingManifest.metadata.name}, not ${name}`,
+        `Existing vorton.yaml names ${existingManifest.metadata.name}, not ${name}`,
       );
     }
     if (existingManifest.spec.release.version !== release.version) {
       throw new Error(
-        `Existing aubos.yaml pins ${existingManifest.spec.release.version}, not ${release.version}`,
+        `Existing vorton.yaml pins ${existingManifest.spec.release.version}, not ${release.version}`,
       );
     }
   }
   for (const path of [
-    "aubos.lock.json",
+    "vorton.lock.json",
     ...release.managedFiles.map((file) => file.path),
   ]) {
     if (existsSync(safeTarget(options.root, path))) {
@@ -1379,8 +1379,8 @@ export function planInit(options: {
   const lock = installationLock(release, manifestDigest, managed, null);
   const lockAction = action(
     options.root,
-    "aubos.lock.json",
-    "aubos",
+    "vorton.lock.json",
+    "vorton",
     canonicalJson(lock),
   );
   const plan = planSchema.parse({
@@ -1402,10 +1402,10 @@ export function planUpgrade(options: {
   allowCandidate?: boolean;
   cliVersion?: string;
 }): PlannedResult {
-  const manifestPath = safeTarget(options.root, "aubos.yaml");
-  const lockPath = safeTarget(options.root, "aubos.lock.json");
+  const manifestPath = safeTarget(options.root, "vorton.yaml");
+  const lockPath = safeTarget(options.root, "vorton.lock.json");
   if (!existsSync(manifestPath) || !existsSync(lockPath)) {
-    throw new Error("Upgrade requires aubos.yaml and aubos.lock.json");
+    throw new Error("Upgrade requires vorton.yaml and vorton.lock.json");
   }
   const desiredContent = readFileSync(manifestPath, "utf8");
   const desired = installationManifestSchema.parse(parseYaml(desiredContent));
@@ -1422,8 +1422,8 @@ export function planUpgrade(options: {
   }
   const desiredVersion = action(
     options.root,
-    "aubos.yaml",
-    "aubos-version",
+    "vorton.yaml",
+    "vorton-version",
     replaceDesiredVersion(
       desiredContent,
       previous.release.version,
@@ -1472,7 +1472,7 @@ export function planUpgrade(options: {
   const nextPaths = new Set(managed.map((entry) => entry.path));
   const removals = Object.keys(previous.managedFiles)
     .filter((path) => !nextPaths.has(path))
-    .map((path) => action(options.root, path, "aubos", null));
+    .map((path) => action(options.root, path, "vorton", null));
   const manifestDigest = releaseDigest(release);
   const lock = installationLock(
     release,
@@ -1482,8 +1482,8 @@ export function planUpgrade(options: {
   );
   const lockAction = action(
     options.root,
-    "aubos.lock.json",
-    "aubos",
+    "vorton.lock.json",
+    "vorton",
     canonicalJson(lock),
   );
   const plan = planSchema.parse({
@@ -1501,9 +1501,9 @@ export function planUpgrade(options: {
       desiredVersion,
       lockAction,
     ].sort((left, right) =>
-      left.path === "aubos.lock.json"
+      left.path === "vorton.lock.json"
         ? 1
-        : right.path === "aubos.lock.json"
+        : right.path === "vorton.lock.json"
           ? -1
           : compareText(left.path, right.path),
     ),
@@ -1515,7 +1515,7 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
   if (entry.ownership === "organization") {
     const organizationOwned =
       entry.path === ".gitignore" ||
-      entry.path === "aubos.yaml" ||
+      entry.path === "vorton.yaml" ||
       entry.path.startsWith("organization/") ||
       entry.path.startsWith("modules/custom/") ||
       entry.path.startsWith("tools/") ||
@@ -1529,7 +1529,7 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
       organizationOwned
     );
   }
-  if (entry.ownership === "aubos-image") {
+  if (entry.ownership === "vorton-image") {
     if (
       plan.operation !== "upgrade" ||
       entry.operation === "delete" ||
@@ -1557,10 +1557,10 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
     }
     return true;
   }
-  if (entry.ownership === "aubos-version") {
+  if (entry.ownership === "vorton-version") {
     return (
       plan.operation === "upgrade" &&
-      entry.path === "aubos.yaml" &&
+      entry.path === "vorton.yaml" &&
       entry.operation === "update" &&
       entry.preimageContent !== null &&
       entry.content !== null &&
@@ -1572,7 +1572,7 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
       ) === entry.content
     );
   }
-  if (entry.ownership === "aubos-validator") {
+  if (entry.ownership === "vorton-validator") {
     return (
       plan.operation === "upgrade" &&
       (entry.path === "tests/acceptance/validate-installation.rb" ||
@@ -1586,13 +1586,13 @@ function allowedAction(plan: DistributionPlan, entry: PlanAction): boolean {
         normalizeValidatorContract(entry.content)
     );
   }
-  return entry.path === "aubos.lock.json" || entry.path.startsWith("host/");
+  return entry.path === "vorton.lock.json" || entry.path.startsWith("host/");
 }
 
 function plannedDeploymentContent(
   root: string,
   plan: DistributionPlan,
-  path: DeploymentPath | "host/aubos-runtime.json",
+  path: DeploymentPath | "host/vorton-runtime.json" | "host/aubos-runtime.json",
 ): string {
   const actions = plan.actions.filter((entry) => entry.path === path);
   if (actions.length > 1) {
@@ -1641,7 +1641,12 @@ function assertApplyDeploymentPreconditions(
   plan: DistributionPlan,
 ): void {
   if (plan.operation !== "upgrade") return;
-  const host = plannedDeploymentContent(root, plan, "host/aubos-runtime.json");
+  const hostPath = plan.release.managedFiles.some(
+    (file) => file.path === "host/vorton-runtime.json",
+  )
+    ? "host/vorton-runtime.json"
+    : "host/aubos-runtime.json";
+  const host = plannedDeploymentContent(root, plan, hostPath);
   const hostContract = JSON.parse(host) as { deploymentContract?: unknown };
   if (
     typeof hostContract.deploymentContract !== "number" ||
@@ -1661,7 +1666,7 @@ function assertApplyDeploymentPreconditions(
     assertPlannedHindsightValidatorContract(root, plan);
   }
   const desiredActions = plan.actions.filter(
-    (entry) => entry.path === "aubos.yaml",
+    (entry) => entry.path === "vorton.yaml",
   );
   if (desiredActions.length !== 1 || desiredActions[0]!.content === null) {
     throw new Error("Contract-3 upgrade requires one desired-version action");
@@ -1704,7 +1709,7 @@ function verifyActionContent(entry: PlanAction): void {
 }
 
 function journalPath(root: string, planHash: string): string {
-  return safeTarget(root, `.aubos/journals/${planHash}.json`);
+  return safeTarget(root, `.vorton/journals/${planHash}.json`);
 }
 
 function verifyStoredPlan(
@@ -1725,7 +1730,7 @@ function verifyStoredPlan(
   }
   if (expectedCliVersion && plan.release.cliVersion !== expectedCliVersion) {
     throw new Error(
-      `Release manifest requires AubOS CLI ${plan.release.cliVersion}, but the running CLI is ${expectedCliVersion}`,
+      `Release manifest requires Vorton CLI ${plan.release.cliVersion}, but the running CLI is ${expectedCliVersion}`,
     );
   }
   return plan;
@@ -1807,10 +1812,10 @@ function verifyJournalMatchesPlan(
 
 function rollbackManagedAction(entry: PlanAction): boolean {
   return (
-    entry.ownership === "aubos" ||
-    entry.ownership === "aubos-image" ||
-    entry.ownership === "aubos-validator" ||
-    entry.ownership === "aubos-version"
+    entry.ownership === "vorton" ||
+    entry.ownership === "vorton-image" ||
+    entry.ownership === "vorton-validator" ||
+    entry.ownership === "vorton-version"
   );
 }
 
@@ -1822,7 +1827,7 @@ export function applyPlan(options: {
 }): ApplyResult {
   const planPath =
     options.planPath ??
-    safeTarget(options.root, `.aubos/plans/${options.planHash}.json`);
+    safeTarget(options.root, `.vorton/plans/${options.planHash}.json`);
   const plan = verifyStoredPlan(planPath, options.planHash, options.cliVersion);
   plan.actions.forEach(verifyActionContent);
   const actionPaths = new Set(plan.actions.map((entry) => entry.path));
@@ -1830,7 +1835,7 @@ export function applyPlan(options: {
     throw new Error("Plan contains duplicate action paths");
   }
   if (plan.actions.some((entry) => !allowedAction(plan, entry))) {
-    throw new Error("Plan contains an action outside AubOS ownership rules");
+    throw new Error("Plan contains an action outside Vorton ownership rules");
   }
   assertApplyDeploymentPreconditions(options.root, plan);
   const loaded = loadOrCreateJournal(options.root, plan, options.planHash);
@@ -1908,7 +1913,7 @@ function rollbackEntryAlreadyRestored(
   const target = safeTarget(root, entry.path);
   const current = readText(target);
   if (current === null && entry.preimageContent === null) return true;
-  if (entry.ownership === "aubos-image") {
+  if (entry.ownership === "vorton-image") {
     return (
       current !== null &&
       entry.preimageContent !== null &&
@@ -1916,7 +1921,7 @@ function rollbackEntryAlreadyRestored(
         buildImage(entry.preimageContent, entry.path)
     );
   }
-  if (entry.ownership === "aubos-version") {
+  if (entry.ownership === "vorton-version") {
     return (
       current !== null &&
       plan.fromVersion !== null &&
@@ -1924,7 +1929,7 @@ function rollbackEntryAlreadyRestored(
         .version === plan.fromVersion
     );
   }
-  if (entry.ownership === "aubos-validator") {
+  if (entry.ownership === "vorton-validator") {
     if (current === null || entry.preimageContent === null) return false;
     const currentContract = validatorContractFragments(current);
     const preimageContract = validatorContractFragments(entry.preimageContent);
@@ -1944,7 +1949,7 @@ function entryStillApplied(
 ): boolean {
   const target = safeTarget(root, entry.path);
   const current = readText(target);
-  if (entry.ownership === "aubos-image") {
+  if (entry.ownership === "vorton-image") {
     if (entry.preimageContent === null) {
       return fileDigest(target) === entry.postimage;
     }
@@ -1954,14 +1959,14 @@ function entryStillApplied(
       buildImage(current, entry.path) === buildImage(entry.content, entry.path)
     );
   }
-  if (entry.ownership === "aubos-version") {
+  if (entry.ownership === "vorton-version") {
     return (
       current !== null &&
       installationManifestSchema.parse(parseYaml(current)).spec.release
         .version === plan.release.version
     );
   }
-  if (entry.ownership === "aubos-validator") {
+  if (entry.ownership === "vorton-validator") {
     if (current === null || entry.content === null) return false;
     const currentContract = validatorContractFragments(current);
     const appliedContract = validatorContractFragments(entry.content);
@@ -1981,7 +1986,7 @@ export function rollbackPlan(options: {
 }): RollbackResult {
   const storedPlanPath = safeTarget(
     options.root,
-    `.aubos/plans/${options.planHash}.json`,
+    `.vorton/plans/${options.planHash}.json`,
   );
   const plan = verifyStoredPlan(
     storedPlanPath,
@@ -2038,7 +2043,7 @@ export function rollbackPlan(options: {
     const target = safeTarget(options.root, entry.path);
     if (entry.preimageContent === null) {
       if (existsSync(target)) unlinkSync(target);
-    } else if (entry.ownership === "aubos-image" && entry.content !== null) {
+    } else if (entry.ownership === "vorton-image" && entry.content !== null) {
       const current = readText(target)!;
       atomicWrite(
         target,
@@ -2049,14 +2054,14 @@ export function rollbackPlan(options: {
           buildImage(entry.preimageContent, entry.path),
         ),
       );
-    } else if (entry.ownership === "aubos-version" && entry.content !== null) {
+    } else if (entry.ownership === "vorton-version" && entry.content !== null) {
       const current = readText(target)!;
       atomicWrite(
         target,
         replaceDesiredVersion(current, plan.release.version, plan.fromVersion!),
       );
     } else if (
-      entry.ownership === "aubos-validator" &&
+      entry.ownership === "vorton-validator" &&
       entry.content !== null
     ) {
       atomicWrite(
@@ -2085,10 +2090,10 @@ export function cleanSyntheticRoot(root: string): void {
 
 export function validateInstallation(root: string): void {
   const manifest = installationManifestSchema.parse(
-    parseYaml(readFileSync(safeTarget(root, "aubos.yaml"), "utf8")),
+    parseYaml(readFileSync(safeTarget(root, "vorton.yaml"), "utf8")),
   );
   const lock = installationLockSchema.parse(
-    JSON.parse(readFileSync(safeTarget(root, "aubos.lock.json"), "utf8")),
+    JSON.parse(readFileSync(safeTarget(root, "vorton.lock.json"), "utf8")),
   );
   if (manifest.spec.deployment.provider !== "fly") {
     throw new Error("Wave 1 supports only the Fly deployment contract");
@@ -2157,8 +2162,12 @@ export function validateInstallation(root: string): void {
     }
   }
   if (lock.images.web) {
+    const hostPath =
+      "host/vorton-runtime.json" in lock.managedFiles
+        ? "host/vorton-runtime.json"
+        : "host/aubos-runtime.json";
     const hostContract = JSON.parse(
-      readFileSync(safeTarget(root, "host/aubos-runtime.json"), "utf8"),
+      readFileSync(safeTarget(root, hostPath), "utf8"),
     ) as { deploymentContract?: unknown };
     const usesSubscriptionMemoryProfile =
       typeof hostContract.deploymentContract === "number" &&

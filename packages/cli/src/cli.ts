@@ -25,12 +25,12 @@ function required(args: string[], flag: string): string {
 function help(): never {
   process.stderr.write(
     "Usage:\n" +
-      "  aubos init plan --organization NAME --manifest PATH --artifact-root PATH [--root PATH]\n" +
-      "  aubos init apply --plan sha256:HASH [--root PATH]\n" +
-      "  aubos upgrade plan --manifest PATH --artifact-root PATH [--root PATH]\n" +
-      "  aubos upgrade apply --plan sha256:HASH [--root PATH]\n" +
-      "  aubos rollback --plan sha256:HASH [--root PATH]\n" +
-      "  aubos validate [--root PATH]\n",
+      "  vorton init plan --organization NAME --manifest PATH --artifact-root PATH [--root PATH]\n" +
+      "  vorton init apply --plan sha256:HASH [--root PATH]\n" +
+      "  vorton upgrade plan --manifest PATH --artifact-root PATH [--root PATH]\n" +
+      "  vorton upgrade apply --plan sha256:HASH [--root PATH]\n" +
+      "  vorton rollback --plan sha256:HASH [--root PATH]\n" +
+      "  vorton validate [--root PATH]\n",
   );
   process.exit(2);
 }

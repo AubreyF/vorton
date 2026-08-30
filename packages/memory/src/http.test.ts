@@ -15,8 +15,8 @@ const bank: HindsightBank = {
   realm: "organizational",
 };
 const observationTags = [
-  `aubos-installation:${installationId}`,
-  "aubos-realm:organizational",
+  `vorton-installation:${installationId}`,
+  "vorton-realm:organizational",
 ];
 const memory: HindsightMemory = {
   id: "derived-memory-1",
@@ -25,7 +25,7 @@ const memory: HindsightMemory = {
   citations: [
     {
       sourceRevisionId,
-      sourceUri: "urn:aubos:synthetic",
+      sourceUri: "urn:vorton:synthetic",
       revisionHash: "a".repeat(64),
       locator: "fixture:1",
     },
@@ -35,7 +35,7 @@ const memory: HindsightMemory = {
 };
 const secondCitation = {
   sourceRevisionId: secondSourceRevisionId,
-  sourceUri: "urn:aubos:second-synthetic",
+  sourceUri: "urn:vorton:second-synthetic",
   revisionHash: "b".repeat(64),
   locator: "fixture:2",
 };
@@ -48,12 +48,12 @@ function lineageMetadata(input: {
   invalidatedAt?: string;
 }): Record<string, string> {
   return {
-    aubos_memory_id: input.memoryId,
-    aubos_citations: JSON.stringify(input.citations),
-    aubos_source_revision_ids: JSON.stringify(input.sourceRevisionIds),
-    aubos_invalidated_at: input.invalidatedAt ?? "",
-    aubos_classification: input.classification ?? "synthetic",
-    aubos_lineage_version: "1",
+    vorton_memory_id: input.memoryId,
+    vorton_citations: JSON.stringify(input.citations),
+    vorton_source_revision_ids: JSON.stringify(input.sourceRevisionIds),
+    vorton_invalidated_at: input.invalidatedAt ?? "",
+    vorton_classification: input.classification ?? "synthetic",
+    vorton_lineage_version: "1",
   };
 }
 
@@ -73,9 +73,9 @@ function sourceFact(input: {
     type: input.type ?? "world",
     document_id: input.memoryId,
     tags: [
-      `aubos-installation:${installationId}`,
-      "aubos-realm:organizational",
-      ...sourceRevisionIds.map((id) => `aubos-source:${id}`),
+      `vorton-installation:${installationId}`,
+      "vorton-realm:organizational",
+      ...sourceRevisionIds.map((id) => `vorton-source:${id}`),
     ],
     metadata: lineageMetadata({
       memoryId: input.memoryId,
@@ -98,9 +98,9 @@ const rawFallback = {
   type: "world",
   document_id: memory.id,
   tags: [
-    `aubos-installation:${installationId}`,
-    "aubos-realm:organizational",
-    `aubos-source:${sourceRevisionId}`,
+    `vorton-installation:${installationId}`,
+    "vorton-realm:organizational",
+    `vorton-source:${sourceRevisionId}`,
   ],
   metadata: lineageMetadata({
     memoryId: memory.id,
@@ -123,7 +123,7 @@ describe("HTTP Hindsight adapter", () => {
     ).toThrow("API_KEY is required");
   });
 
-  it("retains deterministic document identity and complete AubOS lineage", async () => {
+  it("retains deterministic document identity and complete Vorton lineage", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetch = vi.fn(
       async (url: string | URL | Request, init?: RequestInit) => {
@@ -149,19 +149,22 @@ describe("HTTP Hindsight adapter", () => {
       document_id: memory.id,
       update_mode: "replace",
       observation_scopes: [
-        [`aubos-installation:${installationId}`, "aubos-realm:organizational"],
+        [
+          `vorton-installation:${installationId}`,
+          "vorton-realm:organizational",
+        ],
       ],
     });
     expect(body.items[0].observation_scopes[0]).not.toContain(
-      `aubos-source:${sourceRevisionId}`,
+      `vorton-source:${sourceRevisionId}`,
     );
-    expect(JSON.parse(body.items[0].metadata.aubos_citations)).toEqual(
+    expect(JSON.parse(body.items[0].metadata.vorton_citations)).toEqual(
       memory.citations,
     );
     expect(
-      JSON.parse(body.items[0].metadata.aubos_source_revision_ids),
+      JSON.parse(body.items[0].metadata.vorton_source_revision_ids),
     ).toEqual([sourceRevisionId]);
-    expect(body.items[0].metadata.aubos_classification).toBe("synthetic");
+    expect(body.items[0].metadata.vorton_classification).toBe("synthetic");
   });
 
   it("requests raw facts and fully hydrated native observations within the stable bank scope", async () => {
@@ -192,8 +195,8 @@ describe("HTTP Hindsight adapter", () => {
       budget: "low",
       max_tokens: 4096,
       tags: [
-        `aubos-installation:${installationId}`,
-        "aubos-realm:organizational",
+        `vorton-installation:${installationId}`,
+        "vorton-realm:organizational",
       ],
       tags_match: "all_strict",
       include: {
@@ -287,7 +290,7 @@ describe("HTTP Hindsight adapter", () => {
     },
     {
       name: "wrong observation scope",
-      observation: { tags: ["aubos-realm:personal"] },
+      observation: { tags: ["vorton-realm:personal"] },
       response: {
         source_facts: {
           "fact-source": sourceFact({
@@ -352,38 +355,38 @@ describe("HTTP Hindsight adapter", () => {
       }),
     },
     {
-      name: "missing AubOS lineage version",
+      name: "missing Vorton lineage version",
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
-        metadata: { ...fact.metadata, aubos_lineage_version: "" },
+        metadata: { ...fact.metadata, vorton_lineage_version: "" },
       }),
     },
     {
-      name: "missing AubOS classification",
+      name: "missing Vorton classification",
       mutate: (fact: ReturnType<typeof sourceFact>) => {
-        const { aubos_classification: _omitted, ...metadata } = fact.metadata;
+        const { vorton_classification: _omitted, ...metadata } = fact.metadata;
         return { ...fact, metadata };
       },
     },
     {
-      name: "malformed AubOS classification",
+      name: "malformed Vorton classification",
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
-        metadata: { ...fact.metadata, aubos_classification: "classified" },
+        metadata: { ...fact.metadata, vorton_classification: "classified" },
       }),
     },
     {
       name: "empty citations",
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
-        metadata: { ...fact.metadata, aubos_citations: "[]" },
+        metadata: { ...fact.metadata, vorton_citations: "[]" },
       }),
     },
     {
       name: "empty source revision IDs",
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
-        metadata: { ...fact.metadata, aubos_source_revision_ids: "[]" },
+        metadata: { ...fact.metadata, vorton_source_revision_ids: "[]" },
       }),
     },
     {
@@ -392,7 +395,7 @@ describe("HTTP Hindsight adapter", () => {
         ...fact,
         metadata: {
           ...fact.metadata,
-          aubos_source_revision_ids: JSON.stringify([secondSourceRevisionId]),
+          vorton_source_revision_ids: JSON.stringify([secondSourceRevisionId]),
         },
       }),
     },
@@ -401,7 +404,7 @@ describe("HTTP Hindsight adapter", () => {
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
         tags: fact.tags.filter(
-          (tag) => tag !== `aubos-installation:${installationId}`,
+          (tag) => tag !== `vorton-installation:${installationId}`,
         ),
       }),
     },
@@ -410,7 +413,7 @@ describe("HTTP Hindsight adapter", () => {
       mutate: (fact: ReturnType<typeof sourceFact>) => ({
         ...fact,
         tags: fact.tags.filter(
-          (tag) => tag !== `aubos-source:${sourceRevisionId}`,
+          (tag) => tag !== `vorton-source:${sourceRevisionId}`,
         ),
       }),
     },
@@ -420,7 +423,7 @@ describe("HTTP Hindsight adapter", () => {
         ...fact,
         metadata: {
           ...fact.metadata,
-          aubos_invalidated_at: "2026-08-28T12:00:00.000Z",
+          vorton_invalidated_at: "2026-08-28T12:00:00.000Z",
         },
       }),
     },
@@ -469,8 +472,8 @@ describe("HTTP Hindsight adapter", () => {
     },
   ])("drops a raw fact with $name", async ({ classification }) => {
     const metadata = { ...rawFallback.metadata } as Record<string, unknown>;
-    if (classification === undefined) delete metadata.aubos_classification;
-    else metadata.aubos_classification = classification;
+    if (classification === undefined) delete metadata.vorton_classification;
+    else metadata.vorton_classification = classification;
     const fetch = vi.fn(async () =>
       Response.json({
         results: [{ ...rawFallback, metadata }],
@@ -544,7 +547,7 @@ describe("HTTP Hindsight adapter", () => {
     const listUrl = new URL(calls[0]!.url);
     expect(listUrl.pathname).toContain("/memories/list");
     expect(Object.fromEntries(listUrl.searchParams)).toEqual({
-      tags: `aubos-source:${sourceRevisionId}`,
+      tags: `vorton-source:${sourceRevisionId}`,
       tags_match: "all_strict",
       state: "valid",
       limit: "100",
@@ -555,7 +558,8 @@ describe("HTTP Hindsight adapter", () => {
       method: "PATCH",
       body: {
         state: "invalidated",
-        reason: "AubOS source revision invalidated at 2026-08-28T12:00:00.000Z",
+        reason:
+          "Vorton source revision invalidated at 2026-08-28T12:00:00.000Z",
       },
     });
     expect(calls[2]).toMatchObject({

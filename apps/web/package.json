@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/web",
+  "name": "@vorton/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,14 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aubos/control-plane": "0.0.0",
-    "@aubos/example-moonbase-triage": "0.0.0",
-    "@aubos/factory": "0.0.0",
-    "@aubos/ui": "0.0.0",
-    "@supabase/supabase-js": "^2.57.4",
     "@fontsource/barlow": "^5.2.5",
     "@fontsource/newsreader": "^5.2.5",
+    "@supabase/supabase-js": "^2.57.4",
+    "@vorton/control-plane": "0.0.0",
+    "@vorton/example-moonbase-triage": "0.0.0",
+    "@vorton/factory": "0.0.0",
+    "@vorton/ui": "0.0.0",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
+    "modern-screenshot": "^4.7.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

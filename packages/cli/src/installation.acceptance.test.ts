@@ -43,7 +43,7 @@ function manifest(version: "0.1.0" | "0.1.1" | "0.2.0" | "0.3.0"): string {
   );
 }
 
-function releasedManifest(version: "0.2.1" | "0.3.1"): string {
+function releasedManifest(version: "0.2.1" | "0.3.0" | "0.3.1"): string {
   return join(repositoryRoot, "release/manifests", `${version}.json`);
 }
 
@@ -62,21 +62,21 @@ const validatorPaths = [
 
 const v2Images = {
   "deploy/api.fly.toml":
-    "registry.invalid/aubos-fixture/control-plane@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "registry.invalid/vorton-fixture/control-plane@sha256:3333333333333333333333333333333333333333333333333333333333333333",
   "deploy/web.fly.toml":
-    "registry.invalid/aubos-fixture/web@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "registry.invalid/vorton-fixture/web@sha256:4444444444444444444444444444444444444444444444444444444444444444",
   "deploy/worker.fly.toml":
-    "registry.invalid/aubos-fixture/worker@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "registry.invalid/vorton-fixture/worker@sha256:5555555555555555555555555555555555555555555555555555555555555555",
   "deploy/hindsight.fly.toml": hindsightImage,
 } as const;
 
 const v3Images = {
   "deploy/api.fly.toml":
-    "registry.invalid/aubos-fixture/control-plane@sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "registry.invalid/vorton-fixture/control-plane@sha256:6666666666666666666666666666666666666666666666666666666666666666",
   "deploy/web.fly.toml":
-    "registry.invalid/aubos-fixture/web@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "registry.invalid/vorton-fixture/web@sha256:7777777777777777777777777777777777777777777777777777777777777777",
   "deploy/worker.fly.toml":
-    "registry.invalid/aubos-fixture/worker@sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "registry.invalid/vorton-fixture/worker@sha256:8888888888888888888888888888888888888888888888888888888888888888",
   "deploy/hindsight.fly.toml": hindsightImage,
 } as const;
 
@@ -87,14 +87,14 @@ function buildImage(content: string): string {
 }
 
 function syntheticInstallationRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "aubos-synthetic-proof-"));
+  const root = mkdtempSync(join(tmpdir(), "vorton-synthetic-proof-"));
   generatedRoots.push(root);
   cpSync(fixtureRoot, root, { recursive: true });
   return root;
 }
 
 function blankInstallationRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "aubos-blank-proof-"));
+  const root = mkdtempSync(join(tmpdir(), "vorton-blank-proof-"));
   generatedRoots.push(root);
   return root;
 }
@@ -123,7 +123,7 @@ function snapshotExistingFiles(root: string): Record<string, string> {
 
 function snapshotOrganizationOwned(root: string): Record<string, string> {
   const lock = JSON.parse(
-    readFileSync(join(root, "aubos.lock.json"), "utf8"),
+    readFileSync(join(root, "vorton.lock.json"), "utf8"),
   ) as { managedFiles: Record<string, string> };
   const managed = new Set(Object.keys(lock.managedFiles));
   return Object.fromEntries(
@@ -131,15 +131,15 @@ function snapshotOrganizationOwned(root: string): Record<string, string> {
       .map((path) => relative(root, path))
       .filter(
         (path) =>
-          path !== "aubos.lock.json" &&
-          !path.startsWith(".aubos/") &&
+          path !== "vorton.lock.json" &&
+          !path.startsWith(".vorton/") &&
           !managed.has(path),
       )
       .map((path) => [path, readFileSync(join(root, path), "utf8")] as const)
       .map(([path, content]) => [
         path,
-        path === "aubos.yaml"
-          ? content.replace(/^(\s*version:\s*)[^\n#]+/m, "$1{{AUBOS_VERSION}}")
+        path === "vorton.yaml"
+          ? content.replace(/^(\s*version:\s*)[^\n#]+/m, "$1{{VORTON_VERSION}}")
           : content,
       ]),
   );
@@ -279,8 +279,8 @@ describe("synthetic organization installation acceptance", () => {
     );
     validateInstallation(root);
     writeFileSync(
-      join(root, "aubos.yaml"),
-      readFileSync(join(root, "aubos.yaml"), "utf8").replace(
+      join(root, "vorton.yaml"),
+      readFileSync(join(root, "vorton.yaml"), "utf8").replace(
         "  modules:",
         "  # ORGANIZATION_DESIRED_MARKER\n  modules:",
       ),
@@ -288,10 +288,10 @@ describe("synthetic organization installation acceptance", () => {
 
     const oldImages = {
       "deploy/api.fly.toml":
-        "registry.invalid/aubos-fixture/control-plane@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "registry.invalid/vorton-fixture/control-plane@sha256:1111111111111111111111111111111111111111111111111111111111111111",
       "deploy/web.fly.toml": v2Images["deploy/web.fly.toml"],
       "deploy/worker.fly.toml":
-        "registry.invalid/aubos-fixture/worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "registry.invalid/vorton-fixture/worker@sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "deploy/hindsight.fly.toml": previousHindsightImage,
     } as const;
     for (const [path, image] of Object.entries(oldImages)) {
@@ -317,7 +317,7 @@ describe("synthetic organization installation acceptance", () => {
       allowCandidate: true,
     });
     const deploymentActions = upgraded.plan.actions.filter(
-      (entry) => entry.ownership === "aubos-image",
+      (entry) => entry.ownership === "vorton-image",
     );
     expect(deploymentActions.map((entry) => entry.path).sort()).toEqual([
       "deploy/api.fly.toml",
@@ -326,7 +326,7 @@ describe("synthetic organization installation acceptance", () => {
     ]);
     expect(
       upgraded.plan.actions
-        .filter((entry) => entry.ownership === "aubos-validator")
+        .filter((entry) => entry.ownership === "vorton-validator")
         .map((entry) => entry.path),
     ).toEqual([
       "scripts/validate-installation.rb",
@@ -334,9 +334,9 @@ describe("synthetic organization installation acceptance", () => {
     ]);
     expect(
       upgraded.plan.actions
-        .filter((entry) => entry.ownership === "aubos-version")
+        .filter((entry) => entry.ownership === "vorton-version")
         .map((entry) => entry.path),
-    ).toEqual(["aubos.yaml"]);
+    ).toEqual(["vorton.yaml"]);
     applyPlan({ root, planHash: upgraded.hash });
     validateInstallation(root);
     expect(
@@ -346,10 +346,10 @@ describe("synthetic organization installation acceptance", () => {
         { encoding: "utf8" },
       ),
     ).toContain("0.2.0 valid");
-    expect(readFileSync(join(root, "aubos.yaml"), "utf8")).toContain(
+    expect(readFileSync(join(root, "vorton.yaml"), "utf8")).toContain(
       "ORGANIZATION_DESIRED_MARKER",
     );
-    expect(readFileSync(join(root, "aubos.yaml"), "utf8")).toContain(
+    expect(readFileSync(join(root, "vorton.yaml"), "utf8")).toContain(
       "version: 0.2.0",
     );
 
@@ -386,8 +386,8 @@ describe("synthetic organization installation acceptance", () => {
       ),
     );
     writeFileSync(
-      join(root, "aubos.yaml"),
-      readFileSync(join(root, "aubos.yaml"), "utf8").replace(
+      join(root, "vorton.yaml"),
+      readFileSync(join(root, "vorton.yaml"), "utf8").replace(
         "# ORGANIZATION_DESIRED_MARKER",
         "# ORGANIZATION_DESIRED_MARKER\n  # LATER_ORGANIZATION_EDIT",
       ),
@@ -417,7 +417,7 @@ describe("synthetic organization installation acceptance", () => {
     expect(readFileSync(join(root, "deploy/fly.toml"), "utf8")).toBe(
       legacyDeployment,
     );
-    const rolledBackDesired = readFileSync(join(root, "aubos.yaml"), "utf8");
+    const rolledBackDesired = readFileSync(join(root, "vorton.yaml"), "utf8");
     expect(rolledBackDesired).toContain("version: 0.1.1");
     expect(rolledBackDesired).toContain("LATER_ORGANIZATION_EDIT");
     const rolledBackValidator = readFileSync(
@@ -478,12 +478,12 @@ describe("synthetic organization installation acceptance", () => {
         apiPath,
         readFileSync(apiPath, "utf8")
           .replace(
-            'AUBOS_WORKER_PROVIDER = "codex-subscription"',
-            'AUBOS_WORKER_PROVIDER = "openai-responses"',
+            'VORTON_WORKER_PROVIDER = "codex-subscription"',
+            'VORTON_WORKER_PROVIDER = "openai-responses"',
           )
           .replace(
-            'AUBOS_WORKER_MODEL = "replace-with-explicit-codex-model"',
-            'AUBOS_WORKER_MODEL = "replace-with-explicit-model"',
+            'VORTON_WORKER_MODEL = "replace-with-explicit-codex-model"',
+            'VORTON_WORKER_MODEL = "replace-with-explicit-model"',
           ),
       );
       writeFileSync(
@@ -496,10 +496,10 @@ primary_region = "sea"
 
 [env]
   PORT = "8080"
-  AUBOS_WORKER_PROVIDER = "openai-responses"
-  AUBOS_OPENAI_MODEL = "replace-with-explicit-model"
-  AUBOS_OPENAI_STORE_RESPONSES = "false"
-  AUBOS_OPENAI_CLASSIFICATION_CEILING = "internal"
+  VORTON_WORKER_PROVIDER = "openai-responses"
+  VORTON_OPENAI_MODEL = "replace-with-explicit-model"
+  VORTON_OPENAI_STORE_RESPONSES = "false"
+  VORTON_OPENAI_CLASSIFICATION_CEILING = "internal"
 `,
       );
       writeFileSync(
@@ -686,7 +686,7 @@ primary_region = "sea"
     );
     const forgedSnapshot = Object.fromEntries(
       Object.entries(snapshotExistingFiles(forgedPlanRoot)).filter(
-        ([path]) => !path.startsWith(".aubos/"),
+        ([path]) => !path.startsWith(".vorton/"),
       ),
     );
     expect(() =>
@@ -699,7 +699,7 @@ primary_region = "sea"
     expect(
       Object.fromEntries(
         Object.entries(snapshotExistingFiles(forgedPlanRoot)).filter(
-          ([path]) => !path.startsWith(".aubos/"),
+          ([path]) => !path.startsWith(".vorton/"),
         ),
       ),
     ).toEqual(forgedSnapshot);
@@ -733,7 +733,7 @@ primary_region = "sea"
     );
     const omittedValidatorSnapshot = Object.fromEntries(
       Object.entries(snapshotExistingFiles(omittedValidatorRoot)).filter(
-        ([path]) => !path.startsWith(".aubos/"),
+        ([path]) => !path.startsWith(".vorton/"),
       ),
     );
     expect(() =>
@@ -746,7 +746,7 @@ primary_region = "sea"
     expect(
       Object.fromEntries(
         Object.entries(snapshotExistingFiles(omittedValidatorRoot)).filter(
-          ([path]) => !path.startsWith(".aubos/"),
+          ([path]) => !path.startsWith(".vorton/"),
         ),
       ),
     ).toEqual(omittedValidatorSnapshot);
@@ -769,7 +769,7 @@ primary_region = "sea"
     );
     const conflictSnapshot = Object.fromEntries(
       Object.entries(snapshotExistingFiles(conflictRoot)).filter(
-        ([path]) => !path.startsWith(".aubos/"),
+        ([path]) => !path.startsWith(".vorton/"),
       ),
     );
     expect(() =>
@@ -778,7 +778,7 @@ primary_region = "sea"
     expect(
       Object.fromEntries(
         Object.entries(snapshotExistingFiles(conflictRoot)).filter(
-          ([path]) => !path.startsWith(".aubos/"),
+          ([path]) => !path.startsWith(".vorton/"),
         ),
       ),
     ).toEqual(conflictSnapshot);
@@ -795,8 +795,8 @@ primary_region = "sea"
       join(root, "host/aubos-runtime.json"),
       "utf8",
     );
-    const previousDesired = readFileSync(join(root, "aubos.yaml"), "utf8");
-    const previousLock = readFileSync(join(root, "aubos.lock.json"), "utf8");
+    const previousDesired = readFileSync(join(root, "vorton.yaml"), "utf8");
+    const previousLock = readFileSync(join(root, "vorton.lock.json"), "utf8");
     const firstPlan = planUpgrade({
       root,
       releaseManifestPath: manifest("0.3.0"),
@@ -811,15 +811,16 @@ primary_region = "sea"
     });
     expect(secondPlan.hash).toBe(firstPlan.hash);
     expect(firstPlan.plan.actions.map((entry) => entry.path).sort()).toEqual([
-      "aubos.lock.json",
-      "aubos.yaml",
       "deploy/api.fly.toml",
       "deploy/hindsight.fly.toml",
       "deploy/web.fly.toml",
       "deploy/worker.fly.toml",
       "host/aubos-runtime.json",
+      "host/vorton-runtime.json",
       "scripts/validate-installation.rb",
       "tests/acceptance/validate-installation.rb",
+      "vorton.lock.json",
+      "vorton.yaml",
     ]);
 
     expect(applyPlan({ root, planHash: firstPlan.hash }).status).toBe(
@@ -830,7 +831,7 @@ primary_region = "sea"
     );
     validateInstallation(root);
     expect(
-      readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
+      readFileSync(join(root, "host/vorton-runtime.json"), "utf8"),
     ).toContain('"deploymentContract": 3');
     for (const [path, nextImage] of Object.entries(v3Images) as Array<
       [keyof typeof v3Images, string]
@@ -937,8 +938,8 @@ primary_region = "sea"
           "deploy/worker.fly.toml",
           (content) =>
             content.replace(
-              'AUBOS_WORKER_PROVIDER = "codex-subscription"',
-              'AUBOS_WORKER_PROVIDER = "openai-responses"',
+              'VORTON_WORKER_PROVIDER = "codex-subscription"',
+              'VORTON_WORKER_PROVIDER = "openai-responses"',
             ),
         ],
       ],
@@ -950,16 +951,16 @@ primary_region = "sea"
           "deploy/api.fly.toml",
           (content) =>
             content.replace(
-              'AUBOS_WORKER_CLASSIFICATION_CEILING = "internal"',
-              'AUBOS_WORKER_CLASSIFICATION_CEILING = "classified"',
+              'VORTON_WORKER_CLASSIFICATION_CEILING = "internal"',
+              'VORTON_WORKER_CLASSIFICATION_CEILING = "classified"',
             ),
         ],
         [
           "deploy/worker.fly.toml",
           (content) =>
             content.replace(
-              'AUBOS_CODEX_CLASSIFICATION_CEILING = "internal"',
-              'AUBOS_CODEX_CLASSIFICATION_CEILING = "classified"',
+              'VORTON_CODEX_CLASSIFICATION_CEILING = "internal"',
+              'VORTON_CODEX_CLASSIFICATION_CEILING = "classified"',
             ),
         ],
       ],
@@ -971,8 +972,8 @@ primary_region = "sea"
           "deploy/api.fly.toml",
           (content) =>
             content.replace(
-              'AUBOS_WORKER_REQUEST_TIMEOUT_MS = "930000"',
-              'AUBOS_WORKER_REQUEST_TIMEOUT_MS = "not-a-number"',
+              'VORTON_WORKER_REQUEST_TIMEOUT_MS = "930000"',
+              'VORTON_WORKER_REQUEST_TIMEOUT_MS = "not-a-number"',
             ),
         ],
       ],
@@ -996,7 +997,7 @@ primary_region = "sea"
         ),
       );
     }
-    const journalPath = join(root, `.aubos/journals/${firstPlan.hash}.json`);
+    const journalPath = join(root, `.vorton/journals/${firstPlan.hash}.json`);
     const interruptedJournal = JSON.parse(
       readFileSync(journalPath, "utf8"),
     ) as {
@@ -1004,7 +1005,7 @@ primary_region = "sea"
       actions: Array<{ path: string; state: string }>;
     };
     const interruptedIndex = interruptedJournal.actions.findIndex(
-      (entry) => entry.path === "deploy/api.fly.toml",
+      (entry) => entry.path === "deploy/worker.fly.toml",
     );
     expect(interruptedIndex).toBeGreaterThan(0);
     interruptedJournal.status = "applying";
@@ -1035,8 +1036,8 @@ primary_region = "sea"
       "  # ORGANIZATION_AFTER_UPGRADE\n  modules:",
     );
     writeFileSync(
-      join(root, "aubos.yaml"),
-      readFileSync(join(root, "aubos.yaml"), "utf8").replace(
+      join(root, "vorton.yaml"),
+      readFileSync(join(root, "vorton.yaml"), "utf8").replace(
         "  modules:",
         "  # ORGANIZATION_AFTER_UPGRADE\n  modules:",
       ),
@@ -1055,7 +1056,8 @@ primary_region = "sea"
     // preimages but before those journal states were persisted. The retry must
     // recognize each restoration without discarding organization edits.
     writeFileSync(join(root, "host/aubos-runtime.json"), previousHost);
-    writeFileSync(join(root, "aubos.yaml"), desiredAfterOrganizationEdit);
+    rmSync(join(root, "host/vorton-runtime.json"));
+    writeFileSync(join(root, "vorton.yaml"), desiredAfterOrganizationEdit);
     const hindsightPath = join(root, "deploy/hindsight.fly.toml");
     writeFileSync(
       hindsightPath,
@@ -1082,13 +1084,14 @@ primary_region = "sea"
       status: "already-rolled-back",
       restored: [],
     });
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toBe(
       previousLock,
     );
     expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
       previousHost,
     );
-    expect(readFileSync(join(root, "aubos.yaml"), "utf8")).toBe(
+    expect(existsSync(join(root, "host/vorton-runtime.json"))).toBe(false);
+    expect(readFileSync(join(root, "vorton.yaml"), "utf8")).toBe(
       desiredAfterOrganizationEdit,
     );
     for (const path of Object.keys(previousImages)) {
@@ -1129,9 +1132,8 @@ primary_region = "sea"
     const initialized = planInit({
       root,
       organization: "Freed",
-      releaseManifestPath: manifest("0.3.0"),
+      releaseManifestPath: releasedManifest("0.3.0"),
       releaseRoot: repositoryRoot,
-      allowCandidate: true,
     });
     applyPlan({ root, planHash: initialized.hash });
 
@@ -1202,7 +1204,7 @@ primary_region = "sea"
       planHash: string;
       actions: Array<{
         path: string;
-        ownership: "aubos" | "organization";
+        ownership: "vorton" | "organization";
         operation: "create" | "update" | "delete";
         preimage: string | null;
         postimage: string | null;
@@ -1210,7 +1212,7 @@ primary_region = "sea"
         content: string | null;
       }>;
     };
-    const journalPath = join(root, `.aubos/journals/${planned.hash}.json`);
+    const journalPath = join(root, `.vorton/journals/${planned.hash}.json`);
     mkdirSync(dirname(journalPath), { recursive: true });
     writeFileSync(
       journalPath,
@@ -1239,7 +1241,7 @@ primary_region = "sea"
     );
     validateInstallation(root);
     expect(snapshotExistingFiles(root)).toMatchObject(existingBefore);
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toContain(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toContain(
       '"version": "0.1.0"',
     );
   });
@@ -1263,7 +1265,7 @@ primary_region = "sea"
     applyPlan({ root, planHash: upgraded.hash });
     const createdDeployment = upgraded.plan.actions.find(
       (entry) =>
-        entry.ownership === "aubos-image" && entry.preimageContent === null,
+        entry.ownership === "vorton-image" && entry.preimageContent === null,
     );
     expect(createdDeployment).toBeDefined();
     const createdPath = join(root, createdDeployment!.path);
@@ -1275,7 +1277,7 @@ primary_region = "sea"
     expect(existsSync(createdPath)).toBe(false);
     validateInstallation(root);
 
-    const hostPath = join(root, "host/aubos-runtime.json");
+    const hostPath = join(root, "host/vorton-runtime.json");
     writeFileSync(hostPath, `${readFileSync(hostPath, "utf8")}\nchanged\n`);
     expect(() => rollbackPlan({ root, planHash: upgraded.hash })).toThrow(
       /Rolled-back file changed since receipt/,
@@ -1298,7 +1300,7 @@ primary_region = "sea"
     };
     journal.actions[0]!.state = "pending";
     writeFileSync(applied.journalPath, canonicalJson(journal));
-    const hostPath = join(root, "host/aubos-runtime.json");
+    const hostPath = join(root, "host/vorton-runtime.json");
     const hostBefore = readFileSync(hostPath, "utf8");
 
     expect(() => rollbackPlan({ root, planHash: initialized.hash })).toThrow(
@@ -1318,10 +1320,10 @@ primary_region = "sea"
     });
     applyPlan({ root, planHash: initialized.hash });
     const previousHost = readFileSync(
-      join(root, "host/aubos-runtime.json"),
+      join(root, "host/vorton-runtime.json"),
       "utf8",
     );
-    const previousLock = readFileSync(join(root, "aubos.lock.json"), "utf8");
+    const previousLock = readFileSync(join(root, "vorton.lock.json"), "utf8");
 
     const upgraded = planUpgrade({
       root,
@@ -1331,15 +1333,15 @@ primary_region = "sea"
     });
     const applied = applyPlan({ root, planHash: upgraded.hash });
     const upgradedHost = readFileSync(
-      join(root, "host/aubos-runtime.json"),
+      join(root, "host/vorton-runtime.json"),
       "utf8",
     );
     const apiPath = join(root, "deploy/api.fly.toml");
     writeFileSync(
       apiPath,
       readFileSync(apiPath, "utf8").replace(
-        'AUBOS_WORKER_CLASSIFICATION_CEILING = "internal"',
-        'AUBOS_WORKER_CLASSIFICATION_CEILING = "restricted"',
+        'VORTON_WORKER_CLASSIFICATION_CEILING = "internal"',
+        'VORTON_WORKER_CLASSIFICATION_CEILING = "restricted"',
       ),
     );
     expect(() => validateInstallation(root)).toThrow(
@@ -1356,10 +1358,10 @@ primary_region = "sea"
     journal.status = "applying";
     writeFileSync(applied.journalPath, canonicalJson(journal));
 
-    const hostPath = join(root, "host/aubos-runtime.json");
+    const hostPath = join(root, "host/vorton-runtime.json");
     writeFileSync(hostPath, `${upgradedHost}\nCONFLICT\n`);
     expect(() => rollbackPlan({ root, planHash: upgraded.hash })).toThrow(
-      /Rollback postimage conflict at host\/aubos-runtime\.json/,
+      /Rollback postimage conflict at host\/vorton-runtime\.json/,
     );
     writeFileSync(hostPath, upgradedHost);
 
@@ -1367,13 +1369,13 @@ primary_region = "sea"
       "rolled-back",
     );
     expect(readFileSync(hostPath, "utf8")).toBe(previousHost);
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toBe(
       previousLock,
     );
     const rolledBackApi = readFileSync(apiPath, "utf8");
     expect(buildImage(rolledBackApi)).toBe(v2Images["deploy/api.fly.toml"]);
     expect(rolledBackApi).toContain(
-      'AUBOS_WORKER_CLASSIFICATION_CEILING = "restricted"',
+      'VORTON_WORKER_CLASSIFICATION_CEILING = "restricted"',
     );
   });
 
@@ -1396,7 +1398,7 @@ primary_region = "sea"
     applyPlan({ root, planHash: upgraded.hash });
     const createdDeployment = upgraded.plan.actions.find(
       (entry) =>
-        entry.ownership === "aubos-image" && entry.preimageContent === null,
+        entry.ownership === "vorton-image" && entry.preimageContent === null,
     );
     expect(createdDeployment).toBeDefined();
     const createdPath = join(root, createdDeployment!.path);
@@ -1427,14 +1429,14 @@ primary_region = "sea"
       releaseRoot: repositoryRoot,
       allowCandidate: true,
     });
-    const hostPath = join(root, "host/aubos-runtime.json");
-    const lockPath = join(root, "aubos.lock.json");
+    const hostPath = join(root, "host/vorton-runtime.json");
+    const lockPath = join(root, "vorton.lock.json");
     const hostBefore = readFileSync(hostPath, "utf8");
     const lockBefore = readFileSync(lockPath, "utf8");
     writeFileSync(hostPath, `${hostBefore}\n# tampered preimage\n`);
 
     expect(() => applyPlan({ root, planHash: upgraded.hash })).toThrow(
-      /Preimage conflict at host\/aubos-runtime\.json/,
+      /Preimage conflict at host\/vorton-runtime\.json/,
     );
     expect(readFileSync(lockPath, "utf8")).toBe(lockBefore);
     expect(readFileSync(hostPath, "utf8")).toContain("tampered preimage");
@@ -1452,10 +1454,10 @@ primary_region = "sea"
     applyPlan({ root, planHash: initialized.hash });
     const organizationBefore = snapshotOrganizationOwned(root);
     const originalHost = readFileSync(
-      join(root, "host/aubos-runtime.json"),
+      join(root, "host/vorton-runtime.json"),
       "utf8",
     );
-    const originalLock = readFileSync(join(root, "aubos.lock.json"), "utf8");
+    const originalLock = readFileSync(join(root, "vorton.lock.json"), "utf8");
 
     const upgraded = planUpgrade({
       root,
@@ -1466,22 +1468,22 @@ primary_region = "sea"
     expect(upgraded.plan.fromVersion).toBe("0.1.0");
     expect(upgraded.plan.release.version).toBe("0.1.1");
     applyPlan({ root, planHash: upgraded.hash });
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toContain(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toContain(
       '"lastUpgradeEdge": "0.1.0->0.1.1"',
     );
     expect(
-      readFileSync(join(root, "host/aubos-runtime.json"), "utf8"),
+      readFileSync(join(root, "host/vorton-runtime.json"), "utf8"),
     ).toContain('"readinessPath": "/readyz"');
     expect(snapshotOrganizationOwned(root)).toEqual(organizationBefore);
 
     expect(rollbackPlan({ root, planHash: upgraded.hash })).toEqual({
       status: "rolled-back",
-      restored: ["aubos.lock.json", "host/aubos-runtime.json", "aubos.yaml"],
+      restored: ["vorton.lock.json", "vorton.yaml", "host/vorton-runtime.json"],
     });
-    expect(readFileSync(join(root, "host/aubos-runtime.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "host/vorton-runtime.json"), "utf8")).toBe(
       originalHost,
     );
-    expect(readFileSync(join(root, "aubos.lock.json"), "utf8")).toBe(
+    expect(readFileSync(join(root, "vorton.lock.json"), "utf8")).toBe(
       originalLock,
     );
     expect(snapshotOrganizationOwned(root)).toEqual(organizationBefore);
@@ -1504,11 +1506,11 @@ primary_region = "sea"
       allowCandidate: true,
     });
     applyPlan({ root, planHash: upgraded.hash });
-    const hostPath = join(root, "host/aubos-runtime.json");
+    const hostPath = join(root, "host/vorton-runtime.json");
     writeFileSync(hostPath, "postimage drift\n");
 
     expect(() => rollbackPlan({ root, planHash: upgraded.hash })).toThrow(
-      /Rollback postimage conflict at host\/aubos-runtime\.json/,
+      /Rollback postimage conflict at host\/vorton-runtime\.json/,
     );
     expect(readFileSync(hostPath, "utf8")).toBe("postimage drift\n");
   });
@@ -1536,7 +1538,7 @@ primary_region = "sea"
       /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
     );
     expect(existsSync(join(root, ".env"))).toBe(false);
-    expect(combined).toContain("AUBOS_SUPABASE_URL");
+    expect(combined).toContain("VORTON_SUPABASE_URL");
     expect(combined).toContain("Moonbase Triage");
     expect(combined).toContain("mode: read-only");
   });

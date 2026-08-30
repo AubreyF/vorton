@@ -138,7 +138,7 @@ class FakeHindsight {
         }
         const facts = this.validFacts();
         const scope = facts[0]?.tags.filter(
-          (tag) => !tag.startsWith("aubos-source:"),
+          (tag) => !tag.startsWith("vorton-source:"),
         );
         const sourceFacts = Object.fromEntries(
           facts.map((fact) => [

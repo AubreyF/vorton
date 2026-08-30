@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aubos.dev/schemas/installation-v1alpha1.json",
-  "title": "AubOS installation desired state",
+  "$id": "https://vorton.dev/schemas/installation-v1alpha1.json",
+  "title": "Vorton installation desired state",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "aubos.dev/v1alpha1" },
+    "apiVersion": { "const": "vorton.dev/v1alpha1" },
     "kind": { "const": "Installation" },
     "metadata": {
       "type": "object",

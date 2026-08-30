@@ -1,4 +1,4 @@
-project_id = "aubos-local"
+project_id = "vorton-local"
 
 [api]
 enabled = true

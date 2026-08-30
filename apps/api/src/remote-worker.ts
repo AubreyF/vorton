@@ -2,9 +2,9 @@ import type {
   DataClassification,
   ExecutiveWorkerJob,
   ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
-import { executiveWorkerJobSchema } from "@aubos/contracts";
-import type { ExecutiveWorkerProvider } from "@aubos/workers";
+} from "@vorton/contracts";
+import { executiveWorkerJobSchema } from "@vorton/contracts";
+import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
 export interface RemoteWorkerConfig {
   url: string;

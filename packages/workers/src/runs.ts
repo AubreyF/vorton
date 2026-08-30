@@ -3,8 +3,8 @@ import {
   executiveWorkerJobSchema,
   type ExecutiveWorkerJob,
   type ExecutiveWorkerJobRequest,
-} from "@aubos/contracts";
-import type { Database, WorkerContext } from "@aubos/database";
+} from "@vorton/contracts";
+import type { Database, WorkerContext } from "@vorton/database";
 
 /**
  * Persists provider job identity and status through the worker RLS boundary.

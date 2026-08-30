@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Database, SqlExecutor } from "@aubos/database";
+import type { Database, SqlExecutor } from "@vorton/database";
 
 import { DatabaseExecutiveAuthorityVerifier } from "./database-authority.js";
 import type { ExecutiveAuthorityVerification } from "./workflow.js";

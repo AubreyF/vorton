@@ -1,4 +1,4 @@
-app = "replace-with-aubos-hindsight-app"
+app = "replace-with-vorton-hindsight-app"
 primary_region = "sjc"
 
 [build]

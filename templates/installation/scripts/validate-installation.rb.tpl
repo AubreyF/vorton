@@ -35,8 +35,8 @@ def quoted_toml_value(content, key, path)
   values.first
 end
 
-desired = YAML.safe_load(ROOT.join("aubos.yaml").read, aliases: false)
-lock = JSON.parse(ROOT.join("aubos.lock.json").read)
+desired = YAML.safe_load(ROOT.join("vorton.yaml").read, aliases: false)
+lock = JSON.parse(ROOT.join("vorton.lock.json").read)
 memory = YAML.safe_load(ROOT.join("organization/memory.yaml").read, aliases: false)
 modules = YAML.safe_load(ROOT.join("organization/modules.yaml").read, aliases: false)
 authority = YAML.safe_load(
@@ -151,4 +151,4 @@ assert(modules.dig("modules", "tools", "installed") == [], "Installed Tools cata
 installed_tool_files = ROOT.join("tools").children.select(&:file?).reject { |path| path.basename.to_s == "README.md" }
 assert(installed_tool_files.empty?, "Unexpected installed tool files")
 
-puts "#{name} AubOS installation #{version} valid"
+puts "#{name} Vorton installation #{version} valid"

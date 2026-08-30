@@ -1,13 +1,13 @@
 # Installation and upstream updates
 
-Organizations own a private installation repository. They configure AubOS without copying or editing the upstream kernel.
+Organizations own a private installation repository. They configure Vorton without copying or editing the upstream kernel.
 
 ## Repository contract
 
 ```text
 my-organization/
-  aubos.yaml
-  aubos.lock.json
+  vorton.yaml
+  vorton.lock.json
   host/
   organization/
     identity.yaml
@@ -23,23 +23,23 @@ my-organization/
   .github/workflows/
 ```
 
-`aubos.yaml` is human-authored desired state. `aubos.lock.json` is generated exact state. It records the AubOS version, source commit, OCI digests, host contract, module and worker protocols, core migration head, managed-file hashes, and last successful upgrade edge. The release manifest and bundled executable bind the CLI version.
+`vorton.yaml` is human-authored desired state. `vorton.lock.json` is generated exact state. It records the Vorton version, source commit, OCI digests, host contract, module and worker protocols, core migration head, managed-file hashes, and last successful upgrade edge. The release manifest and bundled executable bind the CLI version.
 
-The updater may modify AubOS-managed host adapters, the lock file, the desired release-version scalar, recognized Ruby release assertions, and the exact first-party image fields in schema-v2 Fly configurations. Organization identity, roles, policy, branding, modules, tools, app names, regions, other deployment settings, acceptance logic outside those assertions, and organization migrations are organization-owned. Generated plans, journals, and local receipts live under ignored `.aubos/`.
+The updater may modify Vorton-managed host adapters, the lock file, the desired release-version scalar, recognized Ruby release assertions, and the exact first-party image fields in schema-v2 Fly configurations. Organization identity, roles, policy, branding, modules, tools, app names, regions, other deployment settings, acceptance logic outside those assertions, and organization migrations are organization-owned. Generated plans, journals, and local receipts live under ignored `.vorton/`.
 
-| Path                                   | Owner                  | Update rule                                            |
-| -------------------------------------- | ---------------------- | ------------------------------------------------------ |
-| `host/**`                              | AubOS                  | Exact preimage required                                |
-| `aubos.lock.json`                      | AubOS                  | Exact preimage required                                |
-| `aubos.yaml` release-version field     | AubOS release identity | Exact previous value and reviewed postimage required   |
-| Other content in `aubos.yaml`          | Organization           | Created only when absent, then preserved byte for byte |
-| `organization/**`                      | Organization           | Created only when absent                               |
-| `modules/custom/**`, `tools/**`        | Organization           | Created only when absent                               |
-| `supabase/migrations/organization/**`  | Organization           | Created only when absent                               |
-| `deploy/*.fly.toml` image field        | AubOS release identity | Exact previous image and reviewed postimage required   |
-| Other content in `deploy/**`           | Organization           | Preserved byte for byte during image updates           |
-| Recognized Ruby release assertions     | AubOS release identity | Exact previous assertions required                     |
-| Other acceptance content and workflows | Organization           | Created only when absent                               |
+| Path                                   | Owner                   | Update rule                                            |
+| -------------------------------------- | ----------------------- | ------------------------------------------------------ |
+| `host/**`                              | Vorton                  | Exact preimage required                                |
+| `vorton.lock.json`                     | Vorton                  | Exact preimage required                                |
+| `vorton.yaml` release-version field    | Vorton release identity | Exact previous value and reviewed postimage required   |
+| Other content in `vorton.yaml`         | Organization            | Created only when absent, then preserved byte for byte |
+| `organization/**`                      | Organization            | Created only when absent                               |
+| `modules/custom/**`, `tools/**`        | Organization            | Created only when absent                               |
+| `supabase/migrations/organization/**`  | Organization            | Created only when absent                               |
+| `deploy/*.fly.toml` image field        | Vorton release identity | Exact previous image and reviewed postimage required   |
+| Other content in `deploy/**`           | Organization            | Preserved byte for byte during image updates           |
+| Recognized Ruby release assertions     | Vorton release identity | Exact previous assertions required                     |
+| Other acceptance content and workflows | Organization            | Created only when absent                               |
 
 The CLI rejects path traversal and symbolic-link escapes. A plan cannot expand updater ownership by declaring a different class in its payload.
 
@@ -48,23 +48,23 @@ The CLI rejects path traversal and symbolic-link escapes. A plan cannot expand u
 ```bash
 archive_root=/absolute/path/to/unpacked-release
 installation_root=/absolute/path/to/private-installation
-node "$archive_root/bin/aubos.cjs" init plan \
+node "$archive_root/bin/vorton.cjs" init plan \
   --organization "My Organization" \
   --manifest "$archive_root/release/manifests/<version>.json" \
   --artifact-root "$archive_root" \
   --root "$installation_root"
-node "$archive_root/bin/aubos.cjs" init apply \
+node "$archive_root/bin/vorton.cjs" init apply \
   --plan sha256:<plan> \
   --root "$installation_root"
 ```
 
-Each contract archive contains a standalone `bin/aubos.cjs` built from the tagged CLI and bundled with its parsing and schema dependencies. It runs with Node 22 without an AubOS source checkout or npm install. The CLI rejects a manifest whose `cliVersion` differs from its embedded version.
+Each contract archive contains a standalone `bin/vorton.cjs` built from the tagged CLI and bundled with its parsing and schema dependencies. It runs with Node 22 without an Vorton source checkout or npm install. The CLI rejects a manifest whose `cliVersion` differs from its embedded version.
 
 The CLI has no implicit release channel or manifest fallback. Planning requires the explicit manifest from that version's archive and the exact unpacked artifact root named by its managed template paths. A real installation must use a manifest marked `released` with registry-backed OCI digests. Test fixtures use `registry.invalid` and never authorize deployment. Schema-v1 manifests remain supported when paired with their exact CLI version. Legacy archives published before the bundled CLI contract require the CLI from their immutable source tag.
 
 Planning lists every path, ownership class, artifact digest, required cloud resource, migration, secret reference, and enabled module. Apply verifies the plan hash and every file preimage. It refuses collisions. Creating a repository, cloud resource, database, secret, or deployment requires a separate explicit operation.
 
-Planning writes only the content-addressed local plan under `.aubos/plans/`. Repeating a plan against the same installation and release produces the same `sha256:` hash. The plan embeds the validated release manifest and exact postimages. Apply reads only that local plan. It performs no fetch, registry lookup, cloud mutation, migration, or deployment.
+Planning writes only the content-addressed local plan under `.vorton/plans/`. Repeating a plan against the same installation and release produces the same `sha256:` hash. The plan embeds the validated release manifest and exact postimages. Apply reads only that local plan. It performs no fetch, registry lookup, cloud mutation, migration, or deployment.
 
 Apply preflights every action before changing installation files. Its content-addressed journal records each completed action and makes an unchanged retry idempotent. A changed preimage stops the entire apply before the first installation write.
 
@@ -73,11 +73,11 @@ Apply preflights every action before changing installation files. Its content-ad
 ```bash
 next_archive_root=/absolute/path/to/unpacked-next-release
 installation_root=/absolute/path/to/private-installation
-node "$next_archive_root/bin/aubos.cjs" upgrade plan \
+node "$next_archive_root/bin/vorton.cjs" upgrade plan \
   --manifest "$next_archive_root/release/manifests/<next-version>.json" \
   --artifact-root "$next_archive_root" \
   --root "$installation_root"
-node "$next_archive_root/bin/aubos.cjs" upgrade apply \
+node "$next_archive_root/bin/vorton.cjs" upgrade apply \
   --plan sha256:<plan> \
   --root "$installation_root"
 ```
@@ -86,11 +86,11 @@ The updater opens a normal installation pull request. CI validates schemas, role
 
 Schema-v2 plans render `deploy/api.fly.toml`, `deploy/web.fly.toml`, `deploy/worker.fly.toml`, and `deploy/hindsight.fly.toml`. The API, web, and worker image fields come directly from the release manifest's immutable OCI references. Hindsight remains separately pinned to its reviewed upstream digest. The default templates contain no secrets and no Dockerfile build path. Operators provide secrets through Fly's secret store.
 
-An organization may replace Hindsight's direct image field with a compatibility Dockerfile when a reviewed runtime adaptation is required. The updater then preserves the existing Hindsight Fly configuration byte for byte and continues updating only the three first-party AubOS image fields. Validation requires exactly one Hindsight build source. A Dockerfile path must be normalized, relative to the Fly configuration, contained within the installation, and based only on the reviewed digest-pinned Hindsight image. The organization owns the Dockerfile and any additional validation it requires.
+An organization may replace Hindsight's direct image field with a compatibility Dockerfile when a reviewed runtime adaptation is required. The updater then preserves the existing Hindsight Fly configuration byte for byte and continues updating only the three first-party Vorton image fields. Validation requires exactly one Hindsight build source. A Dockerfile path must be normalized, relative to the Fly configuration, contained within the installation, and based only on the reviewed digest-pinned Hindsight image. The organization owns the Dockerfile and any additional validation it requires.
 
-On later upgrades, the CLI verifies the currently locked image and replaces only that field. It preserves app names, regions, environment configuration, scaling, checks, comments, and other organization-owned bytes. An unrecognized or manually changed image stops planning. Every image change remains visible in the content-addressed plan and the installation pull request. A release can require a separate organization configuration change, but that change remains a distinct reviewed installation pull request and never enters the AubOS image-update receipt.
+On later upgrades, the CLI verifies the currently locked image and replaces only that field. It preserves app names, regions, environment configuration, scaling, checks, comments, and other organization-owned bytes. An unrecognized or manually changed image stops planning. Every image change remains visible in the content-addressed plan and the installation pull request. A release can require a separate organization configuration change, but that change remains a distinct reviewed installation pull request and never enters the Vorton image-update receipt.
 
-The upgrade plan also owns two narrow installation fields. It changes only `spec.release.version` in `aubos.yaml`, leaving every other byte under organization ownership. It updates only recognized migration and image assertions in the generated Ruby validation contract. Both field classes appear explicitly in the reviewable plan. A validator with an unrecognized contract stops planning instead of being overwritten.
+The upgrade plan also owns two narrow installation fields. It changes only `spec.release.version` in `vorton.yaml`, leaving every other byte under organization ownership. It updates only recognized migration and image assertions in the generated Ruby validation contract. Both field classes appear explicitly in the reviewable plan. A validator with an unrecognized contract stops planning instead of being overwritten.
 
 Merging the update pull request authorizes deployment in the first release. Opening the pull request does not. Deployment verifies the lock, checks backup readiness, serializes migrations, deploys exact image digests, verifies health, and records observed deployment identity in Postgres.
 
@@ -100,17 +100,17 @@ Database changes use expand and contract. Schema expansion precedes application 
 
 Configuration rollback reverts the installation commit. Application rollback redeploys the prior recorded image digest. Database recovery uses forward repair or explicit backup restoration. An image rollback never pretends to reverse organizational data.
 
-Before an update is committed, a local receipt may restore only exact updater-owned files whose postimages are unchanged. AubOS never uses broad checkout or clean operations as rollback.
+Before an update is committed, a local receipt may restore only exact updater-owned files whose postimages are unchanged. Vorton never uses broad checkout or clean operations as rollback.
 
-`node "$archive_root/bin/aubos.cjs" rollback --plan sha256:<plan> --root "$installation_root"` implements that local receipt rollback. It restores or removes updater-owned `host/**` and `aubos.lock.json` entries from the named journal. It restores only the prior desired-version field, Ruby validation assertions, and existing Fly image fields. Organization changes made after apply remain intact. It refuses rollback if an owned field changed again or if a newly created configuration changed after apply. Organization-owned scaffolding remains in place after an initial adoption rollback.
+`node "$archive_root/bin/vorton.cjs" rollback --plan sha256:<plan> --root "$installation_root"` implements that local receipt rollback. It restores or removes updater-owned `host/**` and `vorton.lock.json` entries from the named journal. It restores only the prior desired-version field, Ruby validation assertions, and existing Fly image fields. Organization changes made after apply remain intact. It refuses rollback if an owned field changed again or if a newly created configuration changed after apply. Organization-owned scaffolding remains in place after an initial adoption rollback.
 
-Organizations that modify AubOS core become distributors. They maintain a separate distribution fork, merge immutable upstream tags, build and attest their own images, and point installation locks to those images. Ordinary installations carry no patch queue.
+Organizations that modify Vorton core become distributors. They maintain a separate distribution fork, merge immutable upstream tags, build and attest their own images, and point installation locks to those images. Ordinary installations carry no patch queue.
 
 ## Release and deployment identity
 
 `release/manifests/<version>.json` binds a release version to a source commit, CLI version, protocol contracts, migration head, managed templates, and digest-pinned OCI references. Candidate manifests contain no fictional image identities. A release uses a dedicated manifest commit because a file cannot contain the hash of its own commit. That commit may change only the release manifest. The release workflow refuses a tag until its manifest is explicitly marked `released`, its source commit equals the tagged manifest commit's only parent, every required first-party GHCR image resolves by digest, and every source-bound field matches the source tree. See [Immutable releases](RELEASES.md).
 
-Fly configuration remains installation-owned. AubOS owns only the first-party image fields that bind those files to the release lock. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
+Fly configuration remains installation-owned. Vorton owns only the first-party image fields that bind those files to the release lock. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
 
 ## Installation scaffold
 
@@ -124,14 +124,14 @@ The root operator can create the private repository, copy any organization-owned
 
 ## Reproducible fixture proof
 
-The checked-in acceptance fixture uses synthetic manifests and `registry.invalid` image references. It proves the mechanics without claiming that an AubOS release or container image exists.
+The checked-in acceptance fixture uses synthetic manifests and `registry.invalid` image references. It proves the mechanics without claiming that an Vorton release or container image exists.
 
 ```bash
 cd packages/cli
-npm run proof:installation -- --output /tmp/aubos-installation-proof
+npm run proof:installation -- --output /tmp/vorton-installation-proof
 ```
 
-The command creates `/tmp/aubos-installation-proof/moonbase-lab` and `/tmp/aubos-installation-proof/proof.json`. It adopts synthetic fixture release `0.1.0`, applies synthetic fixture release `0.1.1`, verifies the managed host change and desired release field, compares organization-owned content, and rolls back the exact AubOS-owned fields. It refuses to overwrite an existing output directory.
+The command creates `/tmp/vorton-installation-proof/moonbase-lab` and `/tmp/vorton-installation-proof/proof.json`. It adopts synthetic fixture release `0.1.0`, applies synthetic fixture release `0.1.1`, verifies the managed host change and desired release field, compares organization-owned content, and rolls back the exact Vorton-owned fields. It refuses to overwrite an existing output directory.
 
 Run the acceptance suite from the CLI package:
 

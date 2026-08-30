@@ -7,6 +7,6 @@ coverage/
 .env
 .env.*
 !.env.example
-.aubos/
+.vorton/
 *.log
 .DS_Store

@@ -1,5 +1,5 @@
 {
-  "name": "@aubos/conversations",
+  "name": "@vorton/conversations",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aubos/contracts": "*"
+    "@vorton/contracts": "*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
