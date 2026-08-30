@@ -1,6 +1,6 @@
 {
   "name": "@aubos/release-bootstrap-runtime",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Dependency-locked runtime for an extracted AubOS release bootstrap.",
   "engines": {
