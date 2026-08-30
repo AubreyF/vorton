@@ -155,6 +155,43 @@ function AppearanceGlyph({ appearance }: { appearance: AppearanceDefinition }) {
   );
 }
 
+export function AppearanceTileStrip({
+  className = "",
+  label = "Appearance",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const appearanceId = useSyncExternalStore(
+    subscribeAppearance,
+    getAppearanceSnapshot,
+    getServerAppearanceSnapshot,
+  );
+
+  return (
+    <div
+      className={`appearance-tile-strip ${className}`.trim()}
+      role="radiogroup"
+      aria-label={label}
+    >
+      {APPEARANCE_DEFINITIONS.map((appearance) => (
+        <button
+          className="appearance-tile"
+          key={appearance.id}
+          type="button"
+          role="radio"
+          aria-checked={appearance.id === appearanceId}
+          aria-label={appearance.name}
+          title={appearance.name}
+          onClick={() => applyAppearance(appearance.id)}
+        >
+          <AppearanceGlyph appearance={appearance} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ThemeControls() {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const committedAppearanceRef = useRef<AppearanceId>(DEFAULT_APPEARANCE_ID);

@@ -2,6 +2,13 @@
 
 :root[data-mode] {
   --vorton-page-section-gap: clamp(32px, 3vw, 44px);
+  --font-barlow: "Barlow";
+  --font-barlow-condensed: "Barlow Condensed";
+  --font-geist-sans: "Geist";
+  --font-geist-mono: "Geist Mono";
+  --font-manrope: "Manrope";
+  --font-space-grotesk: "Space Grotesk";
+  --vorton-font-utility: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 :root,
@@ -118,9 +125,12 @@
 }
 
 :root[data-mode="starship"] {
-  --vorton-font-display:
-    var(--font-barlow-condensed), "Barlow Condensed", sans-serif;
-  --vorton-font-body: var(--font-barlow), "Barlow", sans-serif;
+  --vorton-font-display: var(--font-barlow-condensed), sans-serif;
+  --vorton-font-body: var(--font-barlow), sans-serif;
+  --vorton-heading-font-weight: 400;
+  --vorton-heading-letter-spacing: -0.045em;
+  --vorton-heading-subhead-weight: 500;
+  --vorton-heading-subhead-letter-spacing: -0.025em;
   --vorton-body-font-weight: 400;
   --vorton-body-letter-spacing: normal;
   --vorton-body-line-height: normal;
@@ -141,14 +151,13 @@
 
 :root[data-mode="freed"] {
   --font-body:
-    var(--font-manrope), "Manrope", var(--font-geist-sans), system-ui,
-    -apple-system, sans-serif;
+    var(--font-manrope), var(--font-geist-sans), system-ui, -apple-system,
+    sans-serif;
   --font-logo:
-    var(--font-space-grotesk), "Space Grotesk", var(--font-geist-sans),
-    system-ui, sans-serif;
+    var(--font-space-grotesk), var(--font-geist-sans), system-ui, sans-serif;
   --font-display:
-    var(--font-space-grotesk), "Space Grotesk", var(--font-manrope), "Manrope",
-    var(--font-geist-sans), system-ui, sans-serif;
+    var(--font-space-grotesk), var(--font-manrope), var(--font-geist-sans),
+    system-ui, sans-serif;
   --theme-body-letter-spacing: 0;
   --theme-body-line-height: 1.5;
   --theme-body-font-weight: 400;
@@ -322,6 +331,10 @@
 
   --vorton-font-display: var(--font-display);
   --vorton-font-body: var(--font-body);
+  --vorton-heading-font-weight: 500;
+  --vorton-heading-letter-spacing: -0.04em;
+  --vorton-heading-subhead-weight: 500;
+  --vorton-heading-subhead-letter-spacing: -0.025em;
   --vorton-body-font-weight: var(--theme-body-font-weight);
   --vorton-body-letter-spacing: var(--theme-body-letter-spacing);
   --vorton-body-line-height: var(--theme-body-line-height);
@@ -655,8 +668,8 @@
 :root[data-theme="scriptorium"] {
   color-scheme: light;
   --font-body:
-    var(--font-manrope), "Manrope", "Avenir Next", "Segoe UI", "Helvetica Neue",
-    Arial, sans-serif;
+    var(--font-manrope), "Avenir Next", "Segoe UI", "Helvetica Neue", Arial,
+    sans-serif;
   --font-logo: "Baskerville", "Hoefler Text", "Iowan Old Style", Georgia, serif;
   --font-display:
     "Baskerville", "Hoefler Text", "Iowan Old Style", "Palatino Linotype",
