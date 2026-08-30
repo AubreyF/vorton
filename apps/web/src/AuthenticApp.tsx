@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
+import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { useBrowserRuntime } from "./runtime.js";
 
 const primarySections = [
@@ -59,6 +60,7 @@ export function AuthenticApp() {
 
   return (
     <div className="dashboard-shell">
+      <BackgroundAtmosphere />
       <a className="skip-link" href="#dashboard-content">
         Skip to dashboard content
       </a>
