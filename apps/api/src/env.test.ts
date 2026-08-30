@@ -23,6 +23,43 @@ const base = {
 };
 
 describe("API environment", () => {
+  it("accepts only the five isolated legacy secret names during transition", () => {
+    const legacy = {
+      ...base,
+      VORTON_DATABASE_URL: undefined,
+      VORTON_DATABASE_CONTEXT_SIGNING_SECRET: undefined,
+      VORTON_WORKER_SHARED_SECRET: undefined,
+      VORTON_HINDSIGHT_API_KEY: undefined,
+      AUBOS_DATABASE_URL: base.VORTON_DATABASE_URL,
+      AUBOS_DATABASE_CONTEXT_SIGNING_SECRET:
+        base.VORTON_DATABASE_CONTEXT_SIGNING_SECRET,
+      AUBOS_WORKER_SHARED_SECRET: base.VORTON_WORKER_SHARED_SECRET,
+      AUBOS_HINDSIGHT_API_KEY: base.VORTON_HINDSIGHT_API_KEY,
+    };
+    expect(readApiEnvironment(legacy)).toMatchObject({
+      databaseUrl: base.VORTON_DATABASE_URL,
+      databaseContextSigningSecret: base.VORTON_DATABASE_CONTEXT_SIGNING_SECRET,
+      workerSharedSecret: base.VORTON_WORKER_SHARED_SECRET,
+      hindsightApiKey: base.VORTON_HINDSIGHT_API_KEY,
+    });
+    expect(() =>
+      readApiEnvironment({
+        ...legacy,
+        VORTON_ALLOWED_ORIGIN: undefined,
+        AUBOS_ALLOWED_ORIGIN: base.VORTON_ALLOWED_ORIGIN,
+      }),
+    ).toThrow("VORTON_ALLOWED_ORIGIN is required");
+  });
+
+  it("prefers a Vorton secret when both names are present", () => {
+    expect(
+      readApiEnvironment({
+        ...base,
+        AUBOS_DATABASE_URL: "postgresql://legacy.invalid/vorton",
+      }).databaseUrl,
+    ).toBe(base.VORTON_DATABASE_URL);
+  });
+
   it("loads a base64-encoded database certificate authority", () => {
     const certificate = [
       "-----BEGIN CERTIFICATE-----",
