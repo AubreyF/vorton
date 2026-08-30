@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createSyntheticFactoryFixtureDataSource } from "./index.js";
+import {
+  createSyntheticFactoryFixtureDataSource,
+  factoryModuleManifest,
+} from "./index.js";
 
 describe("synthetic Factory fixture", () => {
   it("preserves external execution authority through read-only observation", async () => {
@@ -27,5 +30,16 @@ describe("synthetic Factory fixture", () => {
       "authority_generation_conflict",
     );
     expect(ticket.ticket.url).toContain("example.invalid");
+  });
+
+  it("binds the imported Freed connector without moving execution authority", () => {
+    expect(factoryModuleManifest.connectorPackage).toBe(
+      "@vorton/factory-connector-freed",
+    );
+    expect(factoryModuleManifest.sourceCommit).toBe(
+      "014b786c8bf6b51a3ed265b4e36773afff0f5d59",
+    );
+    expect(factoryModuleManifest.mode).toBe("read-only");
+    expect(factoryModuleManifest.authority.execution).toBe("Freed task claims");
   });
 });

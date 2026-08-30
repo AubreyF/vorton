@@ -1,0 +1,29 @@
+[Unit]
+Description=FreedOS Factory read-only planning snapshot collector
+Requires=vorton-factory-github-token.service vorton-factory-host-gateway.service
+After=vorton-factory-github-token.service vorton-factory-host-gateway.service vorton-factory-freed-broker-conformance.service
+
+[Service]
+Type=oneshot
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/var/lib/vorton-factory/symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/collect-planning-snapshot.js
+StateDirectory=vorton-factory/coordinator
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory /srv/freed /var/lib/freed/automation
+ReadWritePaths=/var/lib/vorton-factory/coordinator /var/lib/freed/automation/control/.guards/tasks.lock/kernel.lock /var/lib/freed/automation/control/.guards/events.lock/kernel.lock
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

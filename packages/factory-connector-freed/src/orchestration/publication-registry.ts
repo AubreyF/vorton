@@ -1,0 +1,113 @@
+import { workProductIdentitySchema } from "../adjudication/receipts.js";
+import {
+  draftPublicationReceiptSchema,
+  type DraftPublicationReceipt,
+} from "../publication/draft-publisher.js";
+import type { PublicationPlan } from "../publication/policy.js";
+import { canonicalJsonEqual } from "../security/canonical-json.js";
+
+export type PublicationStage = "planned" | "published" | "blocked";
+
+export interface PublicationState {
+  readonly plan: PublicationPlan;
+  readonly stage: PublicationStage;
+  readonly receipt?: DraftPublicationReceipt;
+  readonly reason?: string;
+}
+
+function same(left: unknown, right: unknown): boolean {
+  return canonicalJsonEqual(left, right);
+}
+
+export function initializePublication(
+  current: PublicationState | null,
+  plan: PublicationPlan,
+): PublicationState {
+  if (
+    !plan.allowed ||
+    (plan.action !== "create-draft" && plan.action !== "update-draft") ||
+    plan.reasons.length !== 0 ||
+    plan.repository === undefined ||
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(plan.repository) ||
+    plan.title === undefined ||
+    plan.branch === undefined ||
+    plan.head === undefined ||
+    !/^[0-9a-f]{40}$/u.test(plan.head) ||
+    plan.body === undefined ||
+    !plan.body.startsWith("(AI Generated).\n\n") ||
+    plan.workProduct === undefined ||
+    plan.workProduct.checkpointReference.length !== 64
+  ) {
+    throw new Error(
+      "Publication registry requires one complete admitted draft plan.",
+    );
+  }
+  const workProduct = workProductIdentitySchema.parse(plan.workProduct);
+  if (
+    plan.repository !==
+      `${workProduct.repository.owner}/${workProduct.repository.name}` ||
+    plan.branch !== workProduct.branch ||
+    plan.head !== workProduct.head ||
+    (plan.action === "update-draft" &&
+      (plan.pullRequestNumber === undefined ||
+        plan.expectedRemoteHead === undefined))
+  ) {
+    throw new Error("Publication plan does not match its exact work product.");
+  }
+  if (current !== null) {
+    if (!same(current.plan, plan)) {
+      throw new Error("Publication key already contains another plan.");
+    }
+    return current;
+  }
+  return { plan, stage: "planned" };
+}
+
+export function recordPublication(
+  current: PublicationState,
+  rawReceipt: DraftPublicationReceipt,
+): PublicationState {
+  const receipt = draftPublicationReceiptSchema.parse(rawReceipt);
+  if (current.stage === "blocked") {
+    throw new Error("Blocked publication cannot be recorded as published.");
+  }
+  if (current.receipt !== undefined) {
+    if (!same(current.receipt, receipt)) {
+      throw new Error("Publication already contains another receipt.");
+    }
+    return current;
+  }
+  const workProduct = current.plan.workProduct;
+  const expectedUrl = `https://github.com/${receipt.repository}/pull/${receipt.pullRequestNumber.toLocaleString("en-US", { useGrouping: false })}`;
+  if (
+    workProduct === undefined ||
+    receipt.repository !== current.plan.repository ||
+    receipt.checkpointReference !== workProduct.checkpointReference ||
+    receipt.branch !== current.plan.branch ||
+    receipt.head !== current.plan.head ||
+    receipt.pullRequestUrl !== expectedUrl ||
+    Date.parse(receipt.tokenExpiresAt) <= Date.parse(receipt.publishedAt)
+  ) {
+    throw new Error("Publication receipt does not match its admitted plan.");
+  }
+  return { ...current, stage: "published", receipt };
+}
+
+export function blockPublication(
+  current: PublicationState,
+  reason: string,
+): PublicationState {
+  if (reason.trim() === "") {
+    throw new Error("Blocked publication requires a reason.");
+  }
+  if (current.stage === "published") {
+    throw new Error("Published work cannot be marked blocked.");
+  }
+  if (current.stage === "blocked") {
+    if (current.reason !== reason) {
+      throw new Error("Publication already records another blocker.");
+    }
+    return current;
+  }
+  return { ...current, stage: "blocked", reason };
+}

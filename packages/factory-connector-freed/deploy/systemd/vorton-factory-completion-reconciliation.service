@@ -1,0 +1,32 @@
+[Unit]
+Description=FreedOS Factory trusted completion reconciliation
+Requires=vorton-factory-github-token.service
+After=vorton-factory-github-token.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/var/lib/vorton-factory/symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/reconcile-symphony-completion.js
+StateDirectory=vorton-factory/admission/completions
+StateDirectory=vorton-factory/admission/adjudications
+StateDirectory=vorton-factory/admission/publications
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory /opt/vorton-factory /opt/freed /srv/freed
+ReadWritePaths=/var/lib/vorton-factory/admission /var/lib/freed/automation/control
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

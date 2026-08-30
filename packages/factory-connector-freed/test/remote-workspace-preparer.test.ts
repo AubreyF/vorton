@@ -1,0 +1,176 @@
+import { describe, expect, it } from "vitest";
+import type {
+  CommandRequest,
+  CommandResult,
+  CommandRunner,
+} from "../src/adapters/command-runner.js";
+import { SshInitialWorkspacePreparer } from "../src/execution/remote-workspace-preparer.js";
+import {
+  createWorkspaceFinalizationNonce,
+  initialWorkspaceRequirementSchema,
+  type InitialWorkspaceReceipt,
+} from "../src/execution/workspace.js";
+import type { SshWorkerPolicyVerifier } from "../src/security/ssh-worker-policy.js";
+import { report } from "./helpers.js";
+
+const qualification = report();
+const nonceInput = {
+  repository: qualification.repository,
+  issueNumber: 1_234,
+  claimId: "claim-1234",
+  custodyEpoch: 1 as const,
+  hostId: "linux-control-1",
+  workerId: "worker-linux-control-1",
+  worktree: "/var/lib/vorton-factory/workspaces/GH-1234",
+  branch: "fix/issue-1234",
+  authorityTaskId: "github-issue-1234",
+  authorityTaskRevision: 1,
+  accountId: "codex-pro-1",
+  driverId: "codex-app-server-v1",
+  baseHead: "a".repeat(40),
+};
+const requirement = initialWorkspaceRequirementSchema.parse({
+  schemaVersion: 1,
+  repository: {
+    owner: "freed-project",
+    name: "freed",
+    defaultBranch: "dev",
+  },
+  issueNumber: 1_234,
+  claimId: "claim-1234",
+  custodyEpoch: 1,
+  hostId: "linux-control-1",
+  workerId: "worker-linux-control-1",
+  worktree: "/var/lib/vorton-factory/workspaces/GH-1234",
+  branch: "fix/issue-1234",
+  conflictDomains: qualification.conflictDomains,
+  claimedAt: "2026-08-13T18:00:00.000Z",
+  baseHead: "a".repeat(40),
+  target: "shared",
+  handoff: {
+    qualification,
+    authorityTaskId: nonceInput.authorityTaskId,
+    authorityTaskRevision: nonceInput.authorityTaskRevision,
+    accountId: nonceInput.accountId,
+    driverId: nonceInput.driverId,
+    publicationCeiling: "draft-pr",
+    finalizationNonce: createWorkspaceFinalizationNonce(nonceInput),
+  },
+  requiredAt: "2026-08-13T18:00:01.000Z",
+});
+
+class CapturingRunner implements CommandRunner {
+  request?: CommandRequest;
+
+  constructor(private readonly receipt: InitialWorkspaceReceipt) {}
+
+  async run(request: CommandRequest): Promise<CommandResult> {
+    this.request = request;
+    return { stdout: `${JSON.stringify(this.receipt)}\n`, stderr: "" };
+  }
+}
+
+const policy: SshWorkerPolicyVerifier = {
+  verify: async (input) => ({
+    hostId: input.hostId,
+    hostname: "linux-control-1.tailnet.example",
+    user: input.expectedUser,
+    identityFile: input.expectedIdentityFile,
+    knownHostsFile: input.expectedKnownHostsFile,
+    configSha256: "d".repeat(64),
+    sshExecutableSha256: "e".repeat(64),
+  }),
+};
+
+function receipt(
+  overrides: Partial<InitialWorkspaceReceipt> = {},
+): InitialWorkspaceReceipt {
+  return {
+    schemaVersion: 1,
+    claimId: requirement.claimId,
+    custodyEpoch: 1,
+    hostId: requirement.hostId,
+    worktree: requirement.worktree,
+    branch: requirement.branch,
+    baseHead: requirement.baseHead,
+    preparedAt: "2026-08-13T18:00:02.000Z",
+    ...overrides,
+  };
+}
+
+function preparer(runner: CommandRunner): SshInitialWorkspacePreparer {
+  return new SshInitialWorkspacePreparer(
+    runner,
+    {
+      sshExecutable: "/usr/bin/ssh",
+      sshConfig: "/etc/vorton-factory/ssh/config",
+      commandCwd: "/var/lib/vorton-factory/symphony",
+      remoteNodeExecutable: "/opt/vorton-factory/node/bin/node",
+      remotePreparerExecutable:
+        "/opt/vorton-factory/current/dist/cli/prepare-symphony-workspace.js",
+      remoteRuntimeConfig: "/etc/vorton-factory/worker-runtime.json",
+      expectedUser: "vorton-factory-executor",
+      expectedIdentityFile: "/etc/vorton-factory/ssh/worker_ed25519",
+      expectedKnownHostsFile: "/etc/vorton-factory/ssh/known_hosts",
+    },
+    policy,
+  );
+}
+
+describe("remote initial workspace preparation", () => {
+  it("sends one exact encoded requirement to the selected SSH host", async () => {
+    const runner = new CapturingRunner(receipt());
+    await expect(preparer(runner).prepare(requirement)).resolves.toEqual(
+      receipt(),
+    );
+    expect(runner.request).toMatchObject({
+      executable: "/usr/bin/ssh",
+      cwd: "/var/lib/vorton-factory/symphony",
+      args: [
+        "-F",
+        "/etc/vorton-factory/ssh/config",
+        "--",
+        "linux-control-1",
+        "/opt/vorton-factory/node/bin/node",
+        "/opt/vorton-factory/current/dist/cli/prepare-symphony-workspace.js",
+        "/etc/vorton-factory/worker-runtime.json",
+        expect.stringMatching(/^[A-Za-z0-9_-]+$/u),
+      ],
+    });
+    const encoded = runner.request?.args.at(-1);
+    expect(
+      initialWorkspaceRequirementSchema.parse(
+        JSON.parse(Buffer.from(encoded ?? "", "base64url").toString("utf8")),
+      ),
+    ).toEqual(requirement);
+  });
+
+  it("rejects a receipt for another worktree or claim", async () => {
+    await expect(
+      preparer(
+        new CapturingRunner(receipt({ worktree: "/tmp/foreign-worktree" })),
+      ).prepare(requirement),
+    ).rejects.toThrow("does not match the admitted claim");
+  });
+
+  it("rejects remote command paths that require shell interpretation", () => {
+    expect(
+      () =>
+        new SshInitialWorkspacePreparer(
+          new CapturingRunner(receipt()),
+          {
+            sshExecutable: "/usr/bin/ssh",
+            sshConfig: "/etc/vorton-factory/ssh/config",
+            commandCwd: "/var/lib/vorton-factory/symphony",
+            remoteNodeExecutable: "/opt/vorton-factory/node;shutdown",
+            remotePreparerExecutable: "/opt/vorton-factory/preparer.js",
+            remoteRuntimeConfig: "/etc/vorton-factory/worker.json",
+            expectedUser: "vorton-factory-executor",
+            expectedIdentityFile: "/etc/vorton-factory/ssh/worker_ed25519",
+            expectedKnownHostsFile: "/etc/vorton-factory/ssh/known_hosts",
+          },
+          policy,
+        ),
+    ).toThrow("shell-safe absolute path");
+  });
+});

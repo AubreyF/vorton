@@ -1,0 +1,34 @@
+[Unit]
+Description=FreedOS Factory encrypted checkpoint edge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vorton-factory-checkpoint
+Group=vorton-factory-checkpoint
+WorkingDirectory=/opt/vorton-factory/current
+EnvironmentFile=/etc/vorton-factory/checkpoint-edge.env
+ExecStart=/usr/bin/env PORT=8091 VORTON_FACTORY_BIND_HOST=127.0.0.1 VORTON_FACTORY_CHECKPOINT_STORE_ROOT=/var/lib/vorton-factory/checkpoints /opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/checkpoint-edge.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=vorton-factory/checkpoints
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/vorton-factory/checkpoints
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

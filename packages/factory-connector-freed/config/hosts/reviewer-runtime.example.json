@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "hostId": "linux-control-1",
+  "accountId": "codex-pro-1",
+  "codexExecutable": "/opt/vorton-factory/codex/bin/codex",
+  "codexHome": "/var/lib/vorton-factory/executor/reviewer/codex",
+  "homeDirectory": "/var/lib/vorton-factory/executor/reviewer",
+  "model": "replace-with-advertised-model",
+  "effort": "high",
+  "quotaSampleIntervalMs": 30000
+}

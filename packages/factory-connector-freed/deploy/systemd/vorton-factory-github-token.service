@@ -1,0 +1,29 @@
+[Unit]
+Description=Refresh the FreedOS Factory Coordinator GitHub App token
+Wants=network-online.target
+After=network-online.target
+Before=vorton-factory-symphony.service
+
+[Service]
+Type=oneshot
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/refresh-github-token.js
+StateDirectory=vorton-factory/symphony/secrets
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory /opt/vorton-factory
+ReadWritePaths=/var/lib/vorton-factory/symphony/secrets
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

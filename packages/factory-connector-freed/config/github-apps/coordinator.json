@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "FreedOS Factory Coordinator",
+  "description": "(AI Generated).\n\nCoordinates the FreedOS Factory issue lifecycle without source publication authority.",
+  "homepageUrl": "https://github.com/AubreyF/vorton",
+  "repositorySelection": "selected",
+  "permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "write",
+    "pullRequests": "read",
+    "checks": "read",
+    "actions": "read"
+  },
+  "pilotEvents": [],
+  "phase2Events": [
+    "issues",
+    "issue_comment",
+    "pull_request",
+    "check_run",
+    "check_suite"
+  ],
+  "public": false,
+  "webhookActive": false,
+  "requestOauthOnInstall": false
+}

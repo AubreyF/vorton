@@ -1,0 +1,252 @@
+import { createHash } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
+import path from "node:path";
+import { z } from "zod";
+import { canonicalJson } from "../security/canonical-json.js";
+import {
+  loadProtectedJsonFile,
+  writeImmutableProtectedJsonFile,
+  writeProtectedJsonFile,
+} from "../security/protected-json.js";
+import {
+  createWorkspaceFinalizationNonce,
+  initialWorkspaceHandoffBindingSchema,
+  initialWorkspaceRequirementSchema,
+  type InitialWorkspaceRequirement,
+} from "./workspace.js";
+
+const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
+
+export const executorHandoffManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  kind: z.literal("executor-handoff"),
+  binding: initialWorkspaceHandoffBindingSchema,
+});
+
+export type ExecutorHandoffManifest = z.infer<
+  typeof executorHandoffManifestSchema
+>;
+
+export const activeWorkspacePointerSchema = z.object({
+  schemaVersion: z.literal(1),
+  kind: z.literal("active-executor-workspace"),
+  worktree: z.string().startsWith("/"),
+  claimId: z.string().min(1),
+  custodyEpoch: z.literal(1),
+  hostId: z.string().min(1),
+  manifestDigest: digestSchema,
+  manifestFile: z.string().regex(/^manifest-[0-9a-f]{64}\.json$/u),
+  activatedAt: z.iso.datetime(),
+});
+
+export type ActiveWorkspacePointer = z.infer<
+  typeof activeWorkspacePointerSchema
+>;
+
+export interface PublishedExecutorHandoff {
+  readonly manifest: ExecutorHandoffManifest;
+  readonly pointer: ActiveWorkspacePointer;
+  readonly manifestPath: string;
+  readonly pointerPath: string;
+}
+
+function sha256(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function executorHandoffManifestFromRequirement(
+  input: InitialWorkspaceRequirement,
+): ExecutorHandoffManifest {
+  const requirement = initialWorkspaceRequirementSchema.parse(input);
+  const { requiredAt: _requiredAt, ...binding } = requirement;
+  return executorHandoffManifestSchema.parse({
+    schemaVersion: 1,
+    kind: "executor-handoff",
+    binding,
+  });
+}
+
+export function executorHandoffManifestDigest(
+  manifest: ExecutorHandoffManifest,
+): string {
+  return sha256(canonicalJson(executorHandoffManifestSchema.parse(manifest)));
+}
+
+function expectedFinalizationNonce(manifest: ExecutorHandoffManifest): string {
+  const binding = manifest.binding;
+  return createWorkspaceFinalizationNonce({
+    repository: binding.repository,
+    issueNumber: binding.issueNumber,
+    claimId: binding.claimId,
+    custodyEpoch: binding.custodyEpoch,
+    hostId: binding.hostId,
+    workerId: binding.workerId,
+    worktree: binding.worktree,
+    branch: binding.branch,
+    authorityTaskId: binding.handoff.authorityTaskId,
+    authorityTaskRevision: binding.handoff.authorityTaskRevision,
+    accountId: binding.handoff.accountId,
+    driverId: binding.handoff.driverId,
+    baseHead: binding.baseHead,
+  });
+}
+
+export class ExecutorHandoffManifestStore {
+  constructor(private readonly root: string) {
+    if (!path.isAbsolute(root)) {
+      throw new Error("Executor handoff root must be absolute.");
+    }
+  }
+
+  async publish(input: {
+    readonly requirement: InitialWorkspaceRequirement;
+    readonly activatedAt: string;
+  }): Promise<PublishedExecutorHandoff> {
+    const activatedAt = z.iso.datetime().parse(input.activatedAt);
+    await this.#assertPhysicalWorkspace(input.requirement.worktree);
+    const manifest = executorHandoffManifestFromRequirement(input.requirement);
+    if (
+      manifest.binding.handoff.finalizationNonce !==
+      expectedFinalizationNonce(manifest)
+    ) {
+      throw new Error(
+        "Executor handoff finalization nonce does not match custody.",
+      );
+    }
+    const manifestDigest = executorHandoffManifestDigest(manifest);
+    const manifestFile = `manifest-${manifestDigest}.json`;
+    const manifestPath = path.join(this.root, manifestFile);
+    await writeImmutableProtectedJsonFile({
+      file: manifestPath,
+      label: "Executor handoff manifest",
+      value: manifest,
+    });
+    const pointer = activeWorkspacePointerSchema.parse({
+      schemaVersion: 1,
+      kind: "active-executor-workspace",
+      worktree: manifest.binding.worktree,
+      claimId: manifest.binding.claimId,
+      custodyEpoch: manifest.binding.custodyEpoch,
+      hostId: manifest.binding.hostId,
+      manifestDigest,
+      manifestFile,
+      activatedAt,
+    });
+    const pointerPath = this.#pointerPath(pointer.worktree);
+    await writeProtectedJsonFile({
+      file: pointerPath,
+      label: "Active executor workspace pointer",
+      value: pointer,
+    });
+    return { manifest, pointer, manifestPath, pointerPath };
+  }
+
+  async loadForWorkspace(worktree: string): Promise<PublishedExecutorHandoff> {
+    await this.#assertPhysicalWorkspace(worktree);
+    await this.#assertProtectedRoot();
+    const pointerPath = this.#pointerPath(worktree);
+    const pointer = activeWorkspacePointerSchema.parse(
+      await loadProtectedJsonFile({
+        file: pointerPath,
+        label: "Active executor workspace pointer",
+      }),
+    );
+    if (pointer.worktree !== worktree) {
+      throw new Error("Executor handoff pointer names another workspace.");
+    }
+    if (pointer.manifestFile !== `manifest-${pointer.manifestDigest}.json`) {
+      throw new Error("Executor handoff pointer changes its manifest digest.");
+    }
+    const loaded = await this.loadByDigest(pointer.manifestDigest);
+    const { manifest, manifestPath } = loaded;
+    const binding = manifest.binding;
+    if (
+      binding.worktree !== pointer.worktree ||
+      binding.claimId !== pointer.claimId ||
+      binding.custodyEpoch !== pointer.custodyEpoch ||
+      binding.hostId !== pointer.hostId
+    ) {
+      throw new Error(
+        "Executor handoff manifest does not match active custody.",
+      );
+    }
+    if (
+      binding.handoff.finalizationNonce !== expectedFinalizationNonce(manifest)
+    ) {
+      throw new Error(
+        "Executor handoff finalization nonce does not match custody.",
+      );
+    }
+    return { manifest, pointer, manifestPath, pointerPath };
+  }
+
+  async loadByDigest(manifestDigest: string): Promise<{
+    readonly manifest: ExecutorHandoffManifest;
+    readonly manifestPath: string;
+  }> {
+    const digest = digestSchema.parse(manifestDigest);
+    await this.#assertProtectedRoot();
+    const manifestPath = path.join(this.root, `manifest-${digest}.json`);
+    const manifest = executorHandoffManifestSchema.parse(
+      await loadProtectedJsonFile({
+        file: manifestPath,
+        label: "Executor handoff manifest",
+      }),
+    );
+    if (executorHandoffManifestDigest(manifest) !== digest) {
+      throw new Error(
+        "Executor handoff manifest digest does not match its pointer.",
+      );
+    }
+    if (
+      manifest.binding.handoff.finalizationNonce !==
+      expectedFinalizationNonce(manifest)
+    ) {
+      throw new Error(
+        "Executor handoff finalization nonce does not match custody.",
+      );
+    }
+    return { manifest, manifestPath };
+  }
+
+  #pointerPath(worktree: string): string {
+    const digest = sha256(
+      canonicalJson({
+        domain: "vorton-factory.active-executor-workspace.v1",
+        worktree,
+      }),
+    );
+    return path.join(this.root, `workspace-${digest}.json`);
+  }
+
+  async #assertProtectedRoot(): Promise<void> {
+    const stats = await lstat(this.root);
+    if (
+      !stats.isDirectory() ||
+      stats.isSymbolicLink() ||
+      (stats.mode & 0o077) !== 0
+    ) {
+      throw new Error("Executor handoff root must be a physical directory.");
+    }
+    if ((await realpath(this.root)) !== this.root) {
+      throw new Error("Executor handoff root cannot contain symbolic links.");
+    }
+  }
+
+  async #assertPhysicalWorkspace(worktree: string): Promise<void> {
+    if (!path.isAbsolute(worktree)) {
+      throw new Error("Executor handoff workspace must be absolute.");
+    }
+    const stats = await lstat(worktree);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      throw new Error(
+        "Executor handoff workspace must be a physical directory.",
+      );
+    }
+    if ((await realpath(worktree)) !== worktree) {
+      throw new Error(
+        "Executor handoff workspace cannot contain symbolic links.",
+      );
+    }
+  }
+}

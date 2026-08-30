@@ -21,6 +21,29 @@ export interface FactoryDataSource {
   getSnapshot(): Promise<FactorySnapshot>;
 }
 
+export const factoryModuleManifest = {
+  product: "Vorton Factory",
+  connector: "FreedOS Factory",
+  connectorPackage: "@vorton/factory-connector-freed",
+  sourceRepository: "AubreyF/aubtown",
+  sourceCommit: "014b786c8bf6b51a3ed265b4e36773afff0f5d59",
+  mode: "read-only",
+  authority: {
+    backlog: "GitHub Issues",
+    execution: "Freed task claims",
+    organization: "Vorton Postgres",
+    publication: "Draft pull requests only",
+  },
+  capabilities: [
+    "Admission and conflict policy",
+    "Host routing and quota governance",
+    "Claim-bound custody and checkpoints",
+    "Validation and independent review",
+    "Draft publication transactions",
+    "Signed receipts and reconciliation",
+  ],
+} as const;
+
 const observedAt = "2026-08-29T00:33:00.000Z";
 const sourceHead = "e8f63827e20c5f0625fe8ef505f3b95c8f310623";
 

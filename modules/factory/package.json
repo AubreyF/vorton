@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vorton/factory-connector-freed": "0.0.0",
     "@vorton/repository-connector": "0.0.0",
     "@vorton/repository-connector-github": "0.0.0"
   }

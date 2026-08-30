@@ -1,0 +1,29 @@
+[Unit]
+Description=Verify the disposable Freed authority broker contract
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/var/lib/vorton-factory/symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+ExecStart=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/verify-freed-broker.js /etc/vorton-factory/freed-broker-conformance.json
+StateDirectory=vorton-factory/coordinator vorton-factory/conformance
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+BindReadOnlyPaths=/etc/freed/automation-actor-launchers-conformance:/etc/freed/automation-actor-launchers
+ReadOnlyPaths=/etc/vorton-factory /opt/vorton-factory /opt/freed /srv/freed
+ReadWritePaths=/var/lib/vorton-factory/coordinator /var/lib/vorton-factory/conformance
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

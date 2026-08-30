@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "originRepository": "AubreyF/aubtown",
+  "originCommit": "014b786c8bf6b51a3ed265b4e36773afff0f5d59",
+  "importedAt": "2026-08-30T07:25:00.000Z",
+  "destinationPackage": "@vorton/factory-connector-freed",
+  "excluded": [
+    "git-history",
+    "ignored-files",
+    "node_modules",
+    "dist",
+    "coverage",
+    "reports",
+    "credentials",
+    "oauth-caches",
+    "host-state",
+    "secrets"
+  ]
+}

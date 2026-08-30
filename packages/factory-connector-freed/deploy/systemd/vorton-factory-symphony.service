@@ -1,0 +1,38 @@
+[Unit]
+Description=FreedOS Factory coordinator
+Wants=network-online.target
+Requires=vorton-factory-github-token.service vorton-factory-host-gateway.service
+After=network-online.target vorton-factory-github-token.service vorton-factory-host-gateway.service
+
+[Service]
+Type=simple
+User=vorton-factory-symphony
+Group=vorton-factory-symphony
+WorkingDirectory=/var/lib/vorton-factory/symphony
+EnvironmentFile=/etc/vorton-factory/symphony.env
+Environment="PATH=/opt/vorton-factory/beam/.elixir-install/installs/otp/28.5.0.5/bin:/opt/vorton-factory/node/bin:/opt/vorton-factory/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStartPre=/opt/vorton-factory/node/bin/node /opt/vorton-factory/current/dist/cli/reconcile-freed-claims.js --require-clear
+ExecStart=/opt/vorton-factory/symphony/298a877e/8001b52e3062495a16e520e4ceaf8f9de868c4d0/symphony --i-understand-that-this-will-be-running-without-the-usual-guardrails --logs-root /var/lib/vorton-factory/logs/symphony --port 7080 /etc/vorton-factory/WORKFLOW.md
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+StateDirectory=vorton-factory/symphony vorton-factory/admission
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/vorton-factory
+ReadWritePaths=/var/lib/vorton-factory/symphony /var/lib/vorton-factory/admission /var/lib/vorton-factory/logs/symphony /var/lib/freed/automation/control
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

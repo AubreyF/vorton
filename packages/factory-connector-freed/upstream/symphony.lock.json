@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/openai/symphony.git",
+  "production": {
+    "commit": "8001b52e3062495a16e520e4ceaf8f9de868c4d0",
+    "sourceArchive": "https://github.com/openai/symphony/archive/8001b52e3062495a16e520e4ceaf8f9de868c4d0.tar.gz",
+    "sourceSha256": "1aa4fa1007ae90e48fd392bf352f9754858aa60453a287a02968e75e294787fd"
+  },
+  "tracking": {
+    "ref": "refs/heads/main"
+  },
+  "releaseBaseline": {
+    "tag": "v0.0.2",
+    "commit": "653f8b3cc476db03420479ba6f95b2ed7281c401",
+    "publishedAt": "2026-07-24T15:01:31Z"
+  },
+  "runtime": {
+    "elixir": "1.19.5-otp-28",
+    "erlang": "28",
+    "license": "Apache-2.0"
+  },
+  "patches": [
+    {
+      "path": "upstream/patches/0001-vorton-factory-connector-compatibility.patch",
+      "sha256": "656142f7209d27d6026e20c9a0b5c5c4fbc320f35096332e1bd9cf7cc2796f04",
+      "verifiedAgainst": "8001b52e3062495a16e520e4ceaf8f9de868c4d0",
+      "purpose": [
+        "mode-restricted-refreshable-github-token-file",
+        "capability-aware-ssh-worker-routing",
+        "fail-closed-prelaunch-admission-command",
+        "bounded-long-running-prelaunch-admission",
+        "security-advisory-free-compatible-dependency-lock"
+      ]
+    },
+    {
+      "path": "upstream/patches/0002-feat-add-active-run-guard.patch",
+      "sha256": "a4a49a6e4c8763c7a92ec49d2498d6c50189e89bf1efe55f08e79d4d6a500096",
+      "verifiedAgainst": "8001b52e3062495a16e520e4ceaf8f9de868c4d0",
+      "purpose": [
+        "active-turn-quota-guard",
+        "exact-thread-and-turn-interruption",
+        "hard-stop-after-interrupt-grace"
+      ]
+    },
+    {
+      "path": "upstream/patches/0003-feat-add-required-completion-hook.patch",
+      "sha256": "9125fe926069de0dc6d00f4fcb5e1465d05defdb3e404593f502b4259c29db4c",
+      "verifiedAgainst": "8001b52e3062495a16e520e4ceaf8f9de868c4d0",
+      "purpose": [
+        "fail-closed-trusted-completion-hook",
+        "completion-before-best-effort-cleanup",
+        "remote-executor-finalization"
+      ]
+    },
+    {
+      "path": "upstream/patches/0004-fix-update-bandit-security-lock.patch",
+      "sha256": "99f09f4d4c44fa6d80ac01fa742928bdaadd05f945a88edb22e9a51d8f0a2342",
+      "verifiedAgainst": "8001b52e3062495a16e520e4ceaf8f9de868c4d0",
+      "purpose": [
+        "bandit-http2-security-advisory-remediation",
+        "security-advisory-free-compatible-dependency-lock"
+      ]
+    }
+  ],
+  "reviewedCapabilities": [
+    "github-issues-adapter",
+    "host-side-github-api",
+    "required-labels",
+    "bounded-concurrency",
+    "codex-app-server",
+    "per-issue-workspaces",
+    "ssh-workers",
+    "json-api",
+    "liveview-dashboard",
+    "tracker-token-environment-scrubbing",
+    "refreshable-github-app-token-file",
+    "capability-aware-ssh-worker-routing",
+    "fail-closed-prelaunch-admission-command",
+    "bounded-long-running-prelaunch-admission",
+    "fail-closed-active-turn-guard",
+    "fail-closed-trusted-completion-hook",
+    "security-audited-compatible-dependencies"
+  ],
+  "knownGaps": [
+    "blocked-and-retry-state-is-memory-only",
+    "configured-ssh-workers-replace-local-execution-instead-of-forming-one-mixed-pool",
+    "freed-authority-claim-commands-are-not-yet-implemented",
+    "coordinator-completion-reconciliation-is-not-yet-wired"
+  ]
+}
