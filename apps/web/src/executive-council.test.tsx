@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { sectionFromHash, subsectionFromHash } from "./AuthenticApp.js";
+import {
+  commandBridgeSections,
+  commandSectionIdFromSubsection,
+  sectionFromHash,
+  subsectionFromHash,
+} from "./AuthenticApp.js";
+import { SectionNavigator } from "./design-system/section-navigator.js";
 import {
   advanceCouncilUntilSettled,
   CouncilSurface,
@@ -42,6 +48,7 @@ const evidence = [
 function renderCouncil(
   council = previewCouncilStates.complete,
   failure?: string,
+  embedded = false,
 ) {
   return renderToStaticMarkup(
     <CouncilSurface
@@ -54,6 +61,7 @@ function renderCouncil(
       loading={false}
       running={false}
       failure={failure}
+      embedded={embedded}
       onSelectWork={() => undefined}
       onConvene={() => undefined}
     />,
@@ -61,10 +69,36 @@ function renderCouncil(
 }
 
 describe("executive council route and surface", () => {
-  it("routes a direct Command Bridge Council hash without changing other defaults", () => {
+  it("maps legacy Command Bridge hashes to sections on one page", () => {
     expect(sectionFromHash("#command/Council")).toBe("command");
     expect(subsectionFromHash("command", "#command/Council")).toBe("Council");
     expect(subsectionFromHash("command", "#command/unknown")).toBe("Briefing");
+    expect(commandSectionIdFromSubsection("Council")).toBe("command-council");
+    expect(commandSectionIdFromSubsection("unknown")).toBe("command-briefing");
+  });
+
+  it("renders the AubOS section rail and compact fallback for all command sections", () => {
+    const html = renderToStaticMarkup(
+      <SectionNavigator
+        items={commandBridgeSections}
+        label="Command Bridge sections"
+        requestedId="command-briefing"
+        onNavigate={() => undefined}
+      >
+        {commandBridgeSections.map((section) => (
+          <section id={section.id} key={section.id}>
+            {section.label}
+          </section>
+        ))}
+      </SectionNavigator>,
+    );
+    expect(html).toContain('class="section-navigator-rail"');
+    expect(html).toContain(
+      'class="section-navigator-mobile section-navigator-topbar"',
+    );
+    expect(html).toContain('href="#command/Council"');
+    expect(html).toContain('id="command-decisions"');
+    expect(html).toContain('id="command-activity"');
   });
 
   it("defines one unique skill for each required executive role", () => {
@@ -115,6 +149,12 @@ describe("executive council route and surface", () => {
     expect(html).toContain("Review synthesis");
     expect(html).not.toMatch(/>Approve</);
     expect(html).not.toMatch(/>Execute</);
+  });
+
+  it("uses a section heading when the council is embedded in Command Bridge", () => {
+    const html = renderCouncil(previewCouncilStates.complete, undefined, true);
+    expect(html).toContain("<h2>Executive council</h2>");
+    expect(html).not.toContain("<h1>Executive council</h1>");
   });
 });
 
