@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   APPEARANCE_DEFINITIONS,
   APPEARANCE_STORAGE_KEY,
@@ -192,11 +186,15 @@ export function AppearanceTileStrip({
   );
 }
 
-export function ThemeControls() {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
+export function AppearanceMenuSections({
+  open,
+  onRequestClose,
+}: {
+  open: boolean;
+  onRequestClose: () => void;
+}) {
   const committedAppearanceRef = useRef<AppearanceId>(DEFAULT_APPEARANCE_ID);
   const previewAppearanceRef = useRef<AppearanceId | null>(null);
-  const appearanceTooltipId = useId();
   const appearanceId = useSyncExternalStore(
     subscribeAppearance,
     getAppearanceSnapshot,
@@ -234,66 +232,22 @@ export function ThemeControls() {
   );
 
   useEffect(() => {
-    function dismiss(event: PointerEvent) {
-      if (
-        detailsRef.current?.open &&
-        !detailsRef.current.contains(event.target as Node)
-      ) {
-        revertAppearancePreview();
-        detailsRef.current.removeAttribute("open");
-      }
-    }
+    if (!open) revertAppearancePreview();
+  }, [open, revertAppearancePreview]);
 
-    function dismissWithKeyboard(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        revertAppearancePreview();
-        detailsRef.current?.removeAttribute("open");
-      }
-    }
-
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", dismissWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("keydown", dismissWithKeyboard);
-      revertAppearancePreview();
-    };
-  }, [revertAppearancePreview]);
+  useEffect(() => () => revertAppearancePreview(), [revertAppearancePreview]);
 
   function chooseAppearance(next: AppearanceId) {
     previewAppearanceRef.current = null;
     applyAppearance(next);
-    detailsRef.current?.removeAttribute("open");
+    onRequestClose();
   }
 
-  const currentLabel = appearance.name;
-
   return (
-    <details
-      className="appearance-controls"
-      ref={detailsRef}
-      onToggle={(event) => {
-        if (!event.currentTarget.open) revertAppearancePreview();
-      }}
-    >
-      <summary
-        className="appearance-button"
-        aria-label={`Appearance, ${currentLabel}`}
-        aria-describedby={appearanceTooltipId}
-      >
-        <span className="appearance-button-icon" aria-hidden="true">
-          <AppearanceGlyph appearance={appearance} />
-        </span>
-        <span
-          className="appearance-tooltip"
-          id={appearanceTooltipId}
-          role="tooltip"
-        >
-          {currentLabel}
-        </span>
-      </summary>
-      <div
-        className="appearance-menu"
+    <>
+      <section
+        className="account-menu-section appearance-menu-section"
+        aria-labelledby="appearance-theme-heading"
         onMouseLeave={revertAppearancePreview}
         onBlurCapture={(event) => {
           if (
@@ -304,91 +258,86 @@ export function ThemeControls() {
           }
         }}
       >
-        <section
-          className="appearance-menu-section"
-          aria-labelledby="appearance-theme-heading"
+        <p id="appearance-theme-heading">Appearance</p>
+        <div
+          className="appearance-theme-options"
+          role="radiogroup"
+          aria-label="Appearance theme"
         >
-          <p id="appearance-theme-heading">Appearance</p>
-          <div
-            className="appearance-theme-options"
-            role="radiogroup"
-            aria-label="Appearance theme"
-          >
-            {APPEARANCE_DEFINITIONS.map((item) => {
-              const selected = item.id === appearance.id;
-              return (
-                <button
-                  className="appearance-option"
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={item.name}
-                  onMouseEnter={() => previewAppearance(item.id)}
-                  onFocus={() => previewAppearance(item.id)}
-                  onClick={() => chooseAppearance(item.id)}
+          {APPEARANCE_DEFINITIONS.map((item) => {
+            const selected = item.id === appearance.id;
+            return (
+              <button
+                className="appearance-option"
+                key={item.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={item.name}
+                onMouseEnter={() => previewAppearance(item.id)}
+                onFocus={() => previewAppearance(item.id)}
+                onClick={() => chooseAppearance(item.id)}
+              >
+                <span className="appearance-option-icons" aria-hidden="true">
+                  <AppearanceGlyph appearance={item} />
+                </span>
+                <span
+                  className="appearance-option-name"
+                  style={{ fontFamily: item.previewDisplayFont }}
                 >
-                  <span className="appearance-option-icons" aria-hidden="true">
-                    <AppearanceGlyph appearance={item} />
-                  </span>
-                  <span
-                    className="appearance-option-name"
-                    style={{ fontFamily: item.previewDisplayFont }}
-                  >
-                    {item.name}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-        <section
-          className="appearance-menu-section interface-zoom-section"
-          aria-labelledby="interface-zoom-heading"
-        >
-          <div className="interface-zoom-heading-row">
-            <p id="interface-zoom-heading">Interface zoom</p>
-            <output
-              className="interface-zoom-value"
-              htmlFor="interface-zoom-slider"
-            >
-              {interfaceZoomLabel}
-            </output>
-          </div>
-          <div
-            className="interface-zoom-control"
-            data-interface-zoom-control="true"
-            style={{
-              ["--interface-zoom-default-stop" as string]: `${interfaceZoomDefaultStop}%`,
-            }}
+                  {item.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      <section
+        className="account-menu-section interface-zoom-section"
+        aria-labelledby="interface-zoom-heading"
+      >
+        <div className="interface-zoom-heading-row">
+          <p id="interface-zoom-heading">Interface zoom</p>
+          <output
+            className="interface-zoom-value"
+            htmlFor="interface-zoom-slider"
           >
-            <span
-              className="interface-zoom-icon interface-zoom-icon-small"
-              aria-hidden="true"
-            >
-              A
-            </span>
-            <input
-              id="interface-zoom-slider"
-              className="interface-zoom-slider"
-              type="range"
-              min={INTERFACE_ZOOM_MIN}
-              max={INTERFACE_ZOOM_MAX}
-              step={INTERFACE_ZOOM_STEP}
-              value={interfaceZoom}
-              onChange={(event) => setInterfaceZoom(Number(event.target.value))}
-              aria-label="Interface zoom"
-              aria-valuetext={interfaceZoomLabel}
-            />
-            <span
-              className="interface-zoom-icon interface-zoom-icon-large"
-              aria-hidden="true"
-            >
-              A
-            </span>
-          </div>
-        </section>
-      </div>
-    </details>
+            {interfaceZoomLabel}
+          </output>
+        </div>
+        <div
+          className="interface-zoom-control"
+          data-interface-zoom-control="true"
+          style={{
+            ["--interface-zoom-default-stop" as string]: `${interfaceZoomDefaultStop}%`,
+          }}
+        >
+          <span
+            className="interface-zoom-icon interface-zoom-icon-small"
+            aria-hidden="true"
+          >
+            A
+          </span>
+          <input
+            id="interface-zoom-slider"
+            className="interface-zoom-slider"
+            type="range"
+            min={INTERFACE_ZOOM_MIN}
+            max={INTERFACE_ZOOM_MAX}
+            step={INTERFACE_ZOOM_STEP}
+            value={interfaceZoom}
+            onChange={(event) => setInterfaceZoom(Number(event.target.value))}
+            aria-label="Interface zoom"
+            aria-valuetext={interfaceZoomLabel}
+          />
+          <span
+            className="interface-zoom-icon interface-zoom-icon-large"
+            aria-hidden="true"
+          >
+            A
+          </span>
+        </div>
+      </section>
+    </>
   );
 }

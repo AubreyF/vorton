@@ -221,49 +221,6 @@
   font-size: 0.68rem;
 }
 
-.identity-control {
-  display: flex;
-  min-width: 44px;
-  height: 44px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: var(--vorton-control-radius);
-  background: transparent;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-
-.identity-control:hover,
-.identity-control:focus-visible {
-  border-color: var(--line);
-  background: var(--vorton-control-hover);
-  color: var(--ink);
-}
-
-.identity-control > span:first-child {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--vorton-button-primary-background);
-  color: var(--vorton-button-primary-text);
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.identity-control__label {
-  max-width: 130px;
-  overflow: hidden;
-  font-family: var(--vorton-font-display);
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .command-intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
@@ -1360,10 +1317,6 @@
 }
 
 @media (max-width: 1040px) {
-  .identity-control__label {
-    display: none;
-  }
-
   .briefing-grid,
   .daily-command-grid {
     grid-template-columns: 1fr;
@@ -1413,10 +1366,6 @@
     min-height: 42px;
     padding-inline: 11px;
     font-size: 0.86rem;
-  }
-
-  .identity-control {
-    display: none;
   }
 
   .view-frame {
