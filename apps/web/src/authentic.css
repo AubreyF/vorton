@@ -1471,50 +1471,6 @@ input[type="range"] {
   width: 100%;
   accent-color: var(--green);
 }
-.budget-builder-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  margin: 18px 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-}
-.checkbox-control {
-  display: flex;
-  grid-template-columns: none;
-  flex-direction: row;
-  align-items: center;
-  gap: 9px;
-  cursor: pointer;
-}
-.checkbox-control input {
-  accent-color: var(--green);
-}
-.checkbox-control span {
-  display: inline;
-}
-.budget-input-grid {
-  display: grid;
-  gap: 9px;
-}
-.budget-input-card {
-  grid-template-columns: minmax(0, 1fr) 120px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-}
-.budget-input-card > span {
-  align-items: center;
-}
-.budget-input-card small {
-  grid-column: 1 / -1;
-  color: var(--ink-soft);
-  font-size: 0.68rem;
-  font-weight: 400;
-  line-height: 1.45;
-}
 .assumption-box {
   padding: 14px;
   border-left: 3px solid var(--amber);
@@ -1557,36 +1513,6 @@ input[type="range"] {
 .runway-number small {
   color: var(--ink-soft);
 }
-.runway-track {
-  position: relative;
-  height: 18px;
-  margin: 34px 0 38px;
-  border-radius: 99px;
-  background: var(--paper);
-}
-.runway-track > span {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 99px;
-  background: var(--green);
-  transition: width 300ms ease;
-}
-.runway-track i {
-  position: absolute;
-  top: -6px;
-  width: 1px;
-  height: 30px;
-  background: var(--line);
-  font-style: normal;
-}
-.runway-track b {
-  position: absolute;
-  top: 34px;
-  transform: translateX(-50%);
-  color: var(--ink-soft);
-  font-size: 0.64rem;
-  font-weight: 400;
-}
 .result-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1613,9 +1539,6 @@ input[type="range"] {
 .chart-panel {
   margin-top: 18px;
 }
-.horizon-panel {
-  border-top: 3px solid var(--blue);
-}
 .formula-note {
   display: grid;
   gap: 5px;
@@ -1634,99 +1557,6 @@ input[type="range"] {
   color: var(--ink);
   font-weight: 500;
 }
-.horizon-panel > .panel-note {
-  margin-top: 14px;
-}
-.bar-chart {
-  display: grid;
-  gap: 8px;
-}
-.bar-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(120px, 2fr) 70px;
-  gap: 14px;
-  align-items: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-.bar-row:hover,
-.bar-row.selected {
-  background: var(--paper);
-}
-.bar-label {
-  font-size: 0.74rem;
-}
-.bar-track {
-  height: 8px;
-  border-radius: 99px;
-  background: var(--paper);
-}
-.bar-track i {
-  display: block;
-  height: 100%;
-  border-radius: 99px;
-  background: var(--blue);
-  transition: width 250ms ease;
-}
-.bar-row.selected .bar-track i {
-  background: var(--green);
-}
-.bar-row > strong {
-  font-family: var(--vorton-font-utility);
-  font-size: 0.72rem;
-  font-weight: 500;
-  text-align: right;
-}
-.legend {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 10px;
-  color: var(--ink-soft);
-  font-size: 0.72rem;
-}
-.legend span::before {
-  display: inline-block;
-  width: 16px;
-  height: 3px;
-  margin-right: 7px;
-  vertical-align: middle;
-  background: var(--blue);
-  content: "";
-}
-.legend .spend-key::before {
-  background: var(--red);
-}
-.line-chart {
-  display: block;
-  width: 100%;
-  overflow: visible;
-}
-.line-chart line {
-  stroke: var(--line);
-  stroke-width: 1;
-}
-.line-chart polyline {
-  fill: none;
-  stroke-width: 3;
-  vector-effect: non-scaling-stroke;
-}
-.line-chart .income-line {
-  stroke: var(--blue);
-}
-.line-chart .spend-line {
-  stroke: var(--red);
-}
-.line-chart text {
-  fill: var(--ink-soft);
-  font-size: 12px;
-}
-
 .table-controls {
   display: flex;
   align-items: end;
@@ -1804,56 +1634,6 @@ details > summary {
   font-weight: 500;
 }
 
-.balance-bars {
-  display: grid;
-  gap: 3px;
-}
-.balance-row {
-  display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(150px, 2fr) 95px minmax(
-      110px,
-      auto
-    );
-  gap: 14px;
-  align-items: center;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--line);
-}
-.balance-row > div:first-child strong,
-.balance-row > div:first-child span {
-  display: block;
-}
-.balance-row > div:first-child strong {
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-.balance-row > div:first-child span {
-  margin-top: 3px;
-  color: var(--ink-soft);
-  font-size: 0.65rem;
-}
-.balance-row > strong {
-  font-family: var(--vorton-font-utility);
-  font-size: 0.76rem;
-  font-weight: 500;
-  text-align: right;
-}
-.value-bar {
-  height: 8px;
-  border-radius: 99px;
-  background: var(--paper);
-}
-.value-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 99px;
-}
-.value-bar .asset {
-  background: var(--green);
-}
-.value-bar .liability {
-  background: var(--red);
-}
 .explanation-list details,
 .decision-list details {
   padding: 13px 0;
@@ -2067,55 +1847,6 @@ details > summary {
   font-weight: 500;
 }
 
-.paired-bars,
-.category-bars {
-  display: grid;
-  gap: 7px;
-}
-.paired-bars article,
-.category-bars article {
-  display: grid;
-  grid-template-columns: 78px minmax(90px, 1fr) 80px;
-  gap: 10px;
-  align-items: center;
-}
-.paired-bars article > span,
-.category-bars article > span {
-  color: var(--ink-soft);
-  font-size: 0.67rem;
-}
-.paired-bars article > div,
-.category-bars article > div {
-  position: relative;
-  display: grid;
-  gap: 3px;
-  min-height: 8px;
-}
-.paired-bars i,
-.category-bars i {
-  display: block;
-  height: 4px;
-  border-radius: 99px;
-  background: var(--blue);
-}
-.paired-bars i.spend {
-  background: var(--red);
-}
-.paired-bars i.income {
-  background: var(--blue);
-}
-.category-bars i {
-  height: 7px;
-  background: var(--green);
-}
-.paired-bars strong,
-.category-bars strong {
-  font-family: var(--vorton-font-utility);
-  font-size: 0.66rem;
-  font-weight: 500;
-  text-align: right;
-}
-
 .segmented-control {
   display: flex;
   flex-wrap: wrap;
@@ -2155,22 +1886,12 @@ details > summary {
 .readiness-card h2 {
   font-size: 1rem;
 }
-.capital-guardrail {
-  margin: 0 0 18px;
-}
 .readiness-card p {
   margin: 10px 0 0;
   color: var(--ink-soft);
   font-size: 0.78rem;
   line-height: 1.5;
 }
-.inline-value {
-  margin: 12px 0 0 !important;
-  color: var(--ink) !important;
-  font-family: var(--vorton-font-utility);
-  font-size: 1.2rem !important;
-}
-
 .journal-list {
   display: grid;
 }
@@ -2486,23 +2207,6 @@ details > summary {
   .runway-number strong {
     font-size: 3.4rem;
   }
-  .budget-input-card {
-    grid-template-columns: 1fr;
-  }
-  .budget-input-card small {
-    grid-column: auto;
-  }
-  .bar-row {
-    grid-template-columns: minmax(125px, 1.2fr) minmax(80px, 1fr) 58px;
-    gap: 8px;
-  }
-  .balance-row {
-    grid-template-columns: minmax(130px, 1fr) 80px;
-  }
-  .balance-row .value-bar,
-  .balance-row .status-pill {
-    display: none;
-  }
   .table-controls {
     align-items: stretch;
     flex-direction: column;
@@ -2601,10 +2305,5 @@ details > summary {
     border: 1px solid CanvasText;
     background: Canvas;
     color: CanvasText;
-  }
-  .runway-track > span,
-  .bar-track i,
-  .value-bar i {
-    forced-color-adjust: none;
   }
 }

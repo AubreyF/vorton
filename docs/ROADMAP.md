@@ -77,7 +77,8 @@ These capabilities exist but remain subject to integration testing and change:
 
 - More frontier providers, local model runtimes, and specialized diagnostic workers.
 - Containerized research and operational workers beyond software development.
-- Complete Finance, Conversations, Tasks, Goals, Opportunities, Command Bridge, Tools, and Factory modules.
+- Complete Conversations, Tasks, Goals, Opportunities, Command Bridge, Tools, and Factory modules.
+- Support installation-owned optional modules, including a separately governed Finance module when an installation actually needs one.
 - Rich transcript backfills, raw media workflows, and additional conversation providers.
 - A signed module and tool registry, followed by a managed deployment model once isolated installations prove the security contract.
 

@@ -179,6 +179,13 @@ describe("synthetic organization installation acceptance", () => {
     expect(web).toContain('app = "freed-web"');
     expect(web).toContain('VORTON_PUBLIC_INSTALLATION_SLUG = "freed"');
     expect(web).toContain('VORTON_PUBLIC_INSTALLATION_NAME = "Freed"');
+    const installation = readFileSync(join(root, "vorton.yaml"), "utf8");
+    const modules = readFileSync(
+      join(root, "organization/modules.yaml"),
+      "utf8",
+    );
+    expect(installation).not.toMatch(/^\s*-\s+finance\s*$/m);
+    expect(modules).not.toMatch(/^\s*finance:/m);
     expect(
       readFileSync(join(root, "deploy/hindsight.fly.toml"), "utf8"),
     ).toContain('HINDSIGHT_API_WORKER_ID = "freed-memory"');

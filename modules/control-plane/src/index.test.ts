@@ -17,7 +17,10 @@ describe("synthetic control-plane adapter", () => {
     const snapshot =
       await createSyntheticControlPlaneDataSource().getSnapshot();
     expect(snapshot.modules.map((module) => module.id)).toContain("factory");
-    expect(snapshot.modules).toHaveLength(9);
+    expect(snapshot.modules.map((module) => module.id)).not.toContain(
+      "finance",
+    );
+    expect(snapshot.modules).toHaveLength(8);
   });
 
   it("creates inspectable Work inside the synthetic adapter boundary", async () => {

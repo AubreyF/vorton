@@ -51,13 +51,14 @@ Role-based memory filtering is a future enforcement layer. The first release inc
 - Opportunities tracks possibilities that may merit investigation or promotion.
 - Goals tracks desired outcomes and their evidence.
 - Tasks is the personal label and view over kernel Work.
-- Finance adds financial models and records without weakening approval rules.
 - Tools lets an installation define and preview its own tools.
 - Conversations ingests provider-neutral transcript revisions from adapters such as Google Meet and Omi.
 - Admin manages people, access, policies, integrations, and observed deployment state.
 - Factory coordinates software production through kernel Work and external repository connectors.
 
 The upstream Tools module starts empty. It ships scaffolding and one uninstalled, offline example named Moonbase Triage. No personal tools, data, configuration, or assets are copied into Vorton.
+
+Finance is not a built-in Vorton module. An installation may add a separately governed Finance module later without changing the kernel or weakening approval rules.
 
 ## Factory boundary
 
