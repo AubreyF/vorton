@@ -6,7 +6,7 @@ For one person, AubOS can become a lifelong partner in thinking, creating, decid
 
 ## Vision
 
-AubOS connects frontier models, conversations, tools, and workers into a system that builds continuity over time. It preserves sources, connects ideas, consolidates experiences, and carries learning forward.
+AubOS connects frontier models, conversations, tools, and workers into a system that builds continuity over time. It preserves sources, connects ideas, consolidates experiences, and carries learnings forward.
 
 AubOS Factory translates your visions into self-optimizing software - automatically parallelizing workers, and multiplexing them across multiple frontier provider accounts for max return on token spend.
 
