@@ -27,6 +27,18 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+function transitionalSecret(
+  env: NodeJS.ProcessEnv,
+  currentName: string,
+  legacyName: string,
+): string {
+  const current = env[currentName]?.trim();
+  if (current) return current;
+  const legacy = env[legacyName]?.trim();
+  if (legacy) return legacy;
+  throw new Error(`${currentName} is required`);
+}
+
 function exactBoolean(
   env: NodeJS.ProcessEnv,
   name: string,
@@ -65,7 +77,11 @@ export function readWorkerEnvironment(
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("PORT must be an integer from 1 through 65535");
   }
-  const secret = required(env, "VORTON_WORKER_SHARED_SECRET");
+  const secret = transitionalSecret(
+    env,
+    "VORTON_WORKER_SHARED_SECRET",
+    "AUBOS_WORKER_SHARED_SECRET",
+  );
   if (secret.length < 32)
     throw new Error(
       "VORTON_WORKER_SHARED_SECRET must contain at least 32 characters",
