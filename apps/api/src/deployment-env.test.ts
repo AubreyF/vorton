@@ -46,7 +46,7 @@ const valid = {
   VORTON_CODEX_REASONING_EFFORT: "high",
   VORTON_CODEX_EXECUTION_TIMEOUT_MS: "900000",
   VORTON_CODEX_HOME: "/data/codex",
-  VORTON_CODEX_WORKDIR: "/var/empty/vorton-worker",
+  VORTON_CODEX_WORKDIR: "/var/lib/vorton-worker",
   VORTON_ALLOWED_ORIGIN: "https://control.vorton.example",
 };
 

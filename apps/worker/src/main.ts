@@ -5,6 +5,7 @@ import {
 } from "@vorton/workers";
 
 import {
+  assertCodexRuntimeStorageAccessible,
   dropRuntimePrivileges,
   prepareCodexRuntimeStorage,
 } from "./codex-auth.js";
@@ -39,13 +40,14 @@ async function createProvider(): Promise<{
     };
   }
 
-  await prepareCodexRuntimeStorage({
+  const storage = await prepareCodexRuntimeStorage({
     codexHome: env.codexHome!,
     workdir: env.codexWorkdir!,
     authSeed: env.codexAuthJson,
   });
   delete process.env.VORTON_CODEX_AUTH_JSON;
   dropRuntimePrivileges();
+  await assertCodexRuntimeStorageAccessible(storage);
   return {
     provider: new CodexSubscriptionAdapter({
       model: env.model,

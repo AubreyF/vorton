@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
+  access,
   chmod,
   chown,
   link,
@@ -24,6 +25,27 @@ export interface CodexRuntimeStorage {
   authPath: string;
   codexHome: string;
   workdir: string;
+}
+
+/** Verify the prepared paths again after the process has dropped privileges. */
+export async function assertCodexRuntimeStorageAccessible(
+  storage: CodexRuntimeStorage,
+): Promise<void> {
+  try {
+    await access(
+      storage.codexHome,
+      constants.R_OK | constants.W_OK | constants.X_OK,
+    );
+    await access(storage.authPath, constants.R_OK | constants.W_OK);
+    await access(
+      storage.workdir,
+      constants.R_OK | constants.W_OK | constants.X_OK,
+    );
+  } catch {
+    throw new Error(
+      "Codex runtime storage is not accessible after dropping privileges",
+    );
+  }
 }
 
 function assertManagedChatGptAuth(value: string): void {
