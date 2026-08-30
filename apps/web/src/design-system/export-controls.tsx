@@ -1,5 +1,4 @@
-import { Download } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 
 type ExportFormat = "png" | "pdf";
 
@@ -68,9 +67,6 @@ async function capturePage() {
   const shell = document.querySelector<HTMLElement>(".dashboard-shell");
   if (!shell) throw new Error("The installation page shell is unavailable.");
 
-  document
-    .querySelectorAll<HTMLDetailsElement>(".topbar-actions details[open]")
-    .forEach((details) => details.removeAttribute("open"));
   const root = document.documentElement;
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
@@ -163,47 +159,27 @@ async function savePdf(canvas: HTMLCanvasElement, filename: string) {
   pdf.save(`${filename}.pdf`);
 }
 
-export function ExportControls({
+export function ExportMenuSection({
   installationName,
+  onRequestClose,
+  onRequestOpen,
 }: {
   installationName: string;
+  onRequestClose: () => void;
+  onRequestOpen: (focusTarget?: HTMLElement) => void;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const summaryRef = useRef<HTMLElement>(null);
-  const tooltipId = useId();
   const statusId = useId();
+  const pngButtonRef = useRef<HTMLButtonElement>(null);
+  const pdfButtonRef = useRef<HTMLButtonElement>(null);
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    const dismiss = (event: PointerEvent) => {
-      if (
-        detailsRef.current?.open &&
-        !detailsRef.current.contains(event.target as Node)
-      ) {
-        detailsRef.current.removeAttribute("open");
-      }
-    };
-    const dismissWithKeyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && detailsRef.current?.open) {
-        detailsRef.current.removeAttribute("open");
-        summaryRef.current?.focus({ preventScroll: true });
-      }
-    };
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", dismissWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("keydown", dismissWithKeyboard);
-    };
-  }, []);
 
   const exportPage = useCallback(
     async (format: ExportFormat) => {
       if (exporting) return;
       setError("");
       setExporting(format);
-      detailsRef.current?.removeAttribute("open");
+      onRequestClose();
       try {
         const { canvas } = await capturePage();
         const filename = exportFileStem(installationName);
@@ -219,13 +195,16 @@ export function ExportControls({
         setError(
           reason instanceof Error ? reason.message : "The page export failed.",
         );
-        detailsRef.current?.setAttribute("open", "");
+        onRequestOpen(
+          format === "png"
+            ? (pngButtonRef.current ?? undefined)
+            : (pdfButtonRef.current ?? undefined),
+        );
       } finally {
         setExporting(null);
-        summaryRef.current?.focus({ preventScroll: true });
       }
     },
-    [exporting, installationName],
+    [exporting, installationName, onRequestClose, onRequestOpen],
   );
 
   const status = exporting
@@ -233,63 +212,44 @@ export function ExportControls({
     : error || "Export page";
 
   return (
-    <div className="export-control-shell">
-      <details className="export-controls" ref={detailsRef}>
-        <summary
-          className="appearance-button export-button"
-          ref={summaryRef}
-          aria-busy={exporting ? "true" : undefined}
-          aria-describedby={`${tooltipId} ${statusId}`}
-          aria-label="Export page"
-          onClick={(event) => {
-            if (exporting) event.preventDefault();
-          }}
+    <section
+      className="account-menu-section export-menu-section"
+      aria-labelledby="account-tools-heading"
+    >
+      <p id="account-tools-heading">Tools</p>
+      <div className="export-tool-heading">
+        <span>Export page</span>
+        <span aria-hidden="true">Current view</span>
+      </div>
+      <div className="export-options">
+        <button
+          className="export-option"
+          type="button"
+          ref={pngButtonRef}
+          disabled={Boolean(exporting)}
+          aria-describedby={statusId}
+          onClick={() => void exportPage("png")}
         >
-          <span className="appearance-button-icon" aria-hidden="true">
-            <Download size={20} strokeWidth={1.8} />
-          </span>
-          <span className="appearance-tooltip" id={tooltipId} role="tooltip">
-            Export page
-          </span>
-        </summary>
-        <div className="appearance-menu export-menu">
-          <section
-            className="appearance-menu-section"
-            aria-labelledby="export-menu-heading"
-          >
-            <p id="export-menu-heading">Export page</p>
-            <div className="export-options">
-              <button
-                className="export-option"
-                type="button"
-                disabled={Boolean(exporting)}
-                onClick={() => void exportPage("png")}
-              >
-                <span className="export-option-name">PNG</span>
-                <span className="export-option-detail">
-                  Full page, 1400 px wide
-                </span>
-              </button>
-              <button
-                className="export-option"
-                type="button"
-                disabled={Boolean(exporting)}
-                onClick={() => void exportPage("pdf")}
-              >
-                <span className="export-option-name">PDF</span>
-                <span className="export-option-detail">
-                  Full page, A4 pagination
-                </span>
-              </button>
-            </div>
-            {error && (
-              <p className="export-menu-error" role="alert">
-                {error}
-              </p>
-            )}
-          </section>
-        </div>
-      </details>
+          <span className="export-option-name">PNG</span>
+          <span className="export-option-detail">Full page, 1400 px wide</span>
+        </button>
+        <button
+          className="export-option"
+          type="button"
+          ref={pdfButtonRef}
+          disabled={Boolean(exporting)}
+          aria-describedby={statusId}
+          onClick={() => void exportPage("pdf")}
+        >
+          <span className="export-option-name">PDF</span>
+          <span className="export-option-detail">Full page, A4 pagination</span>
+        </button>
+      </div>
+      {error && (
+        <p className="export-menu-error" role="alert">
+          {error}
+        </p>
+      )}
       <span
         className="export-live-region"
         id={statusId}
@@ -298,6 +258,6 @@ export function ExportControls({
       >
         {status}
       </span>
-    </div>
+    </section>
   );
 }

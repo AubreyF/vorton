@@ -5,10 +5,9 @@ import {
   type TriagedIncident,
 } from "@vorton/example-moonbase-triage";
 import { factoryModuleManifest } from "@vorton/factory";
-import { ThemeControls } from "./design-system/theme-controls.js";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
+import { AccountMenu } from "./design-system/account-menu.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
-import { ExportControls } from "./design-system/export-controls.js";
 import {
   SectionNavigator,
   type SectionNavigationItem,
@@ -153,21 +152,11 @@ export function AuthenticApp() {
           navigate={navigate}
         />
         <div className="topbar-actions">
-          <button
-            className="identity-control"
-            type="button"
-            onClick={() => void runtime.signOut()}
-            title="Sign out"
-          >
-            <span aria-hidden="true">
-              {(runtime.session.user.email?.[0] ?? "?").toUpperCase()}
-            </span>
-            <span className="identity-control__label">
-              {runtime.session.user.email ?? installationName}
-            </span>
-          </button>
-          <ExportControls installationName={installationName} />
-          <ThemeControls />
+          <AccountMenu
+            email={runtime.session.user.email}
+            installationName={installationName}
+            onSignOut={() => runtime.signOut()}
+          />
         </div>
       </header>
       {section !== "command" && (
