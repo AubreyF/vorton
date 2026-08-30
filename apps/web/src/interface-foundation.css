@@ -57,8 +57,8 @@
   height: 26px;
   place-items: center;
   border-radius: 50%;
-  background: var(--blue);
-  color: white;
+  background: var(--vorton-button-primary-background);
+  color: var(--vorton-button-primary-text);
   font-size: 0.7rem;
   font-weight: 700;
 }
@@ -356,7 +356,7 @@
   border: 1px solid color-mix(in srgb, var(--blue) 62%, var(--line));
   border-radius: var(--vorton-control-radius);
   background: transparent;
-  color: var(--blue);
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
   font-size: 0.76rem;
@@ -862,7 +862,7 @@
 .council-convene-button:disabled,
 .council-owner-review .primary-button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.72;
 }
 
 .council-results {
@@ -1464,10 +1464,11 @@
 .runtime-gate button {
   min-height: 3rem;
   padding: 0.75rem 1rem;
-  border: 1px solid color-mix(in srgb, var(--blue) 55%, var(--line));
+  border: 1px solid var(--vorton-button-primary-border);
   border-radius: var(--vorton-control-radius);
-  background: var(--blue);
-  color: var(--vorton-button-text, white);
+  background: var(--vorton-button-primary-background);
+  box-shadow: var(--vorton-button-primary-shadow);
+  color: var(--vorton-button-primary-text);
   cursor: pointer;
   font-weight: 700;
   transition:
@@ -1476,6 +1477,7 @@
 }
 
 .runtime-gate button:hover {
+  box-shadow: var(--vorton-button-primary-shadow-hover);
   filter: brightness(1.07);
   transform: translateY(-1px);
 }
