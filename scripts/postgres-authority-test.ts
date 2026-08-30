@@ -271,9 +271,9 @@ async function setSignedContext(
     .digest("hex");
   await client.query(
     `select set_config('aubos.context_kind', $1, true),
-            set_config('vorton.installation_id', $2, true),
-            set_config('vorton.subject_id', $3, true),
-            set_config('vorton.credential_id', $4, true),
+            set_config('aubos.installation_id', $2, true),
+            set_config('aubos.subject_id', $3, true),
+            set_config('aubos.credential_id', $4, true),
             set_config('aubos.context_signature', $5, true)`,
     [kind, installationId, subjectId, credentialId, signature],
   );
@@ -412,9 +412,9 @@ async function provePersonBoundary(
   const unsignedSetup = async (client: Client): Promise<void> => {
     await client.query(
       `select set_config('aubos.context_kind', 'person', true),
-              set_config('vorton.installation_id', $1, true),
-              set_config('vorton.subject_id', $2, true),
-              set_config('vorton.credential_id', '', true),
+              set_config('aubos.installation_id', $1, true),
+              set_config('aubos.subject_id', $2, true),
+              set_config('aubos.credential_id', '', true),
               set_config('aubos.context_signature', '', true)`,
       [bootstrap.installationId, ownerAuthUserId],
     );
@@ -497,9 +497,9 @@ async function proveWorkerBoundary(
   const unsignedWorker = async (client: Client): Promise<void> => {
     await client.query(
       `select set_config('aubos.context_kind', 'worker', true),
-              set_config('vorton.installation_id', $1, true),
-              set_config('vorton.subject_id', $2, true),
-              set_config('vorton.credential_id', $3, true),
+              set_config('aubos.installation_id', $1, true),
+              set_config('aubos.subject_id', $2, true),
+              set_config('aubos.credential_id', $3, true),
               set_config('aubos.context_signature', '', true)`,
       [bootstrap.installationId, bootstrap.workerId, credentialId],
     );
