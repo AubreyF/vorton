@@ -8,6 +8,7 @@ export const requiredWorkspaceClaims = [
   "workspace-scoped-identity-uniqueness",
   "identity-live-membership-revocation",
   "identity-recent-aal2",
+  "installation-scoped-workspace-birth",
   "policy-work-approvals-records",
   "memory-retain-retrieve-delete",
   "worker-admission-credentials-jobs-logs",
@@ -35,8 +36,11 @@ export interface WorkspaceIsolationProof {
   topology: {
     sameInstallation: true;
     distinctWorkspaceIds: true;
-    aubosWorkspaceRealm: "personal";
-    freedosWorkspaceRealm: "organizational";
+    personalWorkspace: { fixtureIdentity: "aubos"; realm: "personal" };
+    organizationalWorkspace: {
+      fixtureIdentity: "freedos";
+      realm: "organizational";
+    };
   };
   schema: {
     workspaceRealmAuthoritative: true;
@@ -55,7 +59,7 @@ export interface WorkspaceIsolationProof {
     fixturesOnly: true;
     containsPersonalRecords: false;
     productionSyntheticDataAllowed: false;
-    inspectedLiveFreedos: false;
+    inspectedLiveOrganizationalWorkspace: false;
   };
   producer: {
     repository: "AubreyF/vorton";
@@ -80,6 +84,12 @@ export interface WorkspaceIsolationProof {
   authority: {
     rolesGrantAuthority: false;
     policyCapabilitiesApprovalsAndWorkRequired: true;
+    installationWorkspaceCreationApprovalPlane: true;
+    runtimeRoleCanSetAuthClaims: false;
+    workspaceCreationUsesSignedTransactionBoundary: true;
+    workspaceCreationApprovalConsumedExactlyOnce: true;
+    workspaceCreationReceiptInsertedAtomically: true;
+    existingWorkspaceAuthorityBorrowedForWorkspaceCreation: false;
   };
   claims: Array<{
     id: WorkspaceClaimId;
@@ -93,6 +103,23 @@ export interface WorkspaceIsolationProof {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function assertExactKeys(
+  value: unknown,
+  keys: readonly string[],
+  description: string,
+): asserts value is Record<string, unknown> {
+  assert(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+    `${description} must be an object`,
+  );
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  assert(
+    JSON.stringify(actual) === JSON.stringify(expected),
+    `${description} fields differ`,
+  );
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -127,6 +154,127 @@ export function validateWorkspaceIsolationProof(
 ): WorkspaceIsolationProof {
   assert(value && typeof value === "object", "Workspace proof is missing");
   const proof = value as Record<string, any>;
+  assertExactKeys(
+    proof,
+    [
+      "schemaVersion",
+      "contract",
+      "status",
+      "generatedAt",
+      "sourceCommit",
+      "migrationHead",
+      "workspaceContractVersion",
+      "topology",
+      "schema",
+      "branding",
+      "privacy",
+      "producer",
+      "identity",
+      "factory",
+      "authority",
+      "claims",
+      "releaseBlockers",
+      "proofHash",
+    ],
+    "Workspace proof",
+  );
+  assertExactKeys(
+    proof.topology,
+    [
+      "sameInstallation",
+      "distinctWorkspaceIds",
+      "personalWorkspace",
+      "organizationalWorkspace",
+    ],
+    "Workspace proof topology",
+  );
+  assertExactKeys(
+    proof.topology.personalWorkspace,
+    ["fixtureIdentity", "realm"],
+    "Workspace proof personal fixture",
+  );
+  assertExactKeys(
+    proof.topology.organizationalWorkspace,
+    ["fixtureIdentity", "realm"],
+    "Workspace proof organizational fixture",
+  );
+  assertExactKeys(
+    proof.schema,
+    [
+      "workspaceRealmAuthoritative",
+      "installationsRealmLegacyMetadataOnly",
+      "workspaceScopedWorkerNames",
+      "workspaceScopedRoleVersions",
+      "workspaceScopedPolicyVersions",
+      "workspaceScopedMemoryBanks",
+    ],
+    "Workspace proof schema",
+  );
+  assertExactKeys(
+    proof.branding,
+    [
+      "installationDisplayNameNeutral",
+      "workspaceDisplayNamePresented",
+      "brandingInfersAuthority",
+    ],
+    "Workspace proof branding",
+  );
+  assertExactKeys(
+    proof.privacy,
+    [
+      "fixturesOnly",
+      "containsPersonalRecords",
+      "productionSyntheticDataAllowed",
+      "inspectedLiveOrganizationalWorkspace",
+    ],
+    "Workspace proof privacy",
+  );
+  assertExactKeys(
+    proof.producer,
+    [
+      "repository",
+      "sourceTreeClean",
+      "workflowConclusion",
+      "workflowRunUrl",
+      "testReportSha256",
+      "postgresAuthoritySha256",
+    ],
+    "Workspace proof producer",
+  );
+  assertExactKeys(
+    proof.identity,
+    [
+      "sharedAuthenticationPlane",
+      "livePostgresMembership",
+      "revocationImmediate",
+      "sensitiveActionsRequireRecentAal2",
+    ],
+    "Workspace proof identity",
+  );
+  assertExactKeys(
+    proof.factory,
+    [
+      "vortonInstallationIdNamed",
+      "workspaceIdNamed",
+      "githubAppInstallationIdSeparatelyNamed",
+      "currentPilotAcceptedAsProof",
+    ],
+    "Workspace proof factory",
+  );
+  assertExactKeys(
+    proof.authority,
+    [
+      "rolesGrantAuthority",
+      "policyCapabilitiesApprovalsAndWorkRequired",
+      "installationWorkspaceCreationApprovalPlane",
+      "runtimeRoleCanSetAuthClaims",
+      "workspaceCreationUsesSignedTransactionBoundary",
+      "workspaceCreationApprovalConsumedExactlyOnce",
+      "workspaceCreationReceiptInsertedAtomically",
+      "existingWorkspaceAuthorityBorrowedForWorkspaceCreation",
+    ],
+    "Workspace proof authority",
+  );
   assert(proof.schemaVersion === 1, "Workspace proof schema is unsupported");
   assert(
     proof.contract === "vorton.workspace-isolation-proof.v1",
@@ -160,12 +308,14 @@ export function validateWorkspaceIsolationProof(
     "Workspace proof reuses a workspace identity",
   );
   assert(
-    proof.topology?.aubosWorkspaceRealm === "personal",
-    "Workspace proof lacks the AubOS realm",
+    proof.topology?.personalWorkspace?.fixtureIdentity === "aubos" &&
+      proof.topology?.personalWorkspace?.realm === "personal",
+    "Workspace proof lacks the controlled personal fixture",
   );
   assert(
-    proof.topology?.freedosWorkspaceRealm === "organizational",
-    "Workspace proof lacks the FreedOS realm",
+    proof.topology?.organizationalWorkspace?.fixtureIdentity === "freedos" &&
+      proof.topology?.organizationalWorkspace?.realm === "organizational",
+    "Workspace proof lacks the controlled organizational fixture",
   );
   assert(
     proof.schema?.workspaceRealmAuthoritative === true,
@@ -216,8 +366,8 @@ export function validateWorkspaceIsolationProof(
     "Workspace proof permits synthetic production data",
   );
   assert(
-    proof.privacy?.inspectedLiveFreedos === false,
-    "Workspace proof inspected live FreedOS",
+    proof.privacy?.inspectedLiveOrganizationalWorkspace === false,
+    "Workspace proof inspected a live organizational workspace",
   );
   assert(
     proof.producer?.repository === "AubreyF/vorton",
@@ -232,9 +382,10 @@ export function validateWorkspaceIsolationProof(
     "Workspace proof workflow did not pass",
   );
   assert(
-    /^https:\/\/github\.com\/AubreyF\/vorton\/actions\/runs\/[1-9][0-9]*$/.test(
-      proof.producer?.workflowRunUrl,
-    ),
+    typeof proof.producer?.workflowRunUrl === "string" &&
+      /^https:\/\/github\.com\/AubreyF\/vorton\/actions\/runs\/[1-9][0-9]*$/.test(
+        proof.producer.workflowRunUrl,
+      ),
     "Workspace proof workflow run is invalid",
   );
   assert(
@@ -285,7 +436,39 @@ export function validateWorkspaceIsolationProof(
     proof.authority?.policyCapabilitiesApprovalsAndWorkRequired === true,
     "Workspace proof lacks governed authority",
   );
+  assert(
+    proof.authority?.installationWorkspaceCreationApprovalPlane === true,
+    "Workspace proof lacks an installation-scoped workspace creation approval plane",
+  );
+  assert(
+    proof.authority?.runtimeRoleCanSetAuthClaims === false,
+    "Workspace proof lets the runtime role set authentication claims",
+  );
+  assert(
+    proof.authority?.workspaceCreationUsesSignedTransactionBoundary === true,
+    "Workspace creation does not use a signed transaction boundary",
+  );
+  assert(
+    proof.authority?.workspaceCreationApprovalConsumedExactlyOnce === true,
+    "Workspace creation approval is not consumed exactly once",
+  );
+  assert(
+    proof.authority?.workspaceCreationReceiptInsertedAtomically === true,
+    "Workspace creation receipt is not inserted atomically",
+  );
+  assert(
+    proof.authority?.existingWorkspaceAuthorityBorrowedForWorkspaceCreation ===
+      false,
+    "Workspace creation borrows authority from an existing workspace",
+  );
   assert(Array.isArray(proof.claims), "Workspace proof claims are missing");
+  for (const [index, claim] of proof.claims.entries()) {
+    assertExactKeys(
+      claim,
+      ["id", "status", "adversarial", "evidenceSha256"],
+      `Workspace proof claim ${index}`,
+    );
+  }
   assert(
     JSON.stringify(proof.claims.map((claim: { id?: unknown }) => claim?.id)) ===
       JSON.stringify(requiredWorkspaceClaims),
@@ -318,9 +501,13 @@ export function validateWorkspaceIsolationProof(
     proof.proofHash === workspaceProofHash(proof),
     "Workspace proof hash differs",
   );
-  return proof as WorkspaceIsolationProof;
+  return proof as unknown as WorkspaceIsolationProof;
 }
 
+/**
+ * Producer-side sanity check only. Release preparation independently verifies
+ * the GitHub run and its immutable evidence artifact before accepting a proof.
+ */
 export function validateGitHubProducer(
   proof: WorkspaceIsolationProof,
   environment: NodeJS.ProcessEnv,

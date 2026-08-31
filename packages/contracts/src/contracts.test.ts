@@ -40,6 +40,33 @@ describe("installation contracts", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(
+      installationManifestSchema.safeParse({
+        ...result.data,
+        spec: {
+          ...result.data!.spec,
+          release: { ...result.data!.spec.release, version: "0.04.0" },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      installationManifestSchema.safeParse({
+        ...result.data,
+        spec: {
+          ...result.data!.spec,
+          release: { ...result.data!.spec.release, version: "1.2.3-1a" },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      installationManifestSchema.safeParse({
+        ...result.data,
+        spec: {
+          ...result.data!.spec,
+          release: { ...result.data!.spec.release, version: "1.2.3-01" },
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("requires OCI image references to match exact digests", () => {
@@ -197,6 +224,97 @@ describe("installation contracts", () => {
     ).toBe(true);
   });
 
+  it("requires workspace contract v1 and evidence from Vorton 0.4.0 onward", () => {
+    const digest = `sha256:${"c".repeat(64)}`;
+    const current = {
+      schemaVersion: 2 as const,
+      status: "released" as const,
+      version: "0.4.0",
+      sourceCommit: "b".repeat(40),
+      createdAt: "2026-08-30T00:00:00.000Z",
+      cliVersion: "0.4.0",
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260830000100_workspaces",
+      images: Object.fromEntries(
+        ["control-plane", "web", "worker"].map((name) => [
+          name,
+          {
+            reference: `ghcr.io/example/vorton-${name}@${digest}`,
+            digest,
+          },
+        ]),
+      ),
+      managedFiles: [
+        {
+          path: "host/runtime.json",
+          template: "templates/releases/0.4.0/host/runtime.json",
+          digest,
+        },
+      ],
+    };
+
+    expect(releaseManifestSchema.safeParse(current).success).toBe(false);
+    const validCurrent = {
+      ...current,
+      contracts: { ...current.contracts, workspace: 1 },
+      evidence: {
+        workspaceIsolation: {
+          contract: "vorton.workspace-isolation-proof.v1",
+          proof: {
+            path: "release/evidence/0.4.0/workspace-isolation/workspace-isolation-proof.json",
+            digest,
+          },
+          files: [
+            {
+              path: `release/evidence/0.4.0/workspace-isolation/claims/${"c".repeat(64)}.evidence`,
+              digest,
+            },
+          ],
+        },
+      },
+    };
+    expect(releaseManifestSchema.safeParse(validCurrent).success).toBe(true);
+    expect(
+      releaseManifestSchema.safeParse({
+        ...validCurrent,
+        coreMigrationHead: `${validCurrent.coreMigrationHead}.sql`,
+      }).success,
+    ).toBe(false);
+    expect(
+      releaseManifestSchema.safeParse({
+        ...validCurrent,
+        unmodeledReleaseProperty: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      releaseManifestSchema.safeParse({
+        ...validCurrent,
+        evidence: {
+          workspaceIsolation: {
+            ...validCurrent.evidence.workspaceIsolation,
+            unmodeledEvidenceProperty: true,
+          },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      releaseManifestSchema.safeParse({
+        ...validCurrent,
+        evidence: {
+          workspaceIsolation: {
+            ...validCurrent.evidence.workspaceIsolation,
+            files: [
+              {
+                ...validCurrent.evidence.workspaceIsolation.files[0],
+                unmodeledFileProperty: true,
+              },
+            ],
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("requires at least one managed file in every release manifest", () => {
     const digest = `sha256:${"c".repeat(64)}`;
     const result = releaseManifestSchema.safeParse({
@@ -246,6 +364,57 @@ describe("installation contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("preserves the workspace contract in 0.4 installation locks", () => {
+    const digest = `sha256:${"c".repeat(64)}`;
+    const currentLock = {
+      schemaVersion: 1 as const,
+      release: {
+        version: "0.4.0",
+        sourceCommit: "d".repeat(40),
+        manifestDigest: digest,
+      },
+      images: {
+        control: {
+          reference: `ghcr.io/example/control@${digest}`,
+          digest,
+        },
+      },
+      contracts: { host: 1, module: 1, worker: 1 },
+      coreMigrationHead: "20260830000100_workspaces",
+      managedFiles: {},
+      lastUpgradeEdge: null,
+    };
+
+    expect(installationLockSchema.safeParse(currentLock).success).toBe(false);
+    const parsed = installationLockSchema.parse({
+      ...currentLock,
+      contracts: { ...currentLock.contracts, workspace: 1 },
+    });
+    expect(parsed.contracts.workspace).toBe(1);
+    expect(
+      installationLockSchema.safeParse({
+        ...parsed,
+        release: { ...parsed.release, version: "0.04.0" },
+      }).success,
+    ).toBe(false);
+    expect(
+      installationLockSchema.safeParse({
+        ...parsed,
+        coreMigrationHead: `${parsed.coreMigrationHead}.sql`,
+      }).success,
+    ).toBe(false);
+    expect(
+      installationLockSchema.safeParse({
+        ...currentLock,
+        contracts: {
+          ...currentLock.contracts,
+          workspace: 1,
+          unmodeledContract: 1,
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("requires workers to identify their billing and isolation boundaries", () => {

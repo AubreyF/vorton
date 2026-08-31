@@ -9,7 +9,7 @@ import {
 } from "./workspace-isolation-proof.js";
 
 const sourceCommit = "a".repeat(40);
-const migrationHead = "20260830000100_workspaces.sql";
+const migrationHead = "20260830000100_workspaces";
 const evidenceSha256 = `sha256:${"b".repeat(64)}`;
 
 function proof(): WorkspaceIsolationProof {
@@ -24,8 +24,11 @@ function proof(): WorkspaceIsolationProof {
     topology: {
       sameInstallation: true,
       distinctWorkspaceIds: true,
-      aubosWorkspaceRealm: "personal",
-      freedosWorkspaceRealm: "organizational",
+      personalWorkspace: { fixtureIdentity: "aubos", realm: "personal" },
+      organizationalWorkspace: {
+        fixtureIdentity: "freedos",
+        realm: "organizational",
+      },
     },
     schema: {
       workspaceRealmAuthoritative: true,
@@ -44,7 +47,7 @@ function proof(): WorkspaceIsolationProof {
       fixturesOnly: true,
       containsPersonalRecords: false,
       productionSyntheticDataAllowed: false,
-      inspectedLiveFreedos: false,
+      inspectedLiveOrganizationalWorkspace: false,
     },
     producer: {
       repository: "AubreyF/vorton",
@@ -69,6 +72,12 @@ function proof(): WorkspaceIsolationProof {
     authority: {
       rolesGrantAuthority: false,
       policyCapabilitiesApprovalsAndWorkRequired: true,
+      installationWorkspaceCreationApprovalPlane: true,
+      runtimeRoleCanSetAuthClaims: false,
+      workspaceCreationUsesSignedTransactionBoundary: true,
+      workspaceCreationApprovalConsumedExactlyOnce: true,
+      workspaceCreationReceiptInsertedAtomically: true,
+      existingWorkspaceAuthorityBorrowedForWorkspaceCreation: false,
     },
     claims: requiredWorkspaceClaims.map((id) => ({
       id,
@@ -95,6 +104,9 @@ describe("workspace isolation release proof", () => {
   });
 
   it("rejects missing or reordered adversarial claims", () => {
+    expect(requiredWorkspaceClaims[7]).toBe(
+      "installation-scoped-workspace-birth",
+    );
     const candidate = proof() as unknown as Record<string, unknown>;
     candidate.claims = [...(candidate.claims as unknown[])].reverse();
     candidate.proofHash = workspaceProofHash(candidate);
@@ -104,6 +116,42 @@ describe("workspace isolation release proof", () => {
         migrationHead,
       }),
     ).toThrow("claim identity or order differs");
+  });
+
+  it("requires the installation-scoped workspace birth authority boundary", () => {
+    const candidate = proof() as unknown as Record<string, any>;
+    candidate.authority.workspaceCreationApprovalConsumedExactlyOnce = false;
+    candidate.proofHash = workspaceProofHash(candidate);
+    expect(() =>
+      validateWorkspaceIsolationProof(candidate, {
+        sourceCommit,
+        migrationHead,
+      }),
+    ).toThrow("not consumed exactly once");
+  });
+
+  it("rejects unmodeled proof and nested authority properties", () => {
+    const extraRoot = {
+      ...proof(),
+      unmodeledProofProperty: true,
+    } as unknown as Record<string, unknown>;
+    extraRoot.proofHash = workspaceProofHash(extraRoot);
+    expect(() =>
+      validateWorkspaceIsolationProof(extraRoot, {
+        sourceCommit,
+        migrationHead,
+      }),
+    ).toThrow("Workspace proof fields differ");
+
+    const extraAuthority = proof() as unknown as Record<string, any>;
+    extraAuthority.authority.unmodeledAuthorityProperty = true;
+    extraAuthority.proofHash = workspaceProofHash(extraAuthority);
+    expect(() =>
+      validateWorkspaceIsolationProof(extraAuthority, {
+        sourceCommit,
+        migrationHead,
+      }),
+    ).toThrow("Workspace proof authority fields differ");
   });
 
   it("rejects the Factory pilot and every remaining release blocker", () => {

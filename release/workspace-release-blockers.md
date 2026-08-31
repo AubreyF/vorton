@@ -4,7 +4,7 @@ Vorton cannot publish a passing `vorton.workspace-isolation-proof.v1` artifact y
 
 Current blockers:
 
-- No clean-tree GitHub workflow artifact binds the exact source commit, migration head, test report digest, and PostgreSQL authority proof digest.
+- The repository does not yet have the required `.github/workflows/workspace-isolation-proof.yml` producer. Release preparation requires that exact successful GitHub workflow and its non-expired `vorton-workspace-isolation-evidence` artifact. The artifact must index and carry the exact typed test report, typed PostgreSQL authority report, and one distinct typed receipt for each required claim. Caller-controlled environment variables and local proof files do not satisfy this gate.
 - Recent AAL2 is enforced for Council installation, approvals, and Work promotion, but no adversarial release proof covers immediate membership revocation plus AAL2 across every sensitive subsystem.
 - The Factory reconciliation contract separates Vorton installation, workspace, and GitHub App installation identifiers. The current Freed pilot remains transitional and is explicitly rejected as isolation proof.
 - Memory has no complete adversarial retain, retrieve, delete, and deletion-propagation proof across both workspace realms.

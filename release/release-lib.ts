@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { basename, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import { releaseManifestSchema, type ReleaseManifest } from "@vorton/contracts";
+import { parseStrictJson } from "./strict-json.js";
+
+import { validateWorkspaceReleaseEvidence } from "./workspace-release-evidence.js";
 
 const imageReferencePattern =
   /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/;
@@ -145,7 +148,7 @@ export function parseImageReceipt(
   expectedVersion: string,
   repositoryOwner: string,
 ): Record<string, { reference: string; digest: string }> {
-  const receipt = JSON.parse(content) as {
+  const receipt = parseStrictJson(content, "Image receipt") as {
     sourceCommit?: unknown;
     version?: unknown;
     images?: unknown;
@@ -199,7 +202,7 @@ export function validateReleaseManifest(options: {
 }): ReleaseManifest {
   const manifestBytes = readFileSync(options.manifestPath);
   const manifest = releaseManifestSchema.parse(
-    JSON.parse(manifestBytes.toString("utf8")),
+    parseStrictJson(manifestBytes.toString("utf8"), "Release manifest"),
   );
   const expectedFilename = `${manifest.version}.json`;
   if (basename(options.manifestPath) !== expectedFilename) {
@@ -285,6 +288,11 @@ export function validateReleaseManifest(options: {
     }
   }
 
+  const evidencePaths = validateWorkspaceReleaseEvidence({
+    manifest,
+    read: (path) => readFileSync(join(options.repositoryRoot, path)),
+  });
+
   if (options.releaseCommit) {
     if (manifest.status !== "released") {
       throw new Error(`Release ${manifest.version} is still a candidate`);
@@ -323,6 +331,21 @@ export function validateReleaseManifest(options: {
     if (!committedManifest.equals(manifestBytes)) {
       throw new Error(`Checked-out manifest differs from release commit`);
     }
+    for (const evidencePath of evidencePaths) {
+      const checkedOutEvidence = readFileSync(
+        join(options.repositoryRoot, evidencePath),
+      );
+      const committedEvidence = readGitFile(
+        options.repositoryRoot,
+        releaseCommit,
+        evidencePath,
+      );
+      if (!committedEvidence.equals(checkedOutEvidence)) {
+        throw new Error(
+          `Checked-out workspace evidence differs from release commit: ${evidencePath}`,
+        );
+      }
+    }
     const changedPaths = String(
       git(options.repositoryRoot, [
         "diff-tree",
@@ -335,9 +358,14 @@ export function validateReleaseManifest(options: {
       .trim()
       .split("\n")
       .filter(Boolean);
-    if (changedPaths.length !== 1 || changedPaths[0] !== repositoryPath) {
+    const expectedPaths = [repositoryPath, ...evidencePaths].sort();
+    const actualPaths = [...changedPaths].sort();
+    if (
+      actualPaths.length !== expectedPaths.length ||
+      actualPaths.some((path, index) => path !== expectedPaths[index])
+    ) {
       throw new Error(
-        `Release commit may change only ${repositoryPath}; found ${changedPaths.join(", ")}`,
+        `Release commit may change only ${expectedPaths.join(", ")}; found ${actualPaths.join(", ")}`,
       );
     }
   }

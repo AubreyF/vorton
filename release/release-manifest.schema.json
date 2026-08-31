@@ -19,10 +19,16 @@
   "properties": {
     "schemaVersion": { "enum": [1, 2] },
     "status": { "enum": ["candidate", "released"] },
-    "version": { "type": "string", "minLength": 1 },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
     "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
     "createdAt": { "type": "string", "format": "date-time" },
-    "cliVersion": { "type": "string", "minLength": 1 },
+    "cliVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
     "contracts": {
       "type": "object",
       "additionalProperties": false,
@@ -30,10 +36,60 @@
       "properties": {
         "host": { "type": "integer", "minimum": 1 },
         "module": { "type": "integer", "minimum": 1 },
-        "worker": { "type": "integer", "minimum": 1 }
+        "worker": { "type": "integer", "minimum": 1 },
+        "workspace": { "const": 1 }
       }
     },
     "coreMigrationHead": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceIsolation"],
+      "properties": {
+        "workspaceIsolation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract", "proof", "files"],
+          "properties": {
+            "contract": { "const": "vorton.workspace-isolation-proof.v1" },
+            "proof": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "digest"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "digest"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "images": {
       "type": "object",
       "additionalProperties": {
@@ -59,11 +115,11 @@
         "properties": {
           "path": {
             "type": "string",
-            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
           },
           "template": {
             "type": "string",
-            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
           },
           "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
         }
@@ -116,6 +172,30 @@
                   "pattern": "^ghcr\\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+@sha256:[a-f0-9]{64}$"
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.|[1-9][0-9]*\\.)"
+          }
+        },
+        "required": ["version"]
+      },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "coreMigrationHead": {
+            "pattern": "^[0-9]{14}_[a-z0-9_]+$"
+          },
+          "contracts": {
+            "required": ["host", "module", "worker", "workspace"],
+            "properties": {
+              "workspace": { "const": 1 }
             }
           }
         }

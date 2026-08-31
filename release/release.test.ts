@@ -13,6 +13,7 @@ import {
   validateReleaseManifest,
 } from "./release-lib.js";
 import { stageContractArchive } from "./stage-contract-archive.js";
+import { writeWorkspaceReleaseEvidenceFixture } from "./workspace-release-evidence.test-helpers.js";
 
 const repositories: string[] = [];
 
@@ -158,7 +159,21 @@ describe("immutable release contracts", () => {
         "utf8",
       ),
     ) as {
+      additionalProperties: boolean;
       properties: {
+        contracts: { additionalProperties: boolean };
+        evidence: {
+          additionalProperties: boolean;
+          properties: {
+            workspaceIsolation: {
+              additionalProperties: boolean;
+              properties: {
+                proof: { additionalProperties: boolean };
+                files: { items: { additionalProperties: boolean } };
+              };
+            };
+          };
+        };
         schemaVersion: { enum: number[] };
         images: {
           additionalProperties: {
@@ -167,24 +182,7 @@ describe("immutable release contracts", () => {
         };
         managedFiles: { minItems?: number };
       };
-      allOf: Array<{
-        if: {
-          properties: {
-            schemaVersion: { const: number };
-            status: { const: string };
-          };
-        };
-        then: {
-          properties: {
-            images: {
-              required: string[];
-              additionalProperties: {
-                properties: { reference: { pattern: string } };
-              };
-            };
-          };
-        };
-      }>;
+      allOf: Array<any>;
     };
     const actions = [
       ...`${buildWorkflow}\n${releaseWorkflow}\n${ciWorkflow}`.matchAll(
@@ -255,13 +253,34 @@ describe("immutable release contracts", () => {
     expect(buildWorkflow).not.toContain("actions/attest@");
     expect(releaseWorkflow).not.toContain("actions/attest@");
     expect(manifestJsonSchema.properties.managedFiles.minItems).toBe(1);
+    expect(manifestJsonSchema.additionalProperties).toBe(false);
+    expect(manifestJsonSchema.properties.contracts.additionalProperties).toBe(
+      false,
+    );
+    expect(manifestJsonSchema.properties.evidence.additionalProperties).toBe(
+      false,
+    );
+    expect(
+      manifestJsonSchema.properties.evidence.properties.workspaceIsolation
+        .additionalProperties,
+    ).toBe(false);
+    expect(
+      manifestJsonSchema.properties.evidence.properties.workspaceIsolation
+        .properties.proof.additionalProperties,
+    ).toBe(false);
+    expect(
+      manifestJsonSchema.properties.evidence.properties.workspaceIsolation
+        .properties.files.items.additionalProperties,
+    ).toBe(false);
     expect(manifestJsonSchema.properties.schemaVersion.enum).toEqual([1, 2]);
     expect(
-      manifestJsonSchema.allOf.map((condition) => ({
-        schemaVersion: condition.if.properties.schemaVersion.const,
-        status: condition.if.properties.status.const,
-        images: condition.then.properties.images.required,
-      })),
+      manifestJsonSchema.allOf
+        .filter((condition) => condition.if.properties.schemaVersion)
+        .map((condition) => ({
+          schemaVersion: condition.if.properties.schemaVersion.const,
+          status: condition.if.properties.status.const,
+          images: condition.then.properties.images.required,
+        })),
     ).toEqual([
       {
         schemaVersion: 1,
@@ -274,6 +293,16 @@ describe("immutable release contracts", () => {
         images: ["control-plane", "web", "worker"],
       },
     ]);
+    expect(manifestJsonSchema.allOf[2]).toMatchObject({
+      then: {
+        required: ["evidence"],
+        properties: {
+          contracts: {
+            required: ["host", "module", "worker", "workspace"],
+          },
+        },
+      },
+    });
     const fixtureReference = `registry.invalid/vorton-fixture/control-plane@sha256:${"1".repeat(64)}`;
     expect(
       new RegExp(
@@ -362,6 +391,12 @@ describe("immutable release contracts", () => {
       readFileSync(join(process.cwd(), "packages/cli/package.json"), "utf8"),
     ) as { version: string };
     const hostTemplate = `templates/releases/${cliPackage.version}/host/vorton-runtime.json`;
+    const extractionWorkspace = writeWorkspaceReleaseEvidenceFixture({
+      repository: extracted,
+      version: cliPackage.version,
+      sourceCommit: "c".repeat(40),
+      migrationHead: "20260828000400_runtime_authority",
+    });
     const extractionRelease = {
       schemaVersion: 2,
       status: "released",
@@ -369,8 +404,14 @@ describe("immutable release contracts", () => {
       sourceCommit: "c".repeat(40),
       createdAt: "2026-08-28T12:00:00.000Z",
       cliVersion: cliPackage.version,
-      contracts: { host: 1, module: 1, worker: 1 },
+      contracts: {
+        host: 1,
+        module: 1,
+        worker: 1,
+        ...extractionWorkspace.contracts,
+      },
       coreMigrationHead: "20260828000400_runtime_authority",
+      evidence: extractionWorkspace.evidence,
       images: {
         "control-plane": {
           reference: `ghcr.io/moonbase-labs/vorton-control-plane@sha256:${"3".repeat(64)}`,
@@ -397,6 +438,32 @@ describe("immutable release contracts", () => {
       extractionManifest,
       `${JSON.stringify(extractionRelease, null, 2)}\n`,
     );
+    const missingEvidenceRoot = join(root, "missing-evidence-artifact");
+    mkdirSync(missingEvidenceRoot);
+    let missingEvidence = "";
+    try {
+      execFileSync(
+        "node",
+        [
+          cli,
+          "init",
+          "plan",
+          "--organization",
+          "Ion Lab",
+          "--manifest",
+          extractionManifest,
+          "--artifact-root",
+          missingEvidenceRoot,
+          "--root",
+          installation,
+        ],
+        { cwd: extracted, stdio: "pipe" },
+      );
+    } catch (error) {
+      missingEvidence = String((error as { stderr?: Buffer }).stderr ?? error);
+    }
+    expect(missingEvidence).toContain("Workspace evidence file is missing");
+
     const cliPlanOutput = execFileSync(
       "node",
       [
@@ -427,6 +494,9 @@ describe("immutable release contracts", () => {
         encoding: "utf8",
       }),
     ).toBe("valid\n");
+    expect(
+      JSON.parse(readFileSync(join(installation, "vorton.lock.json"), "utf8")),
+    ).toMatchObject({ contracts: { workspace: 1 } });
     expect(
       readFileSync(join(installation, "deploy/hindsight.fly.toml"), "utf8"),
     ).toContain('HINDSIGHT_API_WORKER_ID = "ion-lab-memory"');
@@ -511,6 +581,14 @@ describe("immutable release contracts", () => {
     expect(() =>
       parseImageReceipt(receipt, "c".repeat(40), "0.1.0", "moonbase-labs"),
     ).toThrow(/source commit/);
+    expect(() =>
+      parseImageReceipt(
+        `{"sourceCommit":"${"b".repeat(40)}","sourceCommit":"${"b".repeat(40)}","version":"0.1.0","images":{}}`,
+        "b".repeat(40),
+        "0.1.0",
+        "moonbase-labs",
+      ),
+    ).toThrow(/Duplicate JSON key/);
   });
 
   it("rejects image receipts from third-party GHCR repositories", () => {
@@ -632,23 +710,35 @@ describe("immutable release contracts", () => {
   it("requires the Vorton repositories for 0.4.0 and later releases", () => {
     const { repository, sourceCommit } = fixture("0.4.0");
     const manifestPath = join(repository, "release/manifests/0.4.0.json");
-    const current = schemaV2Manifest(
+    const workspace = writeWorkspaceReleaseEvidenceFixture({
+      repository,
+      version: "0.4.0",
       sourceCommit,
-      `sha256:${"a".repeat(64)}`,
-      "0.4.0",
-      "vorton",
-    );
+      migrationHead: "20260828000300_executive",
+    });
+    const current = {
+      ...schemaV2Manifest(
+        sourceCommit,
+        `sha256:${"a".repeat(64)}`,
+        "0.4.0",
+        "vorton",
+      ),
+      contracts: { host: 1, module: 1, worker: 1, ...workspace.contracts },
+      evidence: workspace.evidence,
+    };
     write(
       repository,
       "release/manifests/0.4.0.json",
       `${JSON.stringify(current, null, 2)}\n`,
     );
+    const releaseCommit = commit(repository, "release: v0.4.0");
 
     expect(
       validateReleaseManifest({
         repositoryRoot: repository,
         manifestPath,
         expectedRepositoryOwner: "moonbase-labs",
+        releaseCommit,
       }).version,
     ).toBe("0.4.0");
 

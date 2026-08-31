@@ -13,6 +13,10 @@ import {
   sha256,
   validateReleaseManifest,
 } from "./release-lib.js";
+import {
+  prepareWorkspaceReleaseEvidence,
+  writeWorkspaceReleaseEvidence,
+} from "./workspace-release-evidence.js";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -24,6 +28,10 @@ const valueOptions = new Set([
   "--host-contract",
   "--module-contract",
   "--worker-contract",
+  "--workspace-contract",
+  "--workspace-isolation-proof",
+  "--workspace-isolation-proof-sha256",
+  "--workspace-evidence",
   "--image-receipt",
   "--repository-owner",
   "--managed-file",
@@ -81,6 +89,12 @@ if (
 ) {
   throw new Error(`Version must be SemVer: ${version}`);
 }
+const [versionMajor, versionMinor] = version
+  .split("-", 1)[0]!
+  .split(".", 3)
+  .map(Number);
+const requiresWorkspaceEvidence =
+  versionMajor! > 0 || (versionMajor === 0 && versionMinor! >= 4);
 const createdAt = required("--created-at");
 if (Number.isNaN(Date.parse(createdAt)) || !createdAt.endsWith("Z")) {
   throw new Error(`--created-at must be an ISO 8601 UTC timestamp`);
@@ -137,6 +151,37 @@ if (
   throw new Error(`Managed file paths must be unique`);
 }
 
+const coreMigrationHead = migrationHead(repositoryRoot, sourceCommit);
+const workspaceOptions = [
+  "--workspace-contract",
+  "--workspace-isolation-proof",
+  "--workspace-isolation-proof-sha256",
+] as const;
+if (
+  !requiresWorkspaceEvidence &&
+  (workspaceOptions.some((name) => values(name).length > 0) ||
+    values("--workspace-evidence").length > 0)
+) {
+  throw new Error(
+    `Workspace isolation evidence is supported only for Vorton 0.4.0 and later`,
+  );
+}
+let workspaceEvidence:
+  ReturnType<typeof prepareWorkspaceReleaseEvidence> | undefined;
+if (requiresWorkspaceEvidence) {
+  if (positiveInteger("--workspace-contract") !== 1) {
+    throw new Error(`--workspace-contract must be 1`);
+  }
+  workspaceEvidence = prepareWorkspaceReleaseEvidence({
+    version,
+    sourceCommit,
+    migrationHead: coreMigrationHead,
+    proofPath: resolve(required("--workspace-isolation-proof")),
+    proofSha256: required("--workspace-isolation-proof-sha256"),
+    evidencePaths: values("--workspace-evidence").map((path) => resolve(path)),
+  });
+}
+
 const manifest: ReleaseManifest = releaseManifestSchema.parse({
   schemaVersion: 2,
   status: "released",
@@ -148,8 +193,12 @@ const manifest: ReleaseManifest = releaseManifestSchema.parse({
     host: positiveInteger("--host-contract"),
     module: positiveInteger("--module-contract"),
     worker: positiveInteger("--worker-contract"),
+    workspace: requiresWorkspaceEvidence ? 1 : undefined,
   },
-  coreMigrationHead: migrationHead(repositoryRoot, sourceCommit),
+  coreMigrationHead,
+  evidence: workspaceEvidence
+    ? { workspaceIsolation: workspaceEvidence.metadata }
+    : undefined,
   images,
   managedFiles,
 });
@@ -170,6 +219,9 @@ if (existsSync(output)) {
   }
 }
 
+if (workspaceEvidence) {
+  writeWorkspaceReleaseEvidence(repositoryRoot, workspaceEvidence);
+}
 writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, {
   flag: existsSync(output) ? "w" : "wx",
 });

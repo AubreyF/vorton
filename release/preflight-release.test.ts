@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { sha256 } from "./release-lib.js";
+import { writeWorkspaceReleaseEvidenceFixture } from "./workspace-release-evidence.test-helpers.js";
 import {
   normalizeSpdxDocument,
   normalizeSpdxFile,
@@ -168,6 +169,7 @@ function releaseFixture(
   repository: string;
   releaseCommit: string;
   sourceCommit: string;
+  producerGh: string;
 } {
   const repository = mkdtempSync(join(tmpdir(), "vorton-preflight-test-"));
   command(repository, ["init", "-q"]);
@@ -195,6 +197,42 @@ function releaseFixture(
     `[build]\n  image = "ghcr.io/vectorize-io/hindsight@sha256:${"9".repeat(64)}"\n`,
   );
   const sourceCommit = commit(repository, "source");
+  const workspace = writeWorkspaceReleaseEvidenceFixture({
+    repository,
+    version: "1.2.3",
+    sourceCommit,
+    migrationHead: "20260829000100_test",
+  });
+  const fakeBin = mkdtempSync(join(tmpdir(), "vorton-producer-bin-"));
+  const artifact = mkdtempSync(join(tmpdir(), "vorton-producer-artifact-"));
+  writeFileSync(
+    join(artifact, "workspace-producer-attestation.json"),
+    workspace.producerAttestation.indexBytes,
+  );
+  for (const [path, bytes] of workspace.producerAttestation.files) {
+    const destination = join(artifact, path);
+    mkdirSync(join(destination, ".."), { recursive: true });
+    writeFileSync(destination, bytes);
+  }
+  writeFileSync(
+    join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'if [ "$1" = "api" ] && [[ "$4" != *"/artifacts?"* ]]; then',
+      `  printf '%s\\n' '${JSON.stringify({ id: 123, repository: { full_name: "AubreyF/vorton" }, path: ".github/workflows/workspace-isolation-proof.yml", head_sha: sourceCommit, conclusion: "success", html_url: "https://github.com/AubreyF/vorton/actions/runs/123" })}'`,
+      'elif [ "$1" = "api" ]; then',
+      `  printf '%s\\n' '${JSON.stringify({ total_count: 1, artifacts: [{ name: "vorton-workspace-isolation-evidence", expired: false, workflow_run: { id: 123, head_sha: sourceCommit } }] })}'`,
+      'elif [ "$1" = "run" ] && [ "$2" = "download" ]; then',
+      '  destination="${@: -1}"',
+      `  cp -R '${artifact}/.' "$destination/"`,
+      "else exit 99; fi",
+      "",
+    ].join("\n"),
+  );
+  const producerGh = join(fakeBin, "gh");
+  chmodSync(producerGh, 0o755);
+  process.env.PATH = `${fakeBin}:${process.env.PATH ?? ""}`;
   const digest = `sha256:${"a".repeat(64)}`;
   write(
     repository,
@@ -207,8 +245,14 @@ function releaseFixture(
         sourceCommit,
         createdAt,
         cliVersion: "1.2.3",
-        contracts: { host: 1, module: 1, worker: 1 },
+        contracts: {
+          host: 1,
+          module: 1,
+          worker: 1,
+          ...workspace.contracts,
+        },
         coreMigrationHead: "20260829000100_test",
+        evidence: workspace.evidence,
         images: Object.fromEntries(
           ["control-plane", "web", "worker"].map((name) => [
             name,
@@ -231,7 +275,7 @@ function releaseFixture(
     )}\n`,
   );
   const releaseCommit = commit(repository, "prepare release");
-  return { repository, releaseCommit, sourceCommit };
+  return { repository, releaseCommit, sourceCommit, producerGh };
 }
 
 function inspector(sourceCommit: string): OciInspector {
@@ -295,6 +339,20 @@ function inspector(sourceCommit: string): OciInspector {
 }
 
 describe("release preflight", () => {
+  it("refuses publication when producer provenance cannot be independently reverified", () => {
+    const fixture = releaseFixture();
+    writeFileSync(fixture.producerGh, "#!/usr/bin/env bash\nexit 77\n");
+    expect(() =>
+      runReleasePreflight({
+        repositoryRoot: fixture.repository,
+        releaseCommit: fixture.releaseCommit,
+        repositoryOwner: "moonbase-labs",
+        version: "1.2.3",
+        inspector: inspector(fixture.sourceCommit),
+      }),
+    ).toThrow(/could not be verified through GitHub/);
+  });
+
   it("normalizes Syft entropy and SPDX set ordering into stable release bytes", () => {
     const identity = {
       artifactDigest: `sha256:${"b".repeat(64)}`,
@@ -460,7 +518,7 @@ describe("release preflight", () => {
     );
   });
 
-  it("binds the exact manifest-only release child to OCI evidence and Hindsight platforms", () => {
+  it("binds the exact evidence-bearing release child to OCI evidence and Hindsight platforms", () => {
     const { repository, releaseCommit, sourceCommit } = releaseFixture();
     const result = runReleasePreflight({
       repositoryRoot: repository,

@@ -12,6 +12,8 @@ import {
   resolveCommit,
   validateReleaseManifest,
 } from "./release-lib.js";
+import { reverifyWorkspaceReleaseProducer } from "./workspace-release-evidence.js";
+import { parseStrictJson } from "./strict-json.js";
 
 const hindsightImagePattern =
   /^ghcr\.io\/vectorize-io\/hindsight@sha256:[a-f0-9]{64}$/;
@@ -226,7 +228,10 @@ export function normalizeSpdxFile(options: {
   sbomPath: string;
 }): void {
   const manifest = releaseManifestSchema.parse(
-    JSON.parse(readFileSync(options.manifestPath, "utf8")),
+    parseStrictJson(
+      readFileSync(options.manifestPath, "utf8"),
+      "Release manifest",
+    ),
   );
   const artifactDigest = `sha256:${createHash("sha256")
     .update(readFileSync(options.artifactPath))
@@ -571,6 +576,10 @@ export function runReleasePreflight(options: {
   if (manifest.status !== "released") {
     throw new Error(`Release ${manifest.version} is still a candidate`);
   }
+  reverifyWorkspaceReleaseProducer({
+    manifest,
+    read: (path) => readFileSync(join(options.repositoryRoot, path)),
+  });
   spdxCreationTime(manifest.createdAt);
 
   const inspector = options.inspector ?? dockerInspector;
