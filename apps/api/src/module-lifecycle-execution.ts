@@ -25,6 +25,8 @@ const forbiddenDatabaseErrors = new Set([
   "Signed credentialed worker context is required to finalize lifecycle action",
   "Fresh live worker credential is required to finalize lifecycle action",
   "Exact lifecycle action command is unavailable to this worker",
+  "Signed worker context is required for lifecycle owner check",
+  "Live original owner membership is required for lifecycle transition",
 ]);
 const inputDatabaseErrors = new Set([
   "Exact module lifecycle approval does not exist",
@@ -115,7 +117,7 @@ export class DatabaseModuleLifecycleExecution {
         databaseWorkerContext(worker),
         async (transaction) => {
           const result = await transaction.query<{ creation: unknown }>(
-            `select public.consume_module_lifecycle_action_approval(
+            `select public.consume_module_lifecycle_action_approval_live(
                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::text
              ) as creation`,
             [
@@ -187,7 +189,7 @@ export class DatabaseModuleLifecycleExecution {
         databaseWorkerContext(worker),
         async (transaction) => {
           const result = await transaction.query<{ completion: unknown }>(
-            `select public.finalize_module_lifecycle_action(
+            `select public.finalize_module_lifecycle_action_live(
                $1::uuid, $2::uuid, $3::uuid, $4::uuid,
                $5::jsonb, $6::jsonb, $7::jsonb
              ) as completion`,

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vorton/contracts": "*",
+    "@vorton/database": "*",
     "@vorton/memory": "*"
   },
   "devDependencies": {

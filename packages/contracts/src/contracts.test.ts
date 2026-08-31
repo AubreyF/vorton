@@ -418,7 +418,7 @@ describe("installation contracts", () => {
   });
 
   it("requires workers to identify their billing and isolation boundaries", () => {
-    const result = workerAdvertisementSchema.safeParse({
+    const advertisement = {
       workerId: "7fb46f09-3894-4c24-933c-77c7a403341c",
       installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
       workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -428,13 +428,20 @@ describe("installation contracts", () => {
       runtime: "container",
       model: "fixture",
       capabilities: ["observe"],
-      dataClassificationCeiling: "synthetic",
       isolation: "ephemeral-container",
       networkPolicy: "deny-all",
       health: "healthy",
-    });
+    };
 
-    expect(result.success).toBe(true);
+    expect(workerAdvertisementSchema.safeParse(advertisement).success).toBe(
+      true,
+    );
+    expect(
+      workerAdvertisementSchema.safeParse({
+        ...advertisement,
+        dataClassificationCeiling: "restricted",
+      }).success,
+    ).toBe(false);
   });
 
   it("requires exactly one attributable record actor", () => {

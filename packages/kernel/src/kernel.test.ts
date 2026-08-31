@@ -72,6 +72,7 @@ function ownerRow() {
 describe("worker credentials", () => {
   it("issues only a hash to Postgres and returns the secret once", async () => {
     const fake = new FakeDatabase();
+    fake.responses.push({ rows: [{ id: workspaceId }], rowCount: 1 });
     fake.responses.push({ rows: [ownerRow()], rowCount: 1 });
     fake.responses.push({ rows: [{ id: credentialId }], rowCount: 1 });
     const service = new WorkersService(fake as unknown as Database, {
@@ -87,7 +88,7 @@ describe("worker credentials", () => {
       tokenHint: "aracters",
       expiresAt: "2026-08-28T12:05:00.000Z",
     });
-    const insert = fake.statements[1];
+    const insert = fake.statements[2];
     expect(insert?.text).toContain("decode($4, 'hex')");
     expect(insert?.values?.[3]).toMatch(/^[a-f0-9]{64}$/);
     expect(insert?.values).not.toContain(result.token);

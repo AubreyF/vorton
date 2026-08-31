@@ -1,7 +1,6 @@
 import { Database } from "@vorton/database";
 import { DatabaseExecutiveAuthorityVerifier } from "@vorton/executive";
 import { WorkersService } from "@vorton/kernel";
-import { HttpHindsightAdapter } from "@vorton/memory";
 
 import { createSupabaseIdentityVerifier } from "./auth.js";
 import { DatabaseExecutiveCouncilResolver } from "./council-resolver.js";
@@ -39,11 +38,6 @@ const worker = new RemoteExecutiveWorkerAdapter({
   dataClassificationCeiling: env.workerClassificationCeiling,
   requestTimeoutMs: env.workerRequestTimeoutMs,
 });
-// Server-only construction. Derived memory never participates in authority checks.
-const hindsight = new HttpHindsightAdapter({
-  baseUrl: env.hindsightUrl,
-  apiKey: env.hindsightApiKey,
-});
 const server = createApiServer({
   database,
   ledger,
@@ -58,12 +52,6 @@ const server = createApiServer({
     database,
     worker.provider,
     worker.model,
-    hindsight,
-    (error) =>
-      console.warn(
-        "Vorton derived memory recall is unavailable; continuing with authoritative evidence only",
-        error,
-      ),
   ),
   workerRuns: new DatabaseWorkerRunRecorder(database),
   councilResolver: new DatabaseExecutiveCouncilResolver(database, worker),

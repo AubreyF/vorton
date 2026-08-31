@@ -49,11 +49,13 @@ Vorton should eventually adopt an OpenClaude- and Paperclip-inspired plugin arch
 
 These capabilities exist but remain subject to integration testing and change:
 
+Memory delivery is intentionally narrow. Production Hindsight recall, retain, consolidation, invalidation, receipts, retention, and deletion remain disabled and unwired.
+
 - PostgreSQL schemas for People, Workers, Roles, Work, Policy, and Records.
 - Supabase Auth integration, Row Level Security, short-lived worker credentials, and append-only records.
 - A web control plane with Work, worker, executive, memory, conversation, and Factory foundations.
 - A blank Tools module with scaffolding and the uninstalled Moonbase Triage example.
-- A provider-neutral Context Gateway, Hindsight adapter, source citations, transcript revisions, retrieval receipts, and deletion propagation.
+- PostgreSQL authority projections for workspace-scoped memory banks and admitted source material, plus a test-only in-memory Context Gateway mutation harness.
 - Google Meet and Omi adapter foundations for high-volume conversation ingestion.
 - Worker registration, capability advertisement, leasing, status, dispatch, and evidence contracts.
 - A read-only Factory connector boundary for external software queues and execution systems.

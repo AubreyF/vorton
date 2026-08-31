@@ -468,7 +468,7 @@ async function setWorkspaceStepUpContext(
 
 async function inRuntimeTransaction<T>(
   databaseUrl: string,
-  role: "authenticated" | "aubos_worker",
+  role: "anon" | "authenticated" | "aubos_worker",
   setup: (client: Client) => Promise<void>,
   operation: (client: Client) => Promise<T>,
 ): Promise<T> {
@@ -531,7 +531,7 @@ async function expectConstraintViolation(
 
 async function expectRuntimeDenied(
   databaseUrl: string,
-  role: "authenticated" | "aubos_worker",
+  role: "anon" | "authenticated" | "aubos_worker",
   setup: (client: Client) => Promise<void>,
   sql: string,
   values: unknown[],
@@ -1344,6 +1344,1461 @@ async function proveWorkspaceResourceCoexistence(
     JSON.stringify(row.realms) ===
       JSON.stringify(["organizational", "personal"]),
     "Personal and organizational banks did not remain realm separated",
+  );
+}
+
+async function proveContextGatewayMemoryBankAuthority(
+  admin: Client,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  type ResolutionRow = {
+    external_bank_id: string;
+    installation_realm: "personal" | "organizational";
+    principal_kind: "person" | "worker";
+    principal_id: string;
+    context_subject_id: string;
+    capability_grant_id: string;
+    capability: string;
+    capability_mode: "observe" | "modify";
+    data_classification_ceiling:
+      "public" | "internal" | "confidential" | "restricted" | "synthetic";
+  };
+  type ResolverSetup = (client: Client) => Promise<void>;
+
+  const evidence = await admin.query<{
+    id: string;
+    classification: "synthetic";
+  }>(
+    `select id::text, classification::text
+       from public.records
+      where installation_id = $1 and workspace_id = $2 and kind = 'evidence'
+      order by created_at limit 1`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  const sourceRevisionId = evidence.rows[0]?.id;
+  requireCondition(
+    sourceRevisionId,
+    "Context Gateway source proof has no authoritative evidence fixture",
+  );
+  const connection = await admin.query<{ id: string }>(
+    `select id::text from public.source_connections
+      where installation_id = $1 and workspace_id = $2
+      order by created_at limit 1`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  const connectionId = connection.rows[0]?.id;
+  requireCondition(
+    connectionId,
+    "Context Gateway source proof has no source connection fixture",
+  );
+  const sourceRevisionHash = createHash("sha256")
+    .update("synthetic-context-gateway-source")
+    .digest("hex");
+  await admin.query(
+    `insert into public.transcript_revisions (
+       id, installation_id, workspace_id, installation_realm, connection_id,
+       provider, provider_object_id, revision_hash, title, started_at,
+       participants, provider_observed_at, ingested_at, adapter_version,
+       classification, completeness, boundary, admission_state
+     ) values (
+       $1, $2, $3, 'organizational', $4, 'google-meet',
+       'synthetic-context-gateway-source', $5,
+       'Synthetic Context Gateway source', clock_timestamp(), '[]'::jsonb,
+       clock_timestamp(), clock_timestamp(), 'synthetic-v1', 'synthetic',
+       'complete', 'organizational', 'admitted'
+     )`,
+    [
+      sourceRevisionId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      connectionId,
+      sourceRevisionHash,
+    ],
+  );
+  await admin.query(
+    `insert into public.source_citations (
+       installation_id, workspace_id, installation_realm,
+       transcript_revision_id, source_uri, revision_hash, locator
+     ) values ($1, $2, 'organizational', $3,
+               'urn:vorton:synthetic:context-gateway', $4, 'fixture:1')`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      sourceRevisionId,
+      sourceRevisionHash,
+    ],
+  );
+  await admin.query(
+    `insert into public.memory_candidates (
+       installation_id, workspace_id, installation_realm,
+       source_revision_id, bank_id, candidate_text,
+       admission_state, admitted_at
+     ) values ($1, $2, 'organizational', $3, $4,
+               'Synthetic Context Gateway candidate', 'admitted',
+               clock_timestamp())`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      sourceRevisionId,
+      organizationalBankId,
+    ],
+  );
+  const publicSourceRevisionId = randomUUID();
+  const publicSourceRevisionHash = createHash("sha256")
+    .update("public-context-gateway-source")
+    .digest("hex");
+  await admin.query(
+    `insert into public.transcript_revisions (
+       id, installation_id, workspace_id, installation_realm, connection_id,
+       provider, provider_object_id, revision_hash, title, started_at,
+       participants, provider_observed_at, ingested_at, adapter_version,
+       classification, completeness, boundary, admission_state
+     ) values (
+       $1, $2, $3, 'organizational', $4, 'google-meet',
+       'public-context-gateway-source', $5,
+       'Public Context Gateway source', clock_timestamp(), '[]'::jsonb,
+       clock_timestamp(), clock_timestamp(), 'fixture-v1', 'public',
+       'complete', 'organizational', 'admitted'
+     )`,
+    [
+      publicSourceRevisionId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      connectionId,
+      publicSourceRevisionHash,
+    ],
+  );
+  await admin.query(
+    `insert into public.source_citations (
+       installation_id, workspace_id, installation_realm,
+       transcript_revision_id, source_uri, revision_hash, locator
+     ) values ($1, $2, 'organizational', $3,
+               'urn:vorton:public:context-gateway', $4, 'fixture:public')`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      publicSourceRevisionId,
+      publicSourceRevisionHash,
+    ],
+  );
+  await admin.query(
+    `insert into public.memory_candidates (
+       installation_id, workspace_id, installation_realm,
+       source_revision_id, bank_id, candidate_text,
+       admission_state, admitted_at
+     ) values ($1, $2, 'organizational', $3, $4,
+               'Public Context Gateway candidate', 'admitted',
+               clock_timestamp())`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      publicSourceRevisionId,
+      organizationalBankId,
+    ],
+  );
+  const hostileSourceIds = {
+    pending: randomUUID(),
+    quarantined: randomUUID(),
+    deleted: randomUUID(),
+    superseded: randomUUID(),
+    successor: randomUUID(),
+  };
+  const seedSourceRevision = async (input: {
+    id: string;
+    label: string;
+    admissionState: "pending" | "admitted" | "quarantined";
+    boundary: "organizational" | "mixed";
+    deleted: boolean;
+    supersedesRevisionId?: string;
+    candidateState?: "pending" | "admitted" | "quarantined";
+  }): Promise<void> => {
+    const revisionHash = createHash("sha256").update(input.label).digest("hex");
+    await admin.query(
+      `insert into public.transcript_revisions (
+         id, installation_id, workspace_id, installation_realm, connection_id,
+         provider, provider_object_id, revision_hash, title, started_at,
+         participants, provider_observed_at, ingested_at, adapter_version,
+         classification, completeness, boundary, admission_state, deleted_at,
+         supersedes_revision_id
+       ) values (
+         $1, $2, $3, 'organizational', $4, 'google-meet', $5, $6, $5,
+         clock_timestamp(), '[]'::jsonb, clock_timestamp(), clock_timestamp(),
+         'synthetic-v1', 'synthetic', 'complete', $7, $8::public.admission_state,
+         case when $9 then clock_timestamp() else null end, $10
+       )`,
+      [
+        input.id,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        connectionId,
+        input.label,
+        revisionHash,
+        input.boundary,
+        input.admissionState,
+        input.deleted,
+        input.supersedesRevisionId ?? null,
+      ],
+    );
+    await admin.query(
+      `insert into public.source_citations (
+         installation_id, workspace_id, installation_realm,
+         transcript_revision_id, source_uri, revision_hash, locator
+       ) values ($1, $2, 'organizational', $3, $4, $5, 'fixture:hostile')`,
+      [
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        input.id,
+        `urn:vorton:synthetic:${input.label}`,
+        revisionHash,
+      ],
+    );
+    if (input.candidateState) {
+      await admin.query(
+        `insert into public.memory_candidates (
+           installation_id, workspace_id, installation_realm,
+           source_revision_id, bank_id, candidate_text, admission_state,
+           admitted_at, quarantined_at
+         ) values (
+           $1, $2, 'organizational', $3,
+           case when $4 = 'admitted' then $5::uuid else null end,
+           'Synthetic hostile source candidate', $4::public.admission_state,
+           case when $4 = 'admitted' then clock_timestamp() else null end,
+           case when $4 = 'quarantined' then clock_timestamp() else null end
+         )`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          input.id,
+          input.candidateState,
+          organizationalBankId,
+        ],
+      );
+    }
+  };
+  await seedSourceRevision({
+    id: hostileSourceIds.pending,
+    label: "context-gateway-pending",
+    admissionState: "pending",
+    boundary: "organizational",
+    deleted: false,
+    candidateState: "pending",
+  });
+  await seedSourceRevision({
+    id: hostileSourceIds.quarantined,
+    label: "context-gateway-quarantined",
+    admissionState: "quarantined",
+    boundary: "mixed",
+    deleted: false,
+    candidateState: "quarantined",
+  });
+  await seedSourceRevision({
+    id: hostileSourceIds.deleted,
+    label: "context-gateway-deleted",
+    admissionState: "admitted",
+    boundary: "organizational",
+    deleted: true,
+    candidateState: "admitted",
+  });
+  await seedSourceRevision({
+    id: hostileSourceIds.superseded,
+    label: "context-gateway-superseded",
+    admissionState: "admitted",
+    boundary: "organizational",
+    deleted: false,
+    candidateState: "admitted",
+  });
+  await seedSourceRevision({
+    id: hostileSourceIds.successor,
+    label: "context-gateway-successor",
+    admissionState: "admitted",
+    boundary: "organizational",
+    deleted: false,
+    supersedesRevisionId: hostileSourceIds.superseded,
+  });
+
+  const memoryCounts = async (): Promise<Record<string, string>> => {
+    const result = await admin.query<Record<string, string>>(
+      `select
+         (select count(*)::text from public.memory_banks) as banks,
+         (select count(*)::text from public.memory_candidates) as candidates,
+         (select count(*)::text from public.derived_memories) as memories,
+         (select count(*)::text from public.consolidation_lineage) as lineage,
+         (select count(*)::text from public.retrieval_receipts) as receipts`,
+    );
+    const row = result.rows[0];
+    requireCondition(row, "Context Gateway memory baseline is missing");
+    return row;
+  };
+  const baselineMemoryCounts = await memoryCounts();
+
+  const resolveBank = (
+    role: "authenticated" | "aubos_worker",
+    setup: ResolverSetup,
+    installationId: string,
+    workspaceId: string,
+    operation: "retain" | "consolidate" | "retrieve" | "invalidate",
+    workId: string | null = null,
+  ): Promise<ResolutionRow[]> =>
+    inRuntimeTransaction(runtimeDatabaseUrl, role, setup, async (client) => {
+      const result = await client.query<ResolutionRow>(
+        `select external_bank_id, installation_realm::text,
+                principal_kind::text, principal_id::text,
+                context_subject_id::text, capability_grant_id::text,
+                capability,
+                capability_mode::text, data_classification_ceiling::text
+           from public.resolve_context_gateway_memory_bank(
+             $1, $2, $3::public.context_gateway_operation, $4
+           )`,
+        [installationId, workspaceId, operation, workId],
+      );
+      return result.rows;
+    });
+  type SourceMaterialRow = {
+    source_revision_id: string;
+    classification: string;
+    source_uri: string;
+    revision_hash: string;
+    locator: string;
+    external_bank_id: string;
+    data_classification_ceiling: string;
+  };
+  const resolveSourceMaterial = (
+    role: "authenticated" | "aubos_worker",
+    setup: ResolverSetup,
+    installationId: string,
+    workspaceId: string,
+    realm: "personal" | "organizational",
+    workId: string | null,
+    sourceRevisionIds: string[],
+  ): Promise<SourceMaterialRow[]> =>
+    inRuntimeTransaction(runtimeDatabaseUrl, role, setup, async (client) => {
+      const result = await client.query<SourceMaterialRow>(
+        `select source_revision_id::text, classification::text, source_uri,
+                revision_hash, locator, external_bank_id,
+                data_classification_ceiling::text
+           from public.resolve_context_gateway_source_material(
+             $1, $2, $3::public.installation_realm, $4, $5::uuid[]
+           )`,
+        [installationId, workspaceId, realm, workId, sourceRevisionIds],
+      );
+      return result.rows;
+    });
+  const expectNoResolution = async (
+    label: string,
+    role: "authenticated" | "aubos_worker",
+    setup: ResolverSetup,
+    installationId: string,
+    workspaceId: string,
+    operation: "retain" | "consolidate" | "retrieve" | "invalidate",
+    workId: string | null = null,
+  ): Promise<void> => {
+    const rows = await resolveBank(
+      role,
+      setup,
+      installationId,
+      workspaceId,
+      operation,
+      workId,
+    );
+    requireCondition(
+      rows.length === 0,
+      `${label} unexpectedly resolved a bank`,
+    );
+  };
+  const expectResolution = async (
+    label: string,
+    role: "authenticated" | "aubos_worker",
+    setup: ResolverSetup,
+    installationId: string,
+    workspaceId: string,
+    operation: "retain" | "consolidate" | "retrieve" | "invalidate",
+    workId: string | null,
+    expected: ResolutionRow,
+  ): Promise<void> => {
+    const rows = await resolveBank(
+      role,
+      setup,
+      installationId,
+      workspaceId,
+      operation,
+      workId,
+    );
+    requireCondition(rows.length === 1, `${label} did not resolve one bank`);
+    requireCondition(
+      JSON.stringify(rows[0]) === JSON.stringify(expected),
+      `${label} returned an unexpected authority projection`,
+    );
+    requireCondition(
+      JSON.stringify(Object.keys(rows[0] ?? {}).sort()) ===
+        JSON.stringify(
+          [
+            "capability",
+            "capability_grant_id",
+            "capability_mode",
+            "context_subject_id",
+            "data_classification_ceiling",
+            "external_bank_id",
+            "installation_realm",
+            "principal_id",
+            "principal_kind",
+          ].sort(),
+        ),
+      `${label} exposed an unexpected bank, storage, or credential field`,
+    );
+  };
+
+  const policy = await admin.query<{ id: string }>(
+    `select id::text from public.policies
+      where installation_id = $1 and workspace_id = $2
+      order by created_at limit 1`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  const policyId = policy.rows[0]?.id;
+  requireCondition(policyId, "Context Gateway Policy fixture is missing");
+  const roleAssignment = await admin.query<{ count: string }>(
+    `select count(*)::text as count
+       from public.worker_role_assignments
+      where installation_id = $1 and workspace_id = $2 and worker_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workerId],
+  );
+  requireCondition(
+    Number(roleAssignment.rows[0]?.count ?? "0") > 0,
+    "Context Gateway role-only hostile proof has no worker role fixture",
+  );
+  const preexistingMemoryGrants = await admin.query<{ count: string }>(
+    `select count(*)::text as count
+       from public.capability_grants
+      where capability like 'memory.%'`,
+  );
+  requireCondition(
+    preexistingMemoryGrants.rows[0]?.count === "0",
+    "Context Gateway proof started with unexpected memory capabilities",
+  );
+
+  const validCredentialId = randomUUID();
+  const revokedCredentialId = randomUUID();
+  const expiredCredentialId = randomUUID();
+  const futureCredentialId = randomUUID();
+  await admin.query(
+    `insert into public.worker_credentials (
+       id, installation_id, workspace_id, worker_id, token_hash, token_hint,
+       issued_at, expires_at, issued_by_person_id
+     ) values
+       ($1, $5, $6, $7,
+        extensions.digest(convert_to($1::uuid::text, 'UTF8'), 'sha256'),
+        'ctx-valid', clock_timestamp() - interval '1 minute',
+        clock_timestamp() + interval '10 minutes', $8),
+       ($2, $5, $6, $7,
+        extensions.digest(convert_to($2::uuid::text, 'UTF8'), 'sha256'),
+        'ctx-revoked', clock_timestamp() - interval '1 minute',
+        clock_timestamp() + interval '10 minutes', $8),
+       ($3, $5, $6, $7,
+        extensions.digest(convert_to($3::uuid::text, 'UTF8'), 'sha256'),
+        'ctx-expired', clock_timestamp() - interval '10 minutes',
+        clock_timestamp() - interval '1 minute', $8),
+       ($4, $5, $6, $7,
+        extensions.digest(convert_to($4::uuid::text, 'UTF8'), 'sha256'),
+        'ctx-future', clock_timestamp() + interval '1 minute',
+        clock_timestamp() + interval '10 minutes', $8)`,
+    [
+      validCredentialId,
+      revokedCredentialId,
+      expiredCredentialId,
+      futureCredentialId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workerId,
+      ownerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.worker_credential_revocations (
+       id, installation_id, workspace_id, credential_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5, 'Synthetic Context Gateway proof')`,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      revokedCredentialId,
+      ownerPersonId,
+    ],
+  );
+
+  const signedPerson =
+    (
+      installationId = bootstrap.installationId,
+      workspaceId = bootstrap.workspaceId,
+      authUserId = ownerAuthUserId,
+    ): ResolverSetup =>
+    (client) =>
+      setSignedContext(
+        client,
+        "person",
+        installationId,
+        workspaceId,
+        authUserId,
+      );
+  const signedWorker =
+    (credentialId: string): ResolverSetup =>
+    (client) =>
+      setSignedContext(
+        client,
+        "worker",
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        bootstrap.workerId,
+        credentialId,
+      );
+  const unsignedPerson: ResolverSetup = async (client) => {
+    await client.query(
+      `select set_config('aubos.context_kind', 'person', true),
+              set_config('aubos.installation_id', $1, true),
+              set_config('vorton.workspace_id', $2, true),
+              set_config('aubos.subject_id', $3, true),
+              set_config('aubos.credential_id', '', true),
+              set_config('aubos.context_signature', '', true)`,
+      [bootstrap.installationId, bootstrap.workspaceId, ownerAuthUserId],
+    );
+  };
+  const forgedPerson: ResolverSetup = async (client) => {
+    await unsignedPerson(client);
+    await client.query(
+      "select set_config('aubos.context_signature', $1, true)",
+      ["a".repeat(64)],
+    );
+  };
+  const unsignedWorker: ResolverSetup = async (client) => {
+    await client.query(
+      `select set_config('aubos.context_kind', 'worker', true),
+              set_config('aubos.installation_id', $1, true),
+              set_config('vorton.workspace_id', $2, true),
+              set_config('aubos.subject_id', $3, true),
+              set_config('aubos.credential_id', $4, true),
+              set_config('aubos.context_signature', '', true)`,
+      [
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        bootstrap.workerId,
+        validCredentialId,
+      ],
+    );
+  };
+  const forgedWorker: ResolverSetup = async (client) => {
+    await unsignedWorker(client);
+    await client.query(
+      "select set_config('aubos.context_signature', $1, true)",
+      ["b".repeat(64)],
+    );
+  };
+
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "anon",
+    async () => undefined,
+    `select * from public.resolve_context_gateway_memory_bank(
+       $1, $2, 'retrieve'::public.context_gateway_operation, null
+     )`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+    "Anonymous Context Gateway execution",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "anon",
+    async () => undefined,
+    `select * from public.resolve_context_gateway_source_material(
+       $1, $2, 'organizational'::public.installation_realm, null, $3::uuid[]
+     )`,
+    [bootstrap.installationId, bootstrap.workspaceId, [sourceRevisionId]],
+    "Anonymous Context Gateway source projection",
+  );
+  for (const tableName of [
+    "source_connections",
+    "transcript_revisions",
+    "transcript_utterances",
+    "source_citations",
+    "memory_banks",
+    "memory_candidates",
+    "derived_memories",
+    "consolidation_lineage",
+    "retrieval_receipts",
+    "retrieval_receipt_results",
+  ]) {
+    await expectRuntimeDenied(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedPerson(),
+      `select count(*) from public.${tableName}`,
+      [],
+      `Direct authenticated ${tableName} read`,
+    );
+  }
+
+  await expectNoResolution(
+    "Owner kind without explicit memory authority",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+  );
+  await expectNoResolution(
+    "Worker role without explicit memory authority",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+  );
+
+  const personRetrieveGrantId = randomUUID();
+  const workerConsolidateGrantId = randomUUID();
+  const workerRetrieveGrantId = randomUUID();
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, worker_id, capability, mode, work_id, expires_at,
+       granted_by_person_id
+     ) values
+       ($1, $3, $4, $5, 'person', $6, null,
+        'memory.retrieve', 'observe', null,
+        clock_timestamp() + interval '10 minutes', $6),
+       ($2, $3, $4, $5, 'worker', null, $7,
+        'memory.consolidate', 'modify', null,
+        clock_timestamp() + interval '10 minutes', $6),
+       ($8, $3, $4, $5, 'worker', null, $7,
+        'memory.retrieve', 'observe', null,
+        clock_timestamp() + interval '10 minutes', $6)`,
+    [
+      personRetrieveGrantId,
+      workerConsolidateGrantId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      policyId,
+      ownerPersonId,
+      bootstrap.workerId,
+      workerRetrieveGrantId,
+    ],
+  );
+
+  for (const [label, role, setup, operation] of [
+    ["Unsigned person context", "authenticated", unsignedPerson, "retrieve"],
+    ["Forged person context", "authenticated", forgedPerson, "retrieve"],
+    ["Unsigned worker context", "aubos_worker", unsignedWorker, "consolidate"],
+    ["Forged worker context", "aubos_worker", forgedWorker, "consolidate"],
+  ] as const) {
+    await expectNoResolution(
+      label,
+      role,
+      setup,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      operation,
+    );
+  }
+
+  const organizationalExternalBank =
+    `organizational:${bootstrap.installationId}:` +
+    `${bootstrap.workspaceId}:lineage-v2`;
+  await expectResolution(
+    "Person retrieve",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+    null,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "person",
+      principal_id: ownerPersonId,
+      context_subject_id: ownerAuthUserId,
+      capability_grant_id: personRetrieveGrantId,
+      capability: "memory.retrieve",
+      capability_mode: "observe",
+      data_classification_ceiling: "restricted",
+    },
+  );
+  const projectedSource = await resolveSourceMaterial(
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "organizational",
+    null,
+    [sourceRevisionId],
+  );
+  const expectedProjectedSource: SourceMaterialRow = {
+    source_revision_id: sourceRevisionId,
+    classification: "synthetic",
+    source_uri: "urn:vorton:synthetic:context-gateway",
+    revision_hash: sourceRevisionHash,
+    locator: "fixture:1",
+    external_bank_id: organizationalExternalBank,
+    data_classification_ceiling: "restricted",
+  };
+  requireCondition(
+    JSON.stringify(projectedSource) ===
+      JSON.stringify([expectedProjectedSource]),
+    "Context Gateway source projection returned unexpected material",
+  );
+  requireCondition(
+    JSON.stringify(
+      await resolveSourceMaterial(
+        "authenticated",
+        signedPerson(),
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        "organizational",
+        null,
+        [sourceRevisionId],
+      ),
+    ) === JSON.stringify(projectedSource),
+    "Context Gateway source projection exact replay drifted",
+  );
+  for (const [label, installationId, workspaceId, realm, workId, ids] of [
+    [
+      "Wrong source realm",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      "personal",
+      null,
+      [sourceRevisionId],
+    ],
+    [
+      "Cross-workspace source",
+      bootstrap.installationId,
+      otherWorkspaceId,
+      "personal",
+      null,
+      [sourceRevisionId],
+    ],
+    [
+      "Cross-installation source",
+      otherInstallationId,
+      bootstrap.workspaceId,
+      "organizational",
+      null,
+      [sourceRevisionId],
+    ],
+    [
+      "Wrong Work source authority",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      "organizational",
+      otherWorkId,
+      [sourceRevisionId],
+    ],
+    [
+      "Duplicate source revision IDs",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      "organizational",
+      null,
+      [sourceRevisionId, sourceRevisionId],
+    ],
+    [
+      "Unrequested source revision",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      "organizational",
+      null,
+      [randomUUID()],
+    ],
+  ] as const) {
+    const rows = await resolveSourceMaterial(
+      "authenticated",
+      signedPerson(),
+      installationId,
+      workspaceId,
+      realm,
+      workId,
+      [...ids],
+    );
+    requireCondition(rows.length === 0, `${label} unexpectedly returned rows`);
+  }
+  const oversizedSourceIds = Array.from({ length: 257 }, () => randomUUID());
+  requireCondition(
+    (
+      await resolveSourceMaterial(
+        "authenticated",
+        signedPerson(),
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        "organizational",
+        null,
+        oversizedSourceIds,
+      )
+    ).length === 0,
+    "Oversized source revision request unexpectedly returned rows",
+  );
+  for (const [label, hostileSourceId] of Object.entries(hostileSourceIds)) {
+    if (label === "successor") continue;
+    requireCondition(
+      (
+        await resolveSourceMaterial(
+          "authenticated",
+          signedPerson(),
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          "organizational",
+          null,
+          [hostileSourceId],
+        )
+      ).length === 0,
+      `${label} source unexpectedly entered the retrieval projection`,
+    );
+  }
+  await expectSqlState(
+    admin,
+    `update public.memory_candidates
+        set bank_id = $1
+      where installation_id = $2 and workspace_id = $3
+        and source_revision_id = $4`,
+    [
+      personalBankId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      sourceRevisionId,
+    ],
+    "23503",
+    "Cross-workspace candidate bank substitution",
+  );
+
+  await expectResolution(
+    "Worker consolidate",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+    null,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "worker",
+      principal_id: bootstrap.workerId,
+      context_subject_id: bootstrap.workerId,
+      capability_grant_id: workerConsolidateGrantId,
+      capability: "memory.consolidate",
+      capability_mode: "modify",
+      data_classification_ceiling: "synthetic",
+    },
+  );
+  requireCondition(
+    (
+      await resolveSourceMaterial(
+        "aubos_worker",
+        signedWorker(validCredentialId),
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        "organizational",
+        null,
+        [publicSourceRevisionId],
+      )
+    ).length === 0,
+    "Synthetic-only worker received a public-classified source",
+  );
+  await admin.query(
+    `update public.workers
+        set data_classification_ceiling = 'public'
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workerId],
+  );
+  await expectResolution(
+    "Low-ceiling worker consolidate",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+    null,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "worker",
+      principal_id: bootstrap.workerId,
+      context_subject_id: bootstrap.workerId,
+      capability_grant_id: workerConsolidateGrantId,
+      capability: "memory.consolidate",
+      capability_mode: "modify",
+      data_classification_ceiling: "public",
+    },
+  );
+  const publicCeilingSyntheticSource = await resolveSourceMaterial(
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "organizational",
+    null,
+    [sourceRevisionId],
+  );
+  requireCondition(
+    publicCeilingSyntheticSource.length === 1 &&
+      publicCeilingSyntheticSource[0]?.classification === "synthetic" &&
+      publicCeilingSyntheticSource[0]?.data_classification_ceiling === "public",
+    "Public-ceiling worker did not receive synthetic source material",
+  );
+  await admin.query(
+    `update public.workers
+        set data_classification_ceiling = 'synthetic'
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workerId],
+  );
+
+  await expectNoResolution(
+    "Person capability substitution",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retain",
+    bootstrap.workId,
+  );
+  await expectNoResolution(
+    "Worker operation substitution",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "invalidate",
+  );
+
+  const personRetainGrantId = randomUUID();
+  const workerInvalidateGrantId = randomUUID();
+  const expiredPersonConsolidateGrantId = randomUUID();
+  const futurePersonConsolidateGrantId = randomUUID();
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, worker_id, capability, mode, work_id, granted_at,
+       expires_at, granted_by_person_id
+     ) values
+       ($1, $4, $5, $6, 'person', $7, null,
+        'memory.retain', 'modify', $8, clock_timestamp(),
+        clock_timestamp() + interval '10 minutes', $7),
+       ($2, $4, $5, $6, 'worker', null, $9,
+        'memory.invalidate', 'modify', null, clock_timestamp(),
+        clock_timestamp() + interval '10 minutes', $7),
+       ($3, $4, $5, $6, 'person', $7, null,
+        'memory.consolidate', 'modify', null,
+        clock_timestamp() - interval '2 minutes',
+        clock_timestamp() - interval '1 minute', $7),
+       ($10, $4, $5, $6, 'person', $7, null,
+        'memory.consolidate', 'modify', null,
+        clock_timestamp() + interval '1 minute',
+        clock_timestamp() + interval '10 minutes', $7)`,
+    [
+      personRetainGrantId,
+      workerInvalidateGrantId,
+      expiredPersonConsolidateGrantId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      policyId,
+      ownerPersonId,
+      bootstrap.workId,
+      bootstrap.workerId,
+      futurePersonConsolidateGrantId,
+    ],
+  );
+  await expectResolution(
+    "Person work-bound retain",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retain",
+    bootstrap.workId,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "person",
+      principal_id: ownerPersonId,
+      context_subject_id: ownerAuthUserId,
+      capability_grant_id: personRetainGrantId,
+      capability: "memory.retain",
+      capability_mode: "modify",
+      data_classification_ceiling: "restricted",
+    },
+  );
+  await expectNoResolution(
+    "Work-bound grant without matching Work",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retain",
+  );
+  await expectNoResolution(
+    "Cross-workspace Work substitution",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retain",
+    otherWorkId,
+  );
+  await expectResolution(
+    "Worker invalidate",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "invalidate",
+    null,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "worker",
+      principal_id: bootstrap.workerId,
+      context_subject_id: bootstrap.workerId,
+      capability_grant_id: workerInvalidateGrantId,
+      capability: "memory.invalidate",
+      capability_mode: "modify",
+      data_classification_ceiling: "synthetic",
+    },
+  );
+  await expectNoResolution(
+    "Expired person capability grant",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+  );
+  await expectNoResolution(
+    "Future person capability grant",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+  );
+
+  await admin.query(
+    `insert into public.capability_grant_revocations (
+       id, installation_id, workspace_id, grant_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5, 'Synthetic Context Gateway proof')`,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      personRetrieveGrantId,
+      ownerPersonId,
+    ],
+  );
+  await expectNoResolution(
+    "Revoked person capability grant",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+  );
+  requireCondition(
+    (
+      await resolveSourceMaterial(
+        "authenticated",
+        signedPerson(),
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        "organizational",
+        null,
+        [sourceRevisionId],
+      )
+    ).length === 0,
+    "Revoked person capability grant retained source projection access",
+  );
+
+  for (const [label, credentialId] of [
+    ["Missing worker credential", randomUUID()],
+    ["Revoked worker credential", revokedCredentialId],
+    ["Expired worker credential", expiredCredentialId],
+    ["Future worker credential", futureCredentialId],
+    ["Empty worker credential", ""],
+  ] as const) {
+    await expectNoResolution(
+      label,
+      "aubos_worker",
+      signedWorker(credentialId),
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      "consolidate",
+    );
+  }
+
+  await admin.query(
+    `insert into public.capability_grant_revocations (
+       id, installation_id, workspace_id, grant_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5, 'Synthetic revoked worker memory grant')`,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      workerConsolidateGrantId,
+      ownerPersonId,
+    ],
+  );
+  await expectNoResolution(
+    "Revoked worker capability grant",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "consolidate",
+  );
+
+  await expectNoResolution(
+    "Signed context with wrong installation",
+    "authenticated",
+    signedPerson(),
+    otherInstallationId,
+    bootstrap.workspaceId,
+    "retrieve",
+  );
+  await expectNoResolution(
+    "Signed context with wrong workspace",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    otherWorkspaceId,
+    "retrieve",
+  );
+  await expectNoResolution(
+    "Worker cross-workspace substitution",
+    "aubos_worker",
+    signedWorker(validCredentialId),
+    bootstrap.installationId,
+    otherWorkspaceId,
+    "consolidate",
+  );
+
+  const noMembershipAuthUserId = randomUUID();
+  const noMembershipPersonId = randomUUID();
+  await admin.query(
+    "insert into auth.users (id, email) values ($1, 'context-no-membership@synthetic.invalid')",
+    [noMembershipAuthUserId],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values ($1, $2, $3, 'Synthetic Context Gateway outsider', 'owner')`,
+    [noMembershipPersonId, bootstrap.installationId, noMembershipAuthUserId],
+  );
+  await expectNoResolution(
+    "Person without workspace membership",
+    "authenticated",
+    signedPerson(
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      noMembershipAuthUserId,
+    ),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+  );
+
+  const revokedOwnerAuthUserId = randomUUID();
+  const revokedOwnerPersonId = randomUUID();
+  const revokedOwnerGrantId = randomUUID();
+  await admin.query(
+    "insert into auth.users (id, email) values ($1, 'context-revoked-owner@synthetic.invalid')",
+    [revokedOwnerAuthUserId],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values ($1, $2, $3, 'Synthetic revoked Context Gateway owner', 'owner')`,
+    [revokedOwnerPersonId, bootstrap.installationId, revokedOwnerAuthUserId],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner')`,
+    [bootstrap.installationId, bootstrap.workspaceId, revokedOwnerPersonId],
+  );
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, capability, mode, expires_at, granted_by_person_id
+     ) values ($1, $2, $3, $4, 'person', $5, 'memory.retrieve',
+               'observe', clock_timestamp() + interval '10 minutes', $6)`,
+    [
+      revokedOwnerGrantId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      policyId,
+      revokedOwnerPersonId,
+      ownerPersonId,
+    ],
+  );
+  const signedRevokedOwner = signedPerson(
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    revokedOwnerAuthUserId,
+  );
+  await expectResolution(
+    "Second owner before membership revocation",
+    "authenticated",
+    signedRevokedOwner,
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+    null,
+    {
+      external_bank_id: organizationalExternalBank,
+      installation_realm: "organizational",
+      principal_kind: "person",
+      principal_id: revokedOwnerPersonId,
+      context_subject_id: revokedOwnerAuthUserId,
+      capability_grant_id: revokedOwnerGrantId,
+      capability: "memory.retrieve",
+      capability_mode: "observe",
+      data_classification_ceiling: "restricted",
+    },
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedRevokedOwner,
+    "select count(*) from public.workspace_membership_revocations",
+    [],
+    "Direct membership-revocation ledger read",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedPerson(),
+    `insert into public.workspace_membership_revocations (
+       installation_id, workspace_id, person_id, revoked_by_person_id
+     ) values ($1, $2, $3, $4)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      revokedOwnerPersonId,
+      ownerPersonId,
+    ],
+    "Direct membership-revocation ledger write",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedPerson(),
+    "select public.revoke_workspace_membership($1, $2, $3)",
+    [bootstrap.installationId, bootstrap.workspaceId, revokedOwnerPersonId],
+    "Ungoverned membership revocation",
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations (
+       installation_id, workspace_id, person_id, revoked_by_person_id
+     ) values ($1, $2, $3, $4)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      revokedOwnerPersonId,
+      ownerPersonId,
+    ],
+  );
+  await expectNoResolution(
+    "Revoked workspace owner",
+    "authenticated",
+    signedRevokedOwner,
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    "retrieve",
+  );
+  requireCondition(
+    (
+      await resolveSourceMaterial(
+        "authenticated",
+        signedRevokedOwner,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        "organizational",
+        null,
+        [sourceRevisionId],
+      )
+    ).length === 0,
+    "Revoked workspace owner retained source projection access",
+  );
+  const revokedBootstrapMembership = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedRevokedOwner,
+    (client) =>
+      client.query<{ count: string }>(
+        `select count(*)::text as count
+           from public.workspace_memberships
+          where installation_id = $1 and workspace_id = $2`,
+        [bootstrap.installationId, bootstrap.workspaceId],
+      ),
+  );
+  requireCondition(
+    revokedBootstrapMembership.rows[0]?.count === "0",
+    "Revoked workspace owner remained visible to ordinary bootstrap membership reads",
+  );
+
+  const otherWorkspaceRetrieveGrantId = randomUUID();
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, capability, mode, work_id, expires_at,
+       granted_by_person_id
+     ) values ($1, $2, $3, $4, 'person', $5, 'memory.retrieve',
+               'observe', null, clock_timestamp() + interval '10 minutes', $5)`,
+    [
+      otherWorkspaceRetrieveGrantId,
+      bootstrap.installationId,
+      otherWorkspaceId,
+      otherPolicyId,
+      ownerPersonId,
+    ],
+  );
+  const personalExternalBank = `personal:${bootstrap.installationId}:${otherWorkspaceId}:lineage-v2`;
+  await expectResolution(
+    "Personal workspace retrieve",
+    "authenticated",
+    signedPerson(bootstrap.installationId, otherWorkspaceId),
+    bootstrap.installationId,
+    otherWorkspaceId,
+    "retrieve",
+    null,
+    {
+      external_bank_id: personalExternalBank,
+      installation_realm: "personal",
+      principal_kind: "person",
+      principal_id: ownerPersonId,
+      context_subject_id: ownerAuthUserId,
+      capability_grant_id: otherWorkspaceRetrieveGrantId,
+      capability: "memory.retrieve",
+      capability_mode: "observe",
+      data_classification_ceiling: "restricted",
+    },
+  );
+  await expectNoResolution(
+    "Cross-workspace bank through organizational context",
+    "authenticated",
+    signedPerson(),
+    bootstrap.installationId,
+    otherWorkspaceId,
+    "retrieve",
+  );
+
+  const noBankWorkspaceId = randomUUID();
+  const noBankPolicyId = randomUUID();
+  await admin.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, $3, 'Synthetic workspace without memory',
+             'organizational', $4)`,
+    [
+      noBankWorkspaceId,
+      bootstrap.installationId,
+      `no-memory-${noBankWorkspaceId.slice(0, 8)}`,
+      ownerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner')`,
+    [bootstrap.installationId, noBankWorkspaceId, ownerPersonId],
+  );
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     values ($1, $2, $3, 'context-gateway-memory', 1,
+             '{"fixture":"synthetic"}'::jsonb, $4, $5)`,
+    [
+      noBankPolicyId,
+      bootstrap.installationId,
+      noBankWorkspaceId,
+      createHash("sha256").update(noBankWorkspaceId).digest("hex"),
+      ownerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, capability, mode, expires_at, granted_by_person_id
+     ) values ($1, $2, $3, $4, 'person', $5, 'memory.retrieve',
+               'observe', clock_timestamp() + interval '10 minutes', $5)`,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      noBankWorkspaceId,
+      noBankPolicyId,
+      ownerPersonId,
+    ],
+  );
+  await expectNoResolution(
+    "Workspace without a memory bank",
+    "authenticated",
+    signedPerson(bootstrap.installationId, noBankWorkspaceId),
+    bootstrap.installationId,
+    noBankWorkspaceId,
+    "retrieve",
+  );
+
+  const legacyPolicyId = randomUUID();
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner')`,
+    [legacyInstallationId, legacyWorkspaceId, legacyOwnerPersonId],
+  );
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     values ($1, $2, $3, 'context-gateway-memory', 1,
+             '{"fixture":"synthetic"}'::jsonb, $4, $5)`,
+    [
+      legacyPolicyId,
+      legacyInstallationId,
+      legacyWorkspaceId,
+      createHash("sha256").update(legacyWorkspaceId).digest("hex"),
+      legacyOwnerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       person_id, capability, mode, expires_at, granted_by_person_id
+     ) values ($1, $2, $3, $4, 'person', $5, 'memory.retrieve',
+               'observe', clock_timestamp() + interval '10 minutes', $5)`,
+    [
+      randomUUID(),
+      legacyInstallationId,
+      legacyWorkspaceId,
+      legacyPolicyId,
+      legacyOwnerPersonId,
+    ],
+  );
+  await expectNoResolution(
+    "Legacy noncanonical memory bank",
+    "authenticated",
+    signedPerson(
+      legacyInstallationId,
+      legacyWorkspaceId,
+      legacyOwnerAuthUserId,
+    ),
+    legacyInstallationId,
+    legacyWorkspaceId,
+    "retrieve",
+  );
+
+  requireCondition(
+    JSON.stringify(await memoryCounts()) ===
+      JSON.stringify(baselineMemoryCounts),
+    "Context Gateway authority resolution mutated memory state",
   );
 }
 
@@ -2578,10 +4033,10 @@ async function proveModuleLifecycleExecutionBoundary(
         return parseModuleLifecycleApprovalCreation(result.rows[0]?.creation);
       },
     );
-  const consumeSql = `select public.consume_module_lifecycle_action_approval(
+  const consumeSql = `select public.consume_module_lifecycle_action_approval_live(
     $1, $2, $3, $4, $5, $6
   ) as creation`;
-  const finalizeSql = `select public.finalize_module_lifecycle_action(
+  const finalizeSql = `select public.finalize_module_lifecycle_action_live(
     $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb
   ) as completion`;
   const signedWorkerContext =
@@ -3278,18 +4733,31 @@ async function proveModuleLifecycleExecutionBoundary(
     "Failed lifecycle action was not recorded as an exact immutable receipt",
   );
 
-  const replayedCompletion = await finalize(
-    backupCommand,
-    successOutcome,
-    backupEffects,
-    backupEvidence,
-    backupCompletion.actionReceipt.receiptId,
+  await admin.query(
+    `update public.workspace_memberships set kind = 'member'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
   );
-  requireCondition(
-    canonicalModuleLifecycleJson(replayedCompletion) ===
-      canonicalModuleLifecycleJson(backupCompletion),
-    "Lifecycle action response-loss replay changed the receipt",
-  );
+  try {
+    const replayedCompletion = await finalize(
+      backupCommand,
+      successOutcome,
+      backupEffects,
+      backupEvidence,
+      backupCompletion.actionReceipt.receiptId,
+    );
+    requireCondition(
+      canonicalModuleLifecycleJson(replayedCompletion) ===
+        canonicalModuleLifecycleJson(backupCompletion),
+      "Completed lifecycle receipt replay changed after owner revocation",
+    );
+  } finally {
+    await admin.query(
+      `update public.workspace_memberships set kind = 'owner'
+        where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+      [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+    );
+  }
   await expectRuntimeSqlState(
     runtimeDatabaseUrl,
     "aubos_worker",
@@ -3480,6 +4948,41 @@ async function proveModuleLifecycleExecutionBoundary(
     "select * from public.module_lifecycle_action_receipts",
     [],
     "direct lifecycle receipt read",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(),
+    `select public.consume_module_lifecycle_action_approval(
+       $1, $2, $3, $4, $5, $6
+     )`,
+    [
+      randomUUID(),
+      backupApproval.approval.approvalId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workId,
+      "controlled-synthetic",
+    ],
+    "unguarded lifecycle consume entrypoint",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(finalizationCredentialId),
+    `select public.finalize_module_lifecycle_action(
+       $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb
+     )`,
+    [
+      backupCompletion.actionReceipt.receiptId,
+      backupCommand.command.commandId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      JSON.stringify(successOutcome),
+      JSON.stringify(backupEffects),
+      JSON.stringify(backupEvidence),
+    ],
+    "unguarded lifecycle finalize entrypoint",
   );
   await expectSqlState(
     admin,
@@ -4209,6 +5712,12 @@ async function main(): Promise<void> {
       bootstrap,
     );
     await proveWorkspaceResourceCoexistence(admin, bootstrap, ownerPersonId);
+    await proveContextGatewayMemoryBankAuthority(
+      admin,
+      runtimeDatabaseUrl,
+      bootstrap,
+      ownerPersonId,
+    );
     await proveWorkspaceMemoryBankIdentity(admin, bootstrap);
     await proveModuleLifecycleApprovalBoundary(
       admin,
@@ -4252,6 +5761,23 @@ async function main(): Promise<void> {
             memoryBankExternalIdentityWorkspaceBound: true,
             memoryBankLegacyIdentityPreservedUntilExplicitReconciliation: true,
             memoryBankLegacyIdentityRequiresExplicitRemediation: true,
+            contextGatewayBankAuthorityPostgresResolved: true,
+            contextGatewayPersonAndWorkerCapabilitiesExplicit: true,
+            contextGatewayWorkerCredentialFreshAndLive: true,
+            contextGatewayWorkerClassificationCeilingBound: true,
+            contextGatewaySyntheticCeilingRejectsPublicSource: true,
+            contextGatewayPublicCeilingPermitsSyntheticSource: true,
+            contextGatewayRolesAndHealthNonAuthoritative: true,
+            contextGatewayOperationCapabilityMappingFixed: true,
+            contextGatewayAnonymousExecutionDenied: true,
+            contextGatewaySourceProjectionAnonymousExecutionDenied: true,
+            contextGatewayDirectMemoryTableReadsDenied: true,
+            contextGatewayFutureAndRevokedGrantsDenied: true,
+            contextGatewaySourceProjectionRevocationLive: true,
+            contextGatewayWorkspaceMembershipRevocationLedgerLive: true,
+            contextGatewayUngovernedMembershipRevocationDenied: true,
+            contextGatewayNoBankLegacyAndCrossWorkspaceDenied: true,
+            contextGatewayResolutionHasNoMemoryEffects: true,
             installationScopedReleaseAdoptionApprovalConsumed: true,
             releaseAdoptionExactReleaseSubstitutionsDenied: true,
             releaseAdoptionReceiptHashCanonicalAndImmutable: true,

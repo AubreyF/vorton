@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Database, SqlExecutor } from "@vorton/database";
-import {
-  InMemoryHindsightAdapter,
-  type HindsightAdapter,
-  workspaceHindsightBank,
-} from "@vorton/memory";
 
 import {
   DatabaseExecutiveRequestResolver,
@@ -26,24 +21,6 @@ const requester = {
   workspaceId: input.workspaceId,
   authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
 };
-const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
-
-function memoryBankRow(
-  realm: "personal" | "organizational",
-  workspaceId = input.workspaceId,
-  externalBankId = workspaceHindsightBank(
-    input.installationId,
-    workspaceId,
-    realm,
-  ).id,
-) {
-  return {
-    installation_id: input.installationId,
-    workspace_id: workspaceId,
-    installation_realm: realm,
-    external_bank_id: externalBankId,
-  };
-}
 
 class FakeDatabase {
   results: Array<Array<Record<string, unknown>>> = [];
@@ -75,6 +52,30 @@ class FakeDatabase {
   ): Promise<T> {
     return this.asAdministrator(work);
   }
+}
+
+function proposalRows(): Array<Array<Record<string, unknown>>> {
+  return [
+    [
+      {
+        work_id: input.workId,
+        worker_id: input.workerId,
+        role_id: input.roleId,
+        role_name: "Reviewer",
+        role_version: 2,
+        skill_markdown: "Database-owned role",
+        content_sha256: "b".repeat(64),
+      },
+    ],
+    [
+      {
+        id: input.evidenceRecordIds[0],
+        summary: "Database-owned evidence",
+        source_uri: null,
+        classification: "synthetic",
+      },
+    ],
+  ];
 }
 
 describe("database executive request resolver", () => {
@@ -137,7 +138,6 @@ describe("database executive request resolver", () => {
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
-      new InMemoryHindsightAdapter(),
     );
     await expect(
       resolver.resolveBootstrap("0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"),
@@ -192,7 +192,6 @@ describe("database executive request resolver", () => {
         database as unknown as Database,
         "openai-responses",
         "explicit-model",
-        new InMemoryHindsightAdapter(),
       );
       await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
         "missing or inapplicable",
@@ -208,97 +207,32 @@ describe("database executive request resolver", () => {
 
   it("rejects missing or cross-installation evidence", async () => {
     const database = new FakeDatabase();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 1,
-          skill_markdown: "Database-owned role",
-          content_sha256: "a".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [],
-    ];
+    database.results = [proposalRows()[0]!, []];
     const resolver = new DatabaseExecutiveRequestResolver(
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
-      new InMemoryHindsightAdapter(),
     );
     await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
       "evidence records are missing",
     );
   });
 
-  it("uses the authoritative workspace realm for bank and transcript routing", async () => {
+  it("returns no derived context and cannot reach memory or Hindsight", async () => {
     const database = new FakeDatabase();
-    const memory = new InMemoryHindsightAdapter();
-    const bank = workspaceHindsightBank(
-      input.installationId,
-      input.workspaceId,
-      "personal",
-    );
-    await memory.retain(bank, {
-      id: "derived-1",
-      text: "Assess synthetic evidence using derived context that remains untrusted",
-      classification: "synthetic",
-      citations: [
-        {
-          sourceRevisionId: input.evidenceRecordIds[0]!,
-          sourceUri: "urn:vorton:synthetic",
-          revisionHash: "c".repeat(64),
-          locator: "fixture:1",
-        },
-      ],
-      sourceRevisionIds: [input.evidenceRecordIds[0]!],
-      invalidatedAt: null,
+    database.results = proposalRows();
+    const retrieve = vi.fn(() => {
+      throw new Error("Hindsight must remain unreachable");
     });
-    const ensureBank = vi.spyOn(memory, "ensureBank");
-    const retrieve = vi.spyOn(memory, "retrieve");
-    ensureBank.mockClear();
-    retrieve.mockClear();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "personal",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [memoryBankRow("personal")],
-      [
-        {
-          source_revision_id: input.evidenceRecordIds[0],
-          classification: "synthetic",
-          source_uri: "urn:vorton:synthetic",
-          revision_hash: "c".repeat(64),
-          locator: "fixture:1",
-        },
-      ],
-    ];
-    const resolver = new DatabaseExecutiveRequestResolver(
+    const memory = { retrieve };
+    expect(DatabaseExecutiveRequestResolver.length).toBe(3);
+    const resolver = Reflect.construct(DatabaseExecutiveRequestResolver, [
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
       memory,
-    );
+    ]);
+
     await expect(
       resolver.resolveProposal(input, requester),
     ).resolves.toMatchObject({
@@ -306,402 +240,29 @@ describe("database executive request resolver", () => {
       evidence: [
         { summary: "Database-owned evidence", classification: "synthetic" },
       ],
-      derivedContext: [
-        {
-          text: "Assess synthetic evidence using derived context that remains untrusted",
-          trust: "untrusted",
-          derived: true,
-          classification: "synthetic",
-        },
-      ],
-    });
-    expect(database.statements[0]).toContain(
-      "join public.workspaces workspace",
-    );
-    expect(database.statements[2]).toContain("from public.memory_banks");
-    expect(database.statements[2]).toContain("installation_id = $1");
-    expect(database.statements[2]).toContain("workspace_id = $2");
-    expect(database.statements[2]).toContain(
-      "installation_realm = $3::public.installation_realm",
-    );
-    expect(database.parameters[2]).toEqual([
-      input.installationId,
-      input.workspaceId,
-      "personal",
-    ]);
-    expect(database.statements[3]).toContain("public.memory_candidates");
-    expect(database.statements[3]).toContain(
-      "candidate.admission_state = 'admitted'",
-    );
-    expect(database.statements[3]).toContain(
-      "revision.admission_state = 'admitted'",
-    );
-    expect(database.statements[3]).toContain(
-      "successor.supersedes_revision_id",
-    );
-    expect(database.statements[3]).toContain(
-      "revision.installation_realm = $3::public.installation_realm",
-    );
-    expect(database.statements[3]).toContain(
-      "revision.boundary = $5::public.source_boundary",
-    );
-    expect(database.parameters[3]?.[2]).toBe("personal");
-    expect(database.parameters[3]?.[4]).toBe("personal");
-    expect(ensureBank).not.toHaveBeenCalled();
-    expect(retrieve).toHaveBeenCalledWith(bank, input.objective);
-  });
-
-  it("makes no Hindsight request when the workspace has no memory bank", async () => {
-    const database = new FakeDatabase();
-    const memory = new InMemoryHindsightAdapter();
-    const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    await memory.retain(
-      workspaceHindsightBank(
-        input.installationId,
-        otherWorkspaceId,
-        "organizational",
-      ),
-      {
-        id: "other-workspace-memory",
-        text: "Assess synthetic evidence from the wrong workspace",
-        classification: "synthetic",
-        citations: [
-          {
-            sourceRevisionId: input.evidenceRecordIds[0]!,
-            sourceUri: "urn:vorton:synthetic:other-workspace",
-            revisionHash: "d".repeat(64),
-            locator: "fixture:other-workspace",
-          },
-        ],
-        sourceRevisionIds: [input.evidenceRecordIds[0]!],
-        invalidatedAt: null,
-      },
-    );
-    const ensureBank = vi.spyOn(memory, "ensureBank");
-    const retrieve = vi.spyOn(memory, "retrieve");
-    ensureBank.mockClear();
-    retrieve.mockClear();
-    const warning = vi.fn();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [],
-    ];
-    const resolver = new DatabaseExecutiveRequestResolver(
-      database as unknown as Database,
-      "openai-responses",
-      "explicit-model",
-      memory,
-      warning,
-    );
-
-    await expect(
-      resolver.resolveProposal(input, requester),
-    ).resolves.toMatchObject({
       derivedContext: [],
     });
-    expect(database.statements).toHaveLength(3);
-    expect(ensureBank).not.toHaveBeenCalled();
+    expect(database.statements).toHaveLength(2);
+    expect(database.statements.join("\n").toLowerCase()).not.toMatch(
+      /memory_banks|transcript_revisions|memory_candidates|source_citations/,
+    );
     expect(retrieve).not.toHaveBeenCalled();
-    expect(warning).not.toHaveBeenCalled();
   });
 
-  it("fails the memory lane closed when the external bank ID does not match", async () => {
+  it("rejects a requester context from another workspace", async () => {
     const database = new FakeDatabase();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [memoryBankRow("organizational", input.workspaceId, "mismatched-bank")],
-    ];
-    const ensureBank = vi.fn();
-    const retrieve = vi.fn();
-    const warning = vi.fn();
     const resolver = new DatabaseExecutiveRequestResolver(
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
-      {
-        ensureBank,
-        retain: vi.fn(),
-        retrieve,
-        invalidateSource: vi.fn(),
-      },
-      warning,
     );
-
     await expect(
-      resolver.resolveProposal(input, requester),
-    ).resolves.toMatchObject({ derivedContext: [] });
-    expect(ensureBank).not.toHaveBeenCalled();
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledOnce();
-    expect(warning).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message:
-          "PostgreSQL memory bank binding does not match the selected workspace",
+      resolver.resolveProposal(input, {
+        ...requester,
+        workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       }),
-    );
-  });
-
-  it("rejects a memory bank row returned for another workspace", async () => {
-    const database = new FakeDatabase();
-    const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [memoryBankRow("organizational", otherWorkspaceId)],
-    ];
-    const ensureBank = vi.fn();
-    const retrieve = vi.fn();
-    const warning = vi.fn();
-    const resolver = new DatabaseExecutiveRequestResolver(
-      database as unknown as Database,
-      "openai-responses",
-      "explicit-model",
-      {
-        ensureBank,
-        retain: vi.fn(),
-        retrieve,
-        invalidateSource: vi.fn(),
-      },
-      warning,
-    );
-
-    await expect(
-      resolver.resolveProposal(input, requester),
-    ).resolves.toMatchObject({ derivedContext: [] });
-    expect(database.parameters[2]).toEqual([
-      input.installationId,
-      input.workspaceId,
-      "organizational",
-    ]);
-    expect(ensureBank).not.toHaveBeenCalled();
-    expect(retrieve).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledOnce();
-  });
-
-  it("fails closed when the authoritative workspace realm is invalid", async () => {
-    const database = new FakeDatabase();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "mixed",
-        },
-      ],
-    ];
-    const resolver = new DatabaseExecutiveRequestResolver(
-      database as unknown as Database,
-      "openai-responses",
-      "explicit-model",
-      new InMemoryHindsightAdapter(),
-    );
-
-    await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
-      "no valid authoritative realm",
-    );
-    expect(database.statements).toHaveLength(1);
-  });
-
-  it("replaces a downgraded recalled classification with Postgres authority", async () => {
-    const database = new FakeDatabase();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [memoryBankRow("organizational")],
-      [
-        {
-          source_revision_id: input.evidenceRecordIds[0],
-          classification: "public",
-          source_uri: "urn:vorton:synthetic",
-          revision_hash: "c".repeat(64),
-          locator: "fixture:1",
-        },
-        {
-          source_revision_id: secondSourceRevisionId,
-          classification: "restricted",
-          source_uri: "urn:vorton:restricted",
-          revision_hash: "d".repeat(64),
-          locator: "fixture:2",
-        },
-      ],
-    ];
-    const ensureBank = vi.fn();
-    const memory = {
-      ensureBank,
-      retain: async () => undefined,
-      retrieve: async () => [
-        {
-          id: "derived-without-classification",
-          text: "Malformed derived context",
-          classification: "public",
-          citations: [
-            {
-              sourceRevisionId: input.evidenceRecordIds[0]!,
-              sourceUri: "urn:vorton:synthetic",
-              revisionHash: "c".repeat(64),
-              locator: "fixture:1",
-            },
-            {
-              sourceRevisionId: secondSourceRevisionId,
-              sourceUri: "urn:vorton:restricted",
-              revisionHash: "d".repeat(64),
-              locator: "fixture:2",
-            },
-          ],
-          sourceRevisionIds: [
-            input.evidenceRecordIds[0]!,
-            secondSourceRevisionId,
-          ],
-          invalidatedAt: null,
-        },
-      ],
-      invalidateSource: async () => undefined,
-    } as unknown as HindsightAdapter;
-    const resolver = new DatabaseExecutiveRequestResolver(
-      database as unknown as Database,
-      "openai-responses",
-      "explicit-model",
-      memory,
-    );
-
-    await expect(
-      resolver.resolveProposal(input, requester),
-    ).resolves.toMatchObject({
-      derivedContext: [{ classification: "restricted" }],
-    });
-    expect(ensureBank).not.toHaveBeenCalled();
-  });
-
-  it("degrades a derived-memory outage to empty context with an explicit warning", async () => {
-    const database = new FakeDatabase();
-    database.results = [
-      [
-        {
-          work_id: input.workId,
-          worker_id: input.workerId,
-          role_id: input.roleId,
-          role_name: "Reviewer",
-          role_version: 2,
-          skill_markdown: "Database-owned role",
-          content_sha256: "b".repeat(64),
-          workspace_realm: "organizational",
-        },
-      ],
-      [
-        {
-          id: input.evidenceRecordIds[0],
-          summary: "Database-owned evidence",
-          source_uri: null,
-          classification: "synthetic",
-        },
-      ],
-      [memoryBankRow("organizational")],
-    ];
-    const warning = vi.fn();
-    const ensureBank = vi.fn();
-    const resolver = new DatabaseExecutiveRequestResolver(
-      database as unknown as Database,
-      "openai-responses",
-      "explicit-model",
-      {
-        ensureBank,
-        retain: vi.fn(),
-        retrieve: async () => {
-          throw new Error("synthetic Hindsight outage");
-        },
-        invalidateSource: vi.fn(),
-      },
-      warning,
-    );
-    await expect(
-      resolver.resolveProposal(input, requester),
-    ).resolves.toMatchObject({
-      evidence: [{ summary: "Database-owned evidence" }],
-      derivedContext: [],
-    });
-    expect(warning).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "synthetic Hindsight outage" }),
-    );
-    expect(ensureBank).not.toHaveBeenCalled();
+    ).rejects.toThrow("cannot cross workspaces");
+    expect(database.statements).toHaveLength(0);
   });
 
   it("rejects forged role markdown and evidence descriptors at the HTTP contract", () => {

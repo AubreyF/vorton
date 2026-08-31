@@ -1,22 +1,9 @@
 import {
-  dataClassificationSchema,
-  deriveDataClassification,
-  installationRealmSchema,
-  retrievedContextSchema,
-  sourceCitationSchema,
   type ExecutiveWorkerJobRequest,
   type ExecutionAuthority,
-  type InstallationRealm,
-  type RetrievedContext,
-  type SourceCitation,
 } from "@vorton/contracts";
 import type { Database, PersonContext } from "@vorton/database";
 import { executiveCouncilProtocol } from "@vorton/executive";
-import {
-  type HindsightAdapter,
-  type HindsightMemory,
-  workspaceHindsightBank,
-} from "@vorton/memory";
 
 export interface ProposalInput {
   installationId: string;
@@ -40,7 +27,6 @@ interface BindingRow {
   role_version: number;
   skill_markdown: string;
   content_sha256: string;
-  workspace_realm: unknown;
 }
 
 interface EvidenceRow {
@@ -48,21 +34,6 @@ interface EvidenceRow {
   summary: string;
   source_uri: string | null;
   classification: ExecutiveWorkerJobRequest["evidence"][number]["classification"];
-}
-
-interface MemorySourceRow {
-  source_revision_id: string;
-  classification: string;
-  source_uri: string;
-  revision_hash: string;
-  locator: string;
-}
-
-interface MemoryBankBindingRow {
-  installation_id: string;
-  workspace_id: string;
-  installation_realm: unknown;
-  external_bank_id: string;
 }
 
 interface GrantRow {
@@ -167,12 +138,6 @@ export class DatabaseExecutiveRequestResolver {
     private readonly database: Database,
     private readonly provider: string,
     private readonly model: string,
-    private readonly memory: HindsightAdapter,
-    private readonly onMemoryWarning: (error: unknown) => void = (error) =>
-      console.warn(
-        "Vorton derived memory recall is unavailable; continuing with authoritative evidence only",
-        error,
-      ),
   ) {}
 
   async resolveBootstrap(authUserId: string): Promise<RuntimeBootstrap> {
@@ -377,18 +342,14 @@ export class DatabaseExecutiveRequestResolver {
         "Requester context cannot cross workspaces",
       );
     }
-    const resolution = await this.database.asPerson(
+    const request = await this.database.asPerson(
       requester,
       async (transaction) => {
         const binding = await transaction.query<BindingRow>(
           `select work.id as work_id, worker.id as worker_id, role.id as role_id,
                 role.name as role_name, role.version as role_version,
-                role.skill_markdown, role.content_sha256,
-                workspace.realm as workspace_realm
+                role.skill_markdown, role.content_sha256
            from public.work work
-           join public.workspaces workspace
-             on workspace.installation_id = work.installation_id
-            and workspace.id = work.workspace_id
            join public.workers worker
              on worker.installation_id = work.installation_id
             and worker.workspace_id = work.workspace_id and worker.id = $4
@@ -440,14 +401,6 @@ export class DatabaseExecutiveRequestResolver {
             "Work, assigned role, configured worker, or executive.propose capability is missing or inapplicable",
           );
         }
-        const workspaceRealm = installationRealmSchema.safeParse(
-          row.workspace_realm,
-        );
-        if (!workspaceRealm.success) {
-          throw new ExecutiveRequestResolutionError(
-            "Workspace has no valid authoritative realm",
-          );
-        }
         const evidence = await transaction.query<EvidenceRow>(
           `select id, summary, source_uri, classification
            from public.records
@@ -461,202 +414,33 @@ export class DatabaseExecutiveRequestResolver {
             "One or more evidence records are missing or belong to another workspace",
           );
         }
-        const memoryBankBindings =
-          await transaction.query<MemoryBankBindingRow>(
-            `select installation_id, workspace_id, installation_realm, external_bank_id
-               from public.memory_banks
-              where installation_id = $1
-                and workspace_id = $2
-                and installation_realm = $3::public.installation_realm
-                and adapter = 'hindsight'`,
-            [input.installationId, input.workspaceId, workspaceRealm.data],
-          );
         return {
-          workspaceRealm: workspaceRealm.data,
-          memoryBankBindings: memoryBankBindings.rows,
-          request: {
-            installationId: input.installationId,
-            workspaceId: input.workspaceId,
-            workId: row.work_id,
-            workerId: row.worker_id,
-            role: {
-              roleId: row.role_id,
-              name: row.role_name,
-              version: row.role_version,
-              contentSha256: row.content_sha256,
-              skillMarkdown: row.skill_markdown,
-            },
-            objective: input.objective,
-            evidence: evidence.rows.map((item) => ({
-              recordId: item.id,
-              summary: item.summary,
-              sourceUri: item.source_uri,
-              classification: item.classification,
-            })),
-            background: input.background,
+          installationId: input.installationId,
+          workspaceId: input.workspaceId,
+          workId: row.work_id,
+          workerId: row.worker_id,
+          role: {
+            roleId: row.role_id,
+            name: row.role_name,
+            version: row.role_version,
+            contentSha256: row.content_sha256,
+            skillMarkdown: row.skill_markdown,
           },
+          objective: input.objective,
+          evidence: evidence.rows.map((item) => ({
+            recordId: item.id,
+            summary: item.summary,
+            sourceUri: item.source_uri,
+            classification: item.classification,
+          })),
+          background: input.background,
         };
       },
     );
-    const bank = workspaceHindsightBank(
-      input.installationId,
-      input.workspaceId,
-      resolution.workspaceRealm,
-    );
-    let derivedContext: RetrievedContext[] = [];
-    if (resolution.memoryBankBindings.length > 0) {
-      const memoryBankBinding = resolution.memoryBankBindings[0];
-      const bindingMatches =
-        resolution.memoryBankBindings.length === 1 &&
-        memoryBankBinding?.installation_id === input.installationId &&
-        memoryBankBinding.workspace_id === input.workspaceId &&
-        memoryBankBinding.installation_realm === resolution.workspaceRealm &&
-        memoryBankBinding.external_bank_id === bank.id;
-      if (!bindingMatches) {
-        this.onMemoryWarning(
-          new ExecutiveRequestResolutionError(
-            "PostgreSQL memory bank binding does not match the selected workspace",
-          ),
-        );
-      } else {
-        try {
-          const recalled = await this.memory.retrieve(bank, input.objective);
-          derivedContext = await this.#resolveDerivedContext(
-            input.installationId,
-            input.workspaceId,
-            resolution.workspaceRealm,
-            requester,
-            recalled,
-          );
-        } catch (error) {
-          this.onMemoryWarning(error);
-        }
-      }
-    }
     return {
-      ...resolution.request,
-      derivedContext,
+      ...request,
+      derivedContext: [],
     };
-  }
-
-  async #resolveDerivedContext(
-    installationId: string,
-    workspaceId: string,
-    workspaceRealm: InstallationRealm,
-    requester: PersonContext,
-    recalled: HindsightMemory[],
-  ): Promise<RetrievedContext[]> {
-    const candidates = recalled.flatMap((item) => {
-      const citations = sourceCitationSchema.array().safeParse(item.citations);
-      if (
-        !citations.success ||
-        citations.data.length === 0 ||
-        item.invalidatedAt !== null ||
-        !sameStringSet(
-          item.sourceRevisionIds,
-          citations.data.map((citation) => citation.sourceRevisionId),
-        )
-      ) {
-        return [];
-      }
-      return [{ item, citations: citations.data }];
-    });
-    const sourceRevisionIds = [
-      ...new Set(candidates.flatMap(({ item }) => item.sourceRevisionIds)),
-    ];
-    if (sourceRevisionIds.length === 0) return [];
-
-    const sourceRows = await this.database.asPerson(
-      requester,
-      async (transaction) =>
-        transaction.query<MemorySourceRow>(
-          `select revision.id as source_revision_id, revision.classification,
-                  citation.source_uri, citation.revision_hash, citation.locator
-             from public.transcript_revisions revision
-             join public.memory_candidates candidate
-               on candidate.installation_id = revision.installation_id
-              and candidate.workspace_id = revision.workspace_id
-              and candidate.installation_realm = revision.installation_realm
-              and candidate.source_revision_id = revision.id
-              and candidate.admission_state = 'admitted'
-              and candidate.bank_id is not null
-             join public.source_citations citation
-               on citation.installation_id = revision.installation_id
-              and citation.workspace_id = revision.workspace_id
-              and citation.installation_realm = revision.installation_realm
-              and citation.transcript_revision_id = revision.id
-            where revision.installation_id = $1
-              and revision.workspace_id = $2
-              and revision.installation_realm = $3::public.installation_realm
-              and revision.id = any($4::uuid[])
-              and revision.deleted_at is null
-              and revision.boundary = $5::public.source_boundary
-              and revision.admission_state = 'admitted'
-              and not exists (
-                select 1 from public.transcript_revisions successor
-                 where successor.installation_id = revision.installation_id
-                   and successor.workspace_id = revision.workspace_id
-                   and successor.installation_realm = revision.installation_realm
-                   and successor.supersedes_revision_id = revision.id
-              )
-            order by revision.id, citation.locator`,
-          [
-            installationId,
-            workspaceId,
-            workspaceRealm,
-            sourceRevisionIds,
-            workspaceRealm,
-          ],
-        ),
-    );
-    const rowsBySource = new Map<string, MemorySourceRow[]>();
-    for (const row of sourceRows.rows) {
-      const rows = rowsBySource.get(row.source_revision_id) ?? [];
-      rows.push(row);
-      rowsBySource.set(row.source_revision_id, rows);
-    }
-
-    return candidates.flatMap(({ item, citations }) => {
-      const classifications = item.sourceRevisionIds.flatMap(
-        (sourceRevisionId) => {
-          const rows = rowsBySource.get(sourceRevisionId);
-          if (!rows || rows.length === 0) return [];
-          const classification = dataClassificationSchema.safeParse(
-            rows[0]?.classification,
-          );
-          if (
-            !classification.success ||
-            rows.some((row) => row.classification !== classification.data)
-          ) {
-            return [];
-          }
-          return [classification.data];
-        },
-      );
-      if (classifications.length !== item.sourceRevisionIds.length) return [];
-      const authoritativeCitations = new Set(
-        item.sourceRevisionIds.flatMap((sourceRevisionId) =>
-          (rowsBySource.get(sourceRevisionId) ?? []).map(citationKey),
-        ),
-      );
-      const recalledCitations = new Set(citations.map(citationKey));
-      if (
-        recalledCitations.size !== authoritativeCitations.size ||
-        [...recalledCitations].some(
-          (citation) => !authoritativeCitations.has(citation),
-        )
-      ) {
-        return [];
-      }
-      const parsed = retrievedContextSchema.safeParse({
-        text: item.text,
-        trust: "untrusted",
-        derived: true,
-        classification: deriveDataClassification(classifications),
-        citations,
-      });
-      return parsed.success ? [parsed.data] : [];
-    });
   }
 
   async resolveAuthority(
@@ -707,26 +491,6 @@ export class DatabaseExecutiveRequestResolver {
       };
     });
   }
-}
-
-function sameStringSet(left: string[], right: string[]): boolean {
-  const leftSet = new Set(left);
-  const rightSet = new Set(right);
-  return (
-    leftSet.size === rightSet.size &&
-    [...leftSet].every((value) => rightSet.has(value))
-  );
-}
-
-function citationKey(citation: SourceCitation | MemorySourceRow): string {
-  return JSON.stringify([
-    "sourceRevisionId" in citation
-      ? citation.sourceRevisionId
-      : citation.source_revision_id,
-    "sourceUri" in citation ? citation.sourceUri : citation.source_uri,
-    "revisionHash" in citation ? citation.revisionHash : citation.revision_hash,
-    citation.locator,
-  ]);
 }
 
 const uuid =

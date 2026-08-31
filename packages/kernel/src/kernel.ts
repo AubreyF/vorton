@@ -151,6 +151,15 @@ async function requireOwner(
   transaction: SqlExecutor,
   context: PersonContext,
 ): Promise<PersonRow> {
+  const workspace = await transaction.query<IdRow>(
+    `select id
+       from public.workspaces
+      where installation_id = $1 and id = $2
+      for share`,
+    [context.installationId, context.workspaceId],
+  );
+  if (!workspace.rows[0]) throw new Error("Owner authority is required");
+
   const result = await transaction.query<PersonRow>(
     `select person.id, person.installation_id, person.auth_user_id,
             person.display_name, person.kind, person.created_at
@@ -161,7 +170,14 @@ async function requireOwner(
       where person.installation_id = $1
         and membership.workspace_id = $2
         and person.auth_user_id = $3
-        and membership.kind = 'owner'`,
+        and membership.kind = 'owner'
+        and not exists (
+          select 1
+            from public.workspace_membership_revocations revocation
+           where revocation.installation_id = membership.installation_id
+             and revocation.workspace_id = membership.workspace_id
+             and revocation.person_id = membership.person_id
+        )`,
     [context.installationId, context.workspaceId, context.authUserId],
   );
   const person = result.rows[0];
@@ -341,8 +357,8 @@ export class WorkersService {
         `update public.workers
             set provider = $4, billing_realm = $5, host = $6, runtime = $7,
                 model = $8, advertised_capabilities = $9,
-                data_classification_ceiling = $10, isolation = $11,
-                network_policy = $12, health = $13, last_seen_at = now()
+                isolation = $10, network_policy = $11, health = $12,
+                last_seen_at = now()
           where installation_id = $1 and workspace_id = $2 and id = $3`,
         [
           context.installationId,
@@ -354,7 +370,6 @@ export class WorkersService {
           advertisement.runtime,
           advertisement.model,
           advertisement.capabilities,
-          advertisement.dataClassificationCeiling,
           advertisement.isolation,
           advertisement.networkPolicy,
           advertisement.health,

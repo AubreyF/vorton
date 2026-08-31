@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   deriveDataClassification,
   retrievedContextSchema,
   type AdmissionState,
+  type DataClassification,
   type InstallationRealm,
   type RetrievalReceipt,
   type RetrievedContext,
@@ -24,7 +26,44 @@ export type AdmitSourceInput = Omit<
 > & {
   text: string;
   citations: SourceCitation[];
+  authority: MemoryAuthorityContext;
 };
+
+export type MemoryGatewayOperation =
+  "retain" | "consolidate" | "retrieve" | "invalidate";
+
+export type MemoryAuthoritySubject =
+  | { kind: "person"; authUserId: string }
+  | { kind: "worker"; workerId: string; credentialId: string };
+
+export type MemoryAuthorityContext = {
+  workId: string | null;
+};
+
+export type MemoryBankAuthorityRequest = {
+  operation: MemoryGatewayOperation;
+  installationId: string;
+  workspaceId: string;
+  installationRealm: InstallationRealm;
+  workId: string | null;
+};
+
+export type ResolvedMemoryBankAuthority = {
+  bank: HindsightBank;
+  principalKind: "person" | "worker";
+  principalId: string;
+  contextSubjectId: string;
+  capabilityGrantId: string;
+  capability: string;
+  capabilityMode: "observe" | "modify";
+  dataClassificationCeiling: DataClassification;
+};
+
+export interface MemoryBankAuthorityResolver {
+  resolve(
+    request: MemoryBankAuthorityRequest,
+  ): Promise<ResolvedMemoryBankAuthority>;
+}
 
 export type ConsolidationLineage = {
   derivedMemoryId: string;
@@ -43,6 +82,12 @@ export type RetrievalResult = {
 
 export type GatewayClock = { now(): string };
 
+export type ContextGatewayOptions = Readonly<{
+  testOnlyEnableInMemoryMutations?: boolean;
+}>;
+
+type StoredSource = Omit<AdmitSourceInput, "authority"> & SourceRevision;
+
 const systemClock: GatewayClock = { now: () => new Date().toISOString() };
 
 /**
@@ -51,8 +96,10 @@ const systemClock: GatewayClock = { now: () => new Date().toISOString() };
  */
 export class ContextGateway {
   readonly #hindsight: HindsightAdapter;
+  readonly #authorityResolver: MemoryBankAuthorityResolver;
   readonly #clock: GatewayClock;
-  readonly #sources = new Map<string, AdmitSourceInput & SourceRevision>();
+  readonly #testOnlyEnableInMemoryMutations: boolean;
+  readonly #sources = new Map<string, StoredSource>();
   readonly #deletedSources = new Map<string, string>();
   readonly #workspaceRealms = new Map<string, InstallationRealm>();
   readonly #latestByObject = new Map<string, string>();
@@ -60,65 +107,134 @@ export class ContextGateway {
   readonly #receipts: RetrievalReceipt[] = [];
   #receiptSequence = 0;
 
-  constructor(hindsight: HindsightAdapter, clock: GatewayClock = systemClock) {
+  constructor(
+    hindsight: HindsightAdapter,
+    authorityResolver: MemoryBankAuthorityResolver,
+    clock: GatewayClock = systemClock,
+    options: ContextGatewayOptions = {},
+  ) {
     this.#hindsight = hindsight;
+    this.#authorityResolver = authorityResolver;
     this.#clock = clock;
+    this.#testOnlyEnableInMemoryMutations =
+      options.testOnlyEnableInMemoryMutations === true;
   }
 
   async admit(input: AdmitSourceInput): Promise<SourceRevision> {
-    this.#assertRealm(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
+    this.#assertInMemoryMutationEnabled("admit");
+    const request = structuredClone(input);
+    const retainAuthority = await this.#resolveAuthority(
+      "retain",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
     );
-    const expectedBoundary = realmBoundary(input.installationRealm);
+    assertClassificationAllowed(
+      retainAuthority.dataClassificationCeiling,
+      request.classification,
+    );
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
+    const expectedBoundary = realmBoundary(request.installationRealm);
     const admissionState: AdmissionState =
-      input.boundary === "mixed" || input.boundary !== expectedBoundary
+      request.boundary === "mixed" || request.boundary !== expectedBoundary
         ? "quarantined"
         : "admitted";
-    const objectKey = this.#objectKey(input);
+    const objectKey = this.#objectKey(request);
     const priorId = this.#latestByObject.get(objectKey) ?? null;
     const existing = this.#sources.get(
-      this.#sourceKey(input.installationId, input.workspaceId, input.id),
+      this.#sourceKey(request.installationId, request.workspaceId, request.id),
     );
-    if (existing) return stripContent(existing);
 
-    const revision: AdmitSourceInput & SourceRevision = {
-      ...structuredClone(input),
+    const { authority: _authority, ...sourceInput } = request;
+    if (existing) {
+      if (!isDeepStrictEqual(storedSourcePayload(existing), sourceInput)) {
+        throw new Error(
+          "Source revision ID conflicts with immutable source content",
+        );
+      }
+      return stripContent(existing);
+    }
+
+    const revision: StoredSource = {
+      ...structuredClone(sourceInput),
       admissionState,
       supersedesRevisionId: priorId,
       deletedAt: null,
     };
-    this.#sources.set(
-      this.#sourceKey(input.installationId, input.workspaceId, input.id),
-      revision,
-    );
-    this.#latestByObject.set(objectKey, input.id);
 
-    if (priorId)
-      await this.#invalidate(
-        input.installationId,
-        input.workspaceId,
-        input.installationRealm,
-        priorId,
+    let invalidatedAt: string | null = null;
+    if (priorId) {
+      const invalidateAuthority = await this.#resolveAuthority(
+        "invalidate",
+        request.installationId,
+        request.workspaceId,
+        request.installationRealm,
+        request.authority.workId,
       );
-    if (admissionState === "admitted") {
-      await this.#hindsight.retain(
-        this.#bank(
-          input.installationId,
-          input.workspaceId,
-          input.installationRealm,
-        ),
-        {
-          id: `source:${input.id}`,
-          text: input.text,
-          classification: input.classification,
-          citations: structuredClone(input.citations),
-          sourceRevisionIds: [input.id],
-          invalidatedAt: null,
-        },
+      const priorSource = this.#sources.get(
+        this.#sourceKey(request.installationId, request.workspaceId, priorId),
+      );
+      if (!priorSource) {
+        throw new Error("Superseded source revision is unavailable");
+      }
+      assertClassificationAllowed(
+        invalidateAuthority.dataClassificationCeiling,
+        priorSource.classification,
+      );
+      invalidatedAt = this.#clock.now();
+      await this.#hindsight.invalidateSource(
+        invalidateAuthority.bank,
+        priorId,
+        invalidatedAt,
       );
     }
+    if (admissionState === "admitted") {
+      const admittedAuthority = priorId
+        ? await this.#resolveAuthority(
+            "retain",
+            request.installationId,
+            request.workspaceId,
+            request.installationRealm,
+            request.authority.workId,
+          )
+        : retainAuthority;
+      assertClassificationAllowed(
+        admittedAuthority.dataClassificationCeiling,
+        request.classification,
+      );
+      await this.#hindsight.retain(admittedAuthority.bank, {
+        id: `source:${request.id}`,
+        text: request.text,
+        classification: request.classification,
+        citations: structuredClone(request.citations),
+        sourceRevisionIds: [request.id],
+        invalidatedAt: null,
+      });
+    }
+
+    this.#sources.set(
+      this.#sourceKey(request.installationId, request.workspaceId, request.id),
+      revision,
+    );
+    this.#latestByObject.set(objectKey, request.id);
+    if (priorId && invalidatedAt) {
+      this.#markLineageInvalidated(
+        request.installationId,
+        request.workspaceId,
+        priorId,
+        invalidatedAt,
+      );
+    }
+    this.#establishRealm(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
     return stripContent(revision);
   }
 
@@ -130,48 +246,61 @@ export class ContextGateway {
     text: string;
     sourceRevisionIds: string[];
     parentMemoryIds?: string[];
+    authority: MemoryAuthorityContext;
   }): Promise<ConsolidationLineage> {
-    this.#assertRealm(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
+    this.#assertInMemoryMutationEnabled("consolidate");
+    const request = structuredClone(input);
+    const authorityResolution = await this.#resolveAuthority(
+      "consolidate",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
     );
-    if (input.sourceRevisionIds.length === 0) {
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
+    if (request.sourceRevisionIds.length === 0) {
       throw new Error(
         "Consolidation requires at least one canonical source revision",
       );
     }
-    for (const parentId of input.parentMemoryIds ?? []) {
+    const effectiveSourceRevisionIds = [...request.sourceRevisionIds];
+    for (const parentId of request.parentMemoryIds ?? []) {
       const parent = this.#lineage.get(
-        this.#lineageKey(input.installationId, input.workspaceId, parentId),
+        this.#lineageKey(request.installationId, request.workspaceId, parentId),
       );
       if (
         !parent ||
-        parent.installationId !== input.installationId ||
-        parent.workspaceId !== input.workspaceId ||
+        parent.installationId !== request.installationId ||
+        parent.workspaceId !== request.workspaceId ||
         parent.invalidatedAt
       ) {
         throw new Error(
           `Parent memory ${parentId} is not active in this installation`,
         );
       }
+      effectiveSourceRevisionIds.push(...parent.sourceRevisionIds);
     }
-    const sources = input.sourceRevisionIds.map((id) => {
+    const canonicalSourceRevisionIds = [...new Set(effectiveSourceRevisionIds)];
+    const sources = canonicalSourceRevisionIds.map((id) => {
       const source = this.#sources.get(
-        this.#sourceKey(input.installationId, input.workspaceId, id),
+        this.#sourceKey(request.installationId, request.workspaceId, id),
       );
       if (
         !source ||
         source.admissionState !== "admitted" ||
         this.#deletedSources.has(
-          this.#sourceKey(input.installationId, input.workspaceId, id),
+          this.#sourceKey(request.installationId, request.workspaceId, id),
         )
       ) {
         throw new Error(
           `Source revision ${id} is not active admitted material`,
         );
       }
-      if (source.installationRealm !== input.installationRealm) {
+      if (source.installationRealm !== request.installationRealm) {
         throw new Error("Consolidation cannot cross installation realms");
       }
       return source;
@@ -182,37 +311,39 @@ export class ContextGateway {
     const classification = deriveDataClassification(
       sources.map((source) => source.classification),
     );
+    assertClassificationAllowed(
+      authorityResolution.dataClassificationCeiling,
+      classification,
+    );
     const lineage: ConsolidationLineage = {
-      derivedMemoryId: input.derivedMemoryId,
-      installationId: input.installationId,
-      workspaceId: input.workspaceId,
-      sourceRevisionIds: [...input.sourceRevisionIds],
-      parentMemoryIds: [...(input.parentMemoryIds ?? [])],
+      derivedMemoryId: request.derivedMemoryId,
+      installationId: request.installationId,
+      workspaceId: request.workspaceId,
+      sourceRevisionIds: canonicalSourceRevisionIds,
+      parentMemoryIds: [...(request.parentMemoryIds ?? [])],
       createdAt: this.#clock.now(),
       invalidatedAt: null,
     };
+    await this.#hindsight.retain(authorityResolution.bank, {
+      id: request.derivedMemoryId,
+      text: request.text,
+      classification,
+      citations,
+      sourceRevisionIds: canonicalSourceRevisionIds,
+      invalidatedAt: null,
+    });
     this.#lineage.set(
       this.#lineageKey(
-        input.installationId,
-        input.workspaceId,
-        input.derivedMemoryId,
+        request.installationId,
+        request.workspaceId,
+        request.derivedMemoryId,
       ),
       lineage,
     );
-    await this.#hindsight.retain(
-      this.#bank(
-        input.installationId,
-        input.workspaceId,
-        input.installationRealm,
-      ),
-      {
-        id: input.derivedMemoryId,
-        text: input.text,
-        classification,
-        citations,
-        sourceRevisionIds: [...input.sourceRevisionIds],
-        invalidatedAt: null,
-      },
+    this.#establishRealm(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
     );
     return structuredClone(lineage);
   }
@@ -222,36 +353,54 @@ export class ContextGateway {
     workspaceId: string;
     installationRealm: InstallationRealm;
     query: string;
+    authority: MemoryAuthorityContext;
   }): Promise<RetrievalResult> {
-    this.#assertRealm(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
+    const request = structuredClone(input);
+    const authorityResolution = await this.#resolveAuthority(
+      "retrieve",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
     );
-    const bank = this.#bank(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
     );
-    const memories = await this.#hindsight.retrieve(bank, input.query);
+    const memories = await this.#hindsight.retrieve(
+      authorityResolution.bank,
+      request.query,
+    );
+    const revalidatedAuthority = await this.#resolveAuthority(
+      "retrieve",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
+    );
+    if (!sameResolvedAuthority(authorityResolution, revalidatedAuthority)) {
+      throw new Error("Memory bank authority changed during retrieval");
+    }
     const admittedMemories = memories.flatMap((memory) => {
       const context = this.#toUntrustedContext(
-        input.installationId,
-        input.workspaceId,
-        input.installationRealm,
+        request.installationId,
+        request.workspaceId,
+        request.installationRealm,
         memory,
+        revalidatedAuthority.dataClassificationCeiling,
       );
       return context ? [{ memory, context }] : [];
     });
     this.#receiptSequence += 1;
     const receipt: RetrievalReceipt = {
       id: deterministicUuid(
-        `receipt:${this.#clock.now()}:${input.installationId}:${input.workspaceId}:${input.query}:${this.#receiptSequence}`,
+        `receipt:${this.#clock.now()}:${request.installationId}:${request.workspaceId}:${request.query}:${this.#receiptSequence}`,
       ),
-      installationId: input.installationId,
-      workspaceId: input.workspaceId,
-      bankId: bank.id,
-      queryHash: sha256(input.query),
+      installationId: request.installationId,
+      workspaceId: request.workspaceId,
+      bankId: authorityResolution.bank.id,
+      queryHash: sha256(request.query),
       resultIds: admittedMemories.map(({ memory }) => memory.id),
       sourceRevisionIds: [
         ...new Set(
@@ -261,6 +410,11 @@ export class ContextGateway {
       retrievedAt: this.#clock.now(),
     };
     this.#receipts.push(receipt);
+    this.#establishRealm(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
     return {
       context: admittedMemories.map(({ context }) => context),
       receipt: structuredClone(receipt),
@@ -272,69 +426,164 @@ export class ContextGateway {
     workspaceId: string;
     installationRealm: InstallationRealm;
     sourceRevisionId: string;
+    authority: MemoryAuthorityContext;
   }): Promise<void> {
-    this.#assertRealm(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
+    this.#assertInMemoryMutationEnabled("deleteSource");
+    const request = structuredClone(input);
+    const authorityResolution = await this.#resolveAuthority(
+      "invalidate",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
+    );
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
     );
     const source = this.#sources.get(
       this.#sourceKey(
-        input.installationId,
-        input.workspaceId,
-        input.sourceRevisionId,
+        request.installationId,
+        request.workspaceId,
+        request.sourceRevisionId,
       ),
     );
-    if (!source || source.installationRealm !== input.installationRealm) return;
+    if (!source || source.installationRealm !== request.installationRealm) {
+      return;
+    }
+    assertClassificationAllowed(
+      authorityResolution.dataClassificationCeiling,
+      source.classification,
+    );
+    const deletedAt = this.#clock.now();
+    await this.#hindsight.invalidateSource(
+      authorityResolution.bank,
+      request.sourceRevisionId,
+      deletedAt,
+    );
     this.#deletedSources.set(
       this.#sourceKey(
-        input.installationId,
-        input.workspaceId,
-        input.sourceRevisionId,
+        request.installationId,
+        request.workspaceId,
+        request.sourceRevisionId,
       ),
-      this.#clock.now(),
+      deletedAt,
     );
-    await this.#invalidate(
-      input.installationId,
-      input.workspaceId,
-      input.installationRealm,
-      input.sourceRevisionId,
+    this.#markLineageInvalidated(
+      request.installationId,
+      request.workspaceId,
+      request.sourceRevisionId,
+      deletedAt,
+    );
+    this.#establishRealm(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
     );
   }
 
-  getLineage(
-    installationId: string,
-    workspaceId: string,
-    derivedMemoryId: string,
-  ): ConsolidationLineage | null {
-    const lineage = this.#lineage.get(
-      this.#lineageKey(installationId, workspaceId, derivedMemoryId),
+  async getLineage(input: {
+    installationId: string;
+    workspaceId: string;
+    installationRealm: InstallationRealm;
+    derivedMemoryId: string;
+    authority: MemoryAuthorityContext;
+  }): Promise<ConsolidationLineage | null> {
+    const request = structuredClone(input);
+    const authorityResolution = await this.#resolveAuthority(
+      "retrieve",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
     );
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
+    const lineage = this.#lineage.get(
+      this.#lineageKey(
+        request.installationId,
+        request.workspaceId,
+        request.derivedMemoryId,
+      ),
+    );
+    if (
+      lineage &&
+      lineage.sourceRevisionIds.some((sourceRevisionId) => {
+        const source = this.#sources.get(
+          this.#sourceKey(
+            request.installationId,
+            request.workspaceId,
+            sourceRevisionId,
+          ),
+        );
+        return (
+          !source ||
+          !classificationAllows(
+            authorityResolution.dataClassificationCeiling,
+            source.classification,
+          )
+        );
+      })
+    ) {
+      return null;
+    }
     return lineage ? structuredClone(lineage) : null;
   }
 
-  getReceipts(installationId: string, workspaceId: string): RetrievalReceipt[] {
+  async getReceipts(input: {
+    installationId: string;
+    workspaceId: string;
+    installationRealm: InstallationRealm;
+    authority: MemoryAuthorityContext;
+  }): Promise<RetrievalReceipt[]> {
+    const request = structuredClone(input);
+    const authorityResolution = await this.#resolveAuthority(
+      "retrieve",
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+      request.authority.workId,
+    );
+    this.#assertRealmCompatible(
+      request.installationId,
+      request.workspaceId,
+      request.installationRealm,
+    );
     return structuredClone(
       this.#receipts.filter(
         (receipt) =>
-          receipt.installationId === installationId &&
-          receipt.workspaceId === workspaceId,
+          receipt.installationId === request.installationId &&
+          receipt.workspaceId === request.workspaceId &&
+          receipt.sourceRevisionIds.every((sourceRevisionId) => {
+            const source = this.#sources.get(
+              this.#sourceKey(
+                request.installationId,
+                request.workspaceId,
+                sourceRevisionId,
+              ),
+            );
+            return (
+              source &&
+              classificationAllows(
+                authorityResolution.dataClassificationCeiling,
+                source.classification,
+              )
+            );
+          }),
       ),
     );
   }
 
-  async #invalidate(
+  #markLineageInvalidated(
     installationId: string,
     workspaceId: string,
-    realm: InstallationRealm,
     sourceRevisionId: string,
-  ): Promise<void> {
-    const at = this.#clock.now();
-    await this.#hindsight.invalidateSource(
-      this.#bank(installationId, workspaceId, realm),
-      sourceRevisionId,
-      at,
-    );
+    at: string,
+  ): void {
     for (const lineage of this.#lineage.values()) {
       if (
         lineage.installationId === installationId &&
@@ -346,12 +595,35 @@ export class ContextGateway {
     }
   }
 
-  #bank(
+  #assertInMemoryMutationEnabled(operation: string): void {
+    if (!this.#testOnlyEnableInMemoryMutations) {
+      throw new Error(
+        `Context Gateway ${operation} is disabled without the explicit test-only in-memory mutation opt-in`,
+      );
+    }
+  }
+
+  async #resolveAuthority(
+    operation: MemoryGatewayOperation,
     installationId: string,
     workspaceId: string,
     realm: InstallationRealm,
-  ): HindsightBank {
-    return workspaceHindsightBank(installationId, workspaceId, realm);
+    workId: string | null,
+  ): Promise<ResolvedMemoryBankAuthority> {
+    const resolution = await this.#authorityResolver.resolve({
+      operation,
+      installationId,
+      workspaceId,
+      installationRealm: realm,
+      workId,
+    });
+    const expected = workspaceHindsightBank(installationId, workspaceId, realm);
+    if (!sameBank(resolution.bank, expected)) {
+      throw new Error(
+        "Resolved memory bank does not match the requested workspace and realm",
+      );
+    }
+    return structuredClone(resolution);
   }
 
   #sourceKey(
@@ -375,6 +647,7 @@ export class ContextGateway {
     workspaceId: string,
     realm: InstallationRealm,
     memory: HindsightMemory,
+    dataClassificationCeiling: DataClassification,
   ): RetrievedContext | null {
     if (memory.sourceRevisionIds.length === 0) return null;
     const sources = memory.sourceRevisionIds.map((sourceRevisionId) =>
@@ -395,19 +668,31 @@ export class ContextGateway {
     ) {
       return null;
     }
-    const activeSources = sources.filter(
-      (source): source is AdmitSourceInput & SourceRevision => Boolean(source),
+    const activeSources = sources.filter((source): source is StoredSource =>
+      Boolean(source),
     );
+    if (
+      new Set(memory.sourceRevisionIds).size !== memory.sourceRevisionIds.length
+    ) {
+      return null;
+    }
     const citationRevisionIds = memory.citations.map(
       (citation) => citation.sourceRevisionId,
     );
     if (!sameStringSet(memory.sourceRevisionIds, citationRevisionIds)) {
       return null;
     }
+    const canonicalCitations = uniqueCitations(
+      activeSources.flatMap((source) => source.citations),
+    );
+    if (!sameCitationSet(memory.citations, canonicalCitations)) return null;
     const classification = deriveDataClassification(
       activeSources.map((source) => source.classification),
     );
     if (memory.classification !== classification) return null;
+    if (!classificationAllows(dataClassificationCeiling, classification)) {
+      return null;
+    }
     const parsed = retrievedContextSchema.safeParse({
       text: memory.text,
       trust: "untrusted",
@@ -418,7 +703,7 @@ export class ContextGateway {
     return parsed.success ? parsed.data : null;
   }
 
-  #assertRealm(
+  #assertRealmCompatible(
     installationId: string,
     workspaceId: string,
     realm: InstallationRealm,
@@ -430,6 +715,15 @@ export class ContextGateway {
         "A workspace cannot cross personal and organizational realms",
       );
     }
+  }
+
+  #establishRealm(
+    installationId: string,
+    workspaceId: string,
+    realm: InstallationRealm,
+  ): void {
+    this.#assertRealmCompatible(installationId, workspaceId, realm);
+    const key = `${installationId}\u0000${workspaceId}`;
     this.#workspaceRealms.set(key, realm);
   }
 
@@ -447,21 +741,124 @@ function realmBoundary(realm: InstallationRealm): SourceBoundary {
   return realm === "personal" ? "personal" : "organizational";
 }
 
-function stripContent(
-  source: AdmitSourceInput & SourceRevision,
-): SourceRevision {
+function stripContent(source: StoredSource): SourceRevision {
   const { text: _text, citations: _citations, ...revision } = source;
   return structuredClone(revision);
+}
+
+function storedSourcePayload(
+  source: StoredSource,
+): Omit<StoredSource, "admissionState" | "supersedesRevisionId" | "deletedAt"> {
+  const {
+    admissionState: _admissionState,
+    supersedesRevisionId: _supersedesRevisionId,
+    deletedAt: _deletedAt,
+    ...payload
+  } = source;
+  return payload;
+}
+
+function sameBank(left: HindsightBank, right: HindsightBank): boolean {
+  const exactKeys = ["id", "installationId", "realm", "workspaceId"];
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return (
+    sameStringArray(leftKeys, exactKeys) &&
+    sameStringArray(rightKeys, exactKeys) &&
+    left.id === right.id &&
+    left.installationId === right.installationId &&
+    left.workspaceId === right.workspaceId &&
+    left.realm === right.realm
+  );
+}
+
+function sameResolvedAuthority(
+  left: ResolvedMemoryBankAuthority,
+  right: ResolvedMemoryBankAuthority,
+): boolean {
+  return (
+    sameBank(left.bank, right.bank) &&
+    left.principalKind === right.principalKind &&
+    left.principalId === right.principalId &&
+    left.contextSubjectId === right.contextSubjectId &&
+    left.capabilityGrantId === right.capabilityGrantId &&
+    left.capability === right.capability &&
+    left.capabilityMode === right.capabilityMode &&
+    left.dataClassificationCeiling === right.dataClassificationCeiling
+  );
+}
+
+function assertClassificationAllowed(
+  ceiling: DataClassification,
+  classification: DataClassification,
+): void {
+  if (!classificationAllows(ceiling, classification)) {
+    throw new Error(
+      `Memory classification ${classification} exceeds the resolved ${ceiling} ceiling`,
+    );
+  }
+}
+
+function classificationAllows(
+  ceiling: DataClassification,
+  classification: DataClassification,
+): boolean {
+  switch (ceiling) {
+    case "restricted":
+      return true;
+    case "confidential":
+      return ["public", "internal", "confidential", "synthetic"].includes(
+        classification,
+      );
+    case "internal":
+      return ["public", "internal", "synthetic"].includes(classification);
+    case "public":
+      return classification === "public" || classification === "synthetic";
+    case "synthetic":
+      return classification === "synthetic";
+  }
+}
+
+function sameStringArray(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function uniqueCitations(citations: SourceCitation[]): SourceCitation[] {
   const seen = new Set<string>();
   return citations.filter((citation) => {
-    const key = `${citation.sourceRevisionId}:${citation.locator}`;
+    const key = citationKey(citation);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function sameCitationSet(
+  recalled: SourceCitation[],
+  canonical: SourceCitation[],
+): boolean {
+  const recalledKeys = recalled.map(citationKey);
+  const canonicalKeys = canonical.map(citationKey);
+  const recalledSet = new Set(recalledKeys);
+  const canonicalSet = new Set(canonicalKeys);
+  return (
+    recalledKeys.length === recalledSet.size &&
+    canonicalKeys.length === canonicalSet.size &&
+    recalledSet.size === canonicalSet.size &&
+    [...recalledSet].every((key) => canonicalSet.has(key))
+  );
+}
+
+function citationKey(citation: SourceCitation): string {
+  return JSON.stringify([
+    citation.sourceRevisionId,
+    citation.sourceUri,
+    citation.revisionHash,
+    citation.locator,
+  ]);
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {
@@ -481,3 +878,5 @@ function deterministicUuid(value: string): string {
   const hash = sha256(value);
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
+
+export * from "./database-authority.js";

@@ -86,21 +86,22 @@ export const capabilityGrantInputSchema = z.object({
   expiresAt: z.string().datetime().nullable().default(null),
 });
 
-export const workerAdvertisementSchema = z.object({
-  workerId: z.string().uuid(),
-  installationId: z.string().uuid(),
-  workspaceId: z.string().uuid(),
-  provider: z.string().min(1),
-  billingRealm: z.string().min(1),
-  host: z.string().min(1),
-  runtime: z.string().min(1),
-  model: z.string().min(1),
-  capabilities: z.array(z.string().min(1)),
-  dataClassificationCeiling: dataClassificationSchema,
-  isolation: z.string().min(1),
-  networkPolicy: z.string().min(1),
-  health: z.enum(["healthy", "degraded", "offline"]),
-});
+export const workerAdvertisementSchema = z
+  .object({
+    workerId: z.string().uuid(),
+    installationId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
+    provider: z.string().min(1),
+    billingRealm: z.string().min(1),
+    host: z.string().min(1),
+    runtime: z.string().min(1),
+    model: z.string().min(1),
+    capabilities: z.array(z.string().min(1)),
+    isolation: z.string().min(1),
+    networkPolicy: z.string().min(1),
+    health: z.enum(["healthy", "degraded", "offline"]),
+  })
+  .strict();
 
 export type WorkerAdvertisement = z.infer<typeof workerAdvertisementSchema>;
 export type DataClassification = z.infer<typeof dataClassificationSchema>;

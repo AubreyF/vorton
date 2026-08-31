@@ -50,6 +50,10 @@ const workspaceMemoryBankIdentityMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000600_workspace_memory_bank_identity.sql",
   import.meta.url,
 );
+const contextGatewayAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260831000100_context_gateway_authority.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -548,6 +552,159 @@ describe("workspace memory-bank identity migration contract", () => {
     expect(sql).toContain("Nothing is inferred.");
     expect(sql).not.toMatch(/update\s+public\.memory_banks/i);
     expect(sql).not.toMatch(/validate\s+constraint/i);
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+});
+
+describe("Context Gateway authority migration contract", () => {
+  it("maps each operation to fixed capability authority inside PostgreSQL", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain("create type public.context_gateway_operation");
+    expect(sql).toContain("'retain', 'consolidate', 'retrieve', 'invalidate'");
+    expect(sql).toContain("when 'retrieve' then 'memory.retrieve'");
+    expect(sql).toContain("when 'retain' then 'memory.retain'");
+    expect(sql).toContain("when 'consolidate' then 'memory.consolidate'");
+    expect(sql).toContain("when 'invalidate' then 'memory.invalidate'");
+    expect(sql).toContain(
+      "when 'retrieve' then 'observe'::public.capability_mode",
+    );
+    expect(sql).toContain("else 'modify'::public.capability_mode");
+  });
+
+  it("requires exact signed person or credential-bound worker authority", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain("public.aubos_runtime_context_valid(");
+    expect(sql).toContain("public.current_workspace_person_id(");
+    expect(sql).toContain("actor_id := public.current_worker_id()");
+    expect(sql).toContain("credential.issued_at <= evaluated_at");
+    expect(sql).toContain("credential.expires_at > evaluated_at");
+    expect(sql).toContain("public.worker_credential_revocations");
+    expect(sql).toContain("grant_row.principal_kind = 'person'");
+    expect(sql).toContain("grant_row.principal_kind = 'worker'");
+    expect(sql).toContain("grant_row.granted_at <= evaluated_at");
+    expect(sql).toContain("grant_row.expires_at > evaluated_at");
+    expect(sql).toContain("public.capability_grant_revocations");
+    expect(sql).toContain(
+      "grant_row.work_id is null or grant_row.work_id = target_work_id",
+    );
+    expect(sql).not.toContain("worker_role_assignments");
+    expect(sql).not.toContain("worker.health");
+  });
+
+  it("returns only the canonical PostgreSQL-owned Hindsight bank identity", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain("security definer");
+    expect(sql).toContain("set search_path = pg_catalog, public");
+    expect(sql).toContain("bank.adapter = 'hindsight'");
+    expect(sql).toContain("bank.installation_realm = workspace.realm");
+    expect(sql).toContain("|| target_workspace_id::text || ':lineage-v2'");
+    expect(sql).toContain("returns table (\n  external_bank_id text,");
+    expect(sql).toContain("principal_kind public.principal_kind");
+    expect(sql).toContain("capability_grant_id uuid");
+    expect(sql).toContain("capability_mode public.capability_mode");
+    expect(sql).toContain("context_subject_id uuid");
+    expect(sql).toContain(
+      "data_classification_ceiling public.data_classification",
+    );
+    expect(sql).toContain("select worker.data_classification_ceiling");
+    expect(sql).toContain("classification_ceiling_value := 'restricted'");
+    expect(sql).not.toContain("database_locator :=");
+    expect(sql).not.toContain("object_bucket_locator :=");
+    expect(sql).not.toContain("insert into public.memory_banks");
+    expect(sql).not.toContain("update public.memory_banks");
+    expect(sql).not.toContain("delete from public.memory_banks");
+    expect(sql).not.toContain("authorize_executive_memory_dispatch");
+    expect(sql).not.toContain("context_gateway_retrieval_receipts");
+  });
+
+  it("makes membership revocation live but not a product authority shortcut", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "create table public.workspace_membership_revocations",
+    );
+    expect(sql).toContain(
+      "create function public.workspace_membership_is_live(",
+    );
+    expect(sql).toContain(
+      "create or replace function public.vorton_workspace_step_up_context_valid(",
+    );
+    expect(sql).toContain("for update;");
+    expect(sql).toContain("for share;");
+    expect(sql).toContain(
+      "from public, anon, authenticated, aubos_worker;\n\ncomment on function public.revoke_workspace_membership",
+    );
+    expect(sql).toContain(
+      "Administrator-only hostile-proof primitive. Product membership revocation requires a separate governed Work, capability, approval, and receipt contract.",
+    );
+    expect(sql).not.toMatch(
+      /grant execute on function public\.revoke_workspace_membership[\s\S]*to authenticated/i,
+    );
+  });
+
+  it("closes the lifecycle and worker self-promotion bypasses", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "create function public.consume_module_lifecycle_action_approval_live(",
+    );
+    expect(sql).toContain(
+      "create function public.finalize_module_lifecycle_action_live(",
+    );
+    expect(sql).toContain(
+      "revoke all on function public.consume_module_lifecycle_action_approval(",
+    );
+    expect(sql).toContain(
+      "revoke all on function public.finalize_module_lifecycle_action(",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.consume_module_lifecycle_action_approval_live(",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.finalize_module_lifecycle_action_live(",
+    );
+    expect(sql).toContain(
+      "revoke update (data_classification_ceiling)\non public.workers from aubos_worker",
+    );
+  });
+
+  it("revokes membership-only table reads and grants only the resolver entrypoint", async () => {
+    const sql = await readFile(contextGatewayAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "revoke all on function public.resolve_context_gateway_memory_bank(",
+    );
+    expect(sql).toContain(
+      ") from public, anon;\ngrant execute on function public.resolve_context_gateway_memory_bank(",
+    );
+    expect(sql).toContain(") to authenticated, aubos_worker;");
+    expect(sql).toContain(
+      "create function public.resolve_context_gateway_source_material(",
+    );
+    expect(sql).toContain("from public.resolve_context_gateway_memory_bank(");
+    expect(sql).toContain("cardinality(target_source_revision_ids) > 256");
+    expect(sql).toContain(
+      "bank.external_bank_id = authority_record.external_bank_id",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.resolve_context_gateway_source_material(",
+    );
+    expect(sql).toContain("drop policy if exists %I on public.%I");
+    expect(sql).toContain("table_name || '_member_select'");
+    expect(sql).toContain("table_name || '_workspace_member_select'");
+    expect(sql).toContain(
+      "drop policy if exists retrieval_results_member_select",
+    );
+    expect(sql).toContain(
+      "revoke select on public.source_connections, public.transcript_revisions",
+    );
+    expect(sql).toContain(
+      "public.retrieval_receipt_results from authenticated",
+    );
+    expect(sql).not.toMatch(/grant\s+(select|insert|update|delete)\s+on/i);
     expect(sql.trimEnd()).toMatch(/commit;$/);
   });
 });
