@@ -1,19 +1,21 @@
 import {
   dataClassificationSchema,
   deriveDataClassification,
+  installationRealmSchema,
   retrievedContextSchema,
   sourceCitationSchema,
   type ExecutiveWorkerJobRequest,
   type ExecutionAuthority,
+  type InstallationRealm,
   type RetrievedContext,
   type SourceCitation,
 } from "@vorton/contracts";
 import type { Database, PersonContext } from "@vorton/database";
 import { executiveCouncilProtocol } from "@vorton/executive";
 import {
-  installationHindsightBank,
   type HindsightAdapter,
   type HindsightMemory,
+  workspaceHindsightBank,
 } from "@vorton/memory";
 
 export interface ProposalInput {
@@ -38,6 +40,7 @@ interface BindingRow {
   role_version: number;
   skill_markdown: string;
   content_sha256: string;
+  workspace_realm: unknown;
 }
 
 interface EvidenceRow {
@@ -367,14 +370,18 @@ export class DatabaseExecutiveRequestResolver {
         "Requester context cannot cross workspaces",
       );
     }
-    const request = await this.database.asPerson(
+    const resolution = await this.database.asPerson(
       requester,
       async (transaction) => {
         const binding = await transaction.query<BindingRow>(
           `select work.id as work_id, worker.id as worker_id, role.id as role_id,
                 role.name as role_name, role.version as role_version,
-                role.skill_markdown, role.content_sha256
+                role.skill_markdown, role.content_sha256,
+                workspace.realm as workspace_realm
            from public.work work
+           join public.workspaces workspace
+             on workspace.installation_id = work.installation_id
+            and workspace.id = work.workspace_id
            join public.workers worker
              on worker.installation_id = work.installation_id
             and worker.workspace_id = work.workspace_id and worker.id = $4
@@ -426,6 +433,14 @@ export class DatabaseExecutiveRequestResolver {
             "Work, assigned role, configured worker, or executive.propose capability is missing or inapplicable",
           );
         }
+        const workspaceRealm = installationRealmSchema.safeParse(
+          row.workspace_realm,
+        );
+        if (!workspaceRealm.success) {
+          throw new ExecutiveRequestResolutionError(
+            "Workspace has no valid authoritative realm",
+          );
+        }
         const evidence = await transaction.query<EvidenceRow>(
           `select id, summary, source_uri, classification
            from public.records
@@ -440,31 +455,35 @@ export class DatabaseExecutiveRequestResolver {
           );
         }
         return {
-          installationId: input.installationId,
-          workspaceId: input.workspaceId,
-          workId: row.work_id,
-          workerId: row.worker_id,
-          role: {
-            roleId: row.role_id,
-            name: row.role_name,
-            version: row.role_version,
-            contentSha256: row.content_sha256,
-            skillMarkdown: row.skill_markdown,
+          workspaceRealm: workspaceRealm.data,
+          request: {
+            installationId: input.installationId,
+            workspaceId: input.workspaceId,
+            workId: row.work_id,
+            workerId: row.worker_id,
+            role: {
+              roleId: row.role_id,
+              name: row.role_name,
+              version: row.role_version,
+              contentSha256: row.content_sha256,
+              skillMarkdown: row.skill_markdown,
+            },
+            objective: input.objective,
+            evidence: evidence.rows.map((item) => ({
+              recordId: item.id,
+              summary: item.summary,
+              sourceUri: item.source_uri,
+              classification: item.classification,
+            })),
+            background: input.background,
           },
-          objective: input.objective,
-          evidence: evidence.rows.map((item) => ({
-            recordId: item.id,
-            summary: item.summary,
-            sourceUri: item.source_uri,
-            classification: item.classification,
-          })),
-          background: input.background,
         };
       },
     );
-    const bank = installationHindsightBank(
-      `${input.installationId}:${input.workspaceId}`,
-      "organizational",
+    const bank = workspaceHindsightBank(
+      input.installationId,
+      input.workspaceId,
+      resolution.workspaceRealm,
     );
     let derivedContext: RetrievedContext[];
     try {
@@ -473,6 +492,7 @@ export class DatabaseExecutiveRequestResolver {
       derivedContext = await this.#resolveDerivedContext(
         input.installationId,
         input.workspaceId,
+        resolution.workspaceRealm,
         requester,
         recalled,
       );
@@ -481,7 +501,7 @@ export class DatabaseExecutiveRequestResolver {
       derivedContext = [];
     }
     return {
-      ...request,
+      ...resolution.request,
       derivedContext,
     };
   }
@@ -489,6 +509,7 @@ export class DatabaseExecutiveRequestResolver {
   async #resolveDerivedContext(
     installationId: string,
     workspaceId: string,
+    workspaceRealm: InstallationRealm,
     requester: PersonContext,
     recalled: HindsightMemory[],
   ): Promise<RetrievedContext[]> {
@@ -533,10 +554,10 @@ export class DatabaseExecutiveRequestResolver {
               and citation.transcript_revision_id = revision.id
             where revision.installation_id = $1
               and revision.workspace_id = $2
-              and revision.installation_realm = 'organizational'
-              and revision.id = any($3::uuid[])
+              and revision.installation_realm = $3::public.installation_realm
+              and revision.id = any($4::uuid[])
               and revision.deleted_at is null
-              and revision.boundary = 'organizational'
+              and revision.boundary = $5::public.source_boundary
               and revision.admission_state = 'admitted'
               and not exists (
                 select 1 from public.transcript_revisions successor
@@ -546,7 +567,13 @@ export class DatabaseExecutiveRequestResolver {
                    and successor.supersedes_revision_id = revision.id
               )
             order by revision.id, citation.locator`,
-          [installationId, workspaceId, sourceRevisionIds],
+          [
+            installationId,
+            workspaceId,
+            workspaceRealm,
+            sourceRevisionIds,
+            workspaceRealm,
+          ],
         ),
     );
     const rowsBySource = new Map<string, MemorySourceRow[]>();

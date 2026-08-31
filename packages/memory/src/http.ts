@@ -6,11 +6,8 @@ import {
   type SourceCitation,
 } from "@vorton/contracts";
 
-import type {
-  HindsightAdapter,
-  HindsightBank,
-  HindsightMemory,
-} from "./index.js";
+import { assertHindsightBank, type HindsightBank } from "./bank.js";
+import type { HindsightAdapter, HindsightMemory } from "./index.js";
 
 export interface HttpHindsightConfig {
   baseUrl: string;
@@ -38,28 +35,31 @@ interface ParsedSourceFact {
 }
 
 function bankPath(bank: HindsightBank): string {
-  if (!bank.id.startsWith(`${bank.realm}:${bank.installationId}:`)) {
-    throw new Error(
-      "Hindsight bank identity does not match its installation realm",
-    );
-  }
+  assertHindsightBank(bank);
   return `/v1/default/banks/${encodeURIComponent(bank.id)}`;
 }
 
-function metadata(memory: HindsightMemory): Record<string, string> {
+function metadata(
+  bank: HindsightBank,
+  memory: HindsightMemory,
+): Record<string, string> {
   return {
+    vorton_installation_id: bank.installationId,
+    vorton_workspace_id: bank.workspaceId,
+    vorton_realm: bank.realm,
     vorton_memory_id: memory.id,
     vorton_citations: JSON.stringify(memory.citations),
     vorton_source_revision_ids: JSON.stringify(memory.sourceRevisionIds),
     vorton_invalidated_at: memory.invalidatedAt ?? "",
     vorton_classification: memory.classification,
-    vorton_lineage_version: "1",
+    vorton_lineage_version: "2",
   };
 }
 
-function stableObservationScope(bank: HindsightBank): [string, string] {
+function stableObservationScope(bank: HindsightBank): [string, string, string] {
   return [
     `vorton-installation:${bank.installationId}`,
+    `vorton-workspace:${bank.workspaceId}`,
     `vorton-realm:${bank.realm}`,
   ];
 }
@@ -94,9 +94,20 @@ function sameStringSet(left: string[], right: string[]): boolean {
   const leftSet = new Set(left);
   const rightSet = new Set(right);
   return (
+    left.length === leftSet.size &&
+    right.length === rightSet.size &&
     leftSet.size === rightSet.size &&
     [...leftSet].every((value) => rightSet.has(value))
   );
+}
+
+function hasExactStableScopeTags(bank: HindsightBank, tags: string[]): boolean {
+  const routingTags = tags.filter((tag) =>
+    ["vorton-installation:", "vorton-workspace:", "vorton-realm:"].some(
+      (prefix) => tag.startsWith(prefix),
+    ),
+  );
+  return sameStringSet(routingTags, stableObservationScope(bank));
 }
 
 function compareStrings(left: string, right: string): number {
@@ -268,11 +279,12 @@ export class HttpHindsightAdapter implements HindsightAdapter {
             update_mode: "replace",
             tags: [
               `vorton-installation:${bank.installationId}`,
+              `vorton-workspace:${bank.workspaceId}`,
               `vorton-realm:${bank.realm}`,
               ...memory.sourceRevisionIds.map((id) => `vorton-source:${id}`),
             ],
             observation_scopes: [stableObservationScope(bank)],
-            metadata: metadata(memory),
+            metadata: metadata(bank, memory),
           },
         ],
       }),
@@ -350,7 +362,10 @@ export class HttpHindsightAdapter implements HindsightAdapter {
       !id ||
       !text ||
       (item.type !== "world" && item.type !== "experience") ||
-      itemMetadata.vorton_lineage_version !== "1" ||
+      itemMetadata.vorton_lineage_version !== "2" ||
+      itemMetadata.vorton_installation_id !== bank.installationId ||
+      itemMetadata.vorton_workspace_id !== bank.workspaceId ||
+      itemMetadata.vorton_realm !== bank.realm ||
       !classification.success ||
       typeof invalidatedAt !== "string" ||
       item.document_id !== id ||
@@ -367,7 +382,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
     }
     const tags = new Set(item.tags as string[]);
     if (
-      !stableObservationScope(bank).every((tag) => tags.has(tag)) ||
+      !hasExactStableScopeTags(bank, item.tags as string[]) ||
       ![...new Set(sourceRevisionIds)].every((sourceRevisionId) =>
         tags.has(`vorton-source:${sourceRevisionId}`),
       )
@@ -474,7 +489,10 @@ export class HttpHindsightAdapter implements HindsightAdapter {
       itemMetadata.vorton_classification,
     );
     if (
-      itemMetadata.vorton_lineage_version !== "1" ||
+      itemMetadata.vorton_lineage_version !== "2" ||
+      itemMetadata.vorton_installation_id !== bank.installationId ||
+      itemMetadata.vorton_workspace_id !== bank.workspaceId ||
+      itemMetadata.vorton_realm !== bank.realm ||
       !classification.success ||
       itemMetadata.vorton_invalidated_at !== "" ||
       typeof memoryId !== "string" ||
@@ -492,7 +510,7 @@ export class HttpHindsightAdapter implements HindsightAdapter {
 
     const tags = new Set(sourceFact.tags as string[]);
     if (
-      !stableObservationScope(bank).every((tag) => tags.has(tag)) ||
+      !hasExactStableScopeTags(bank, sourceFact.tags as string[]) ||
       ![...new Set(sourceRevisionIds)].every((sourceRevisionId) =>
         tags.has(`vorton-source:${sourceRevisionId}`),
       )

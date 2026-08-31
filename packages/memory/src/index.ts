@@ -1,27 +1,6 @@
-import type {
-  DataClassification,
-  InstallationRealm,
-  SourceCitation,
-} from "@vorton/contracts";
+import type { DataClassification, SourceCitation } from "@vorton/contracts";
 
-export type HindsightBank = {
-  id: string;
-  installationId: string;
-  realm: InstallationRealm;
-};
-
-/** One deterministic Hindsight routing identity per installation and realm. */
-export function installationHindsightBank(
-  installationId: string,
-  realm: InstallationRealm,
-): HindsightBank {
-  if (!installationId.trim()) throw new Error("Installation ID is required");
-  return {
-    id: `${realm}:${installationId}:default`,
-    installationId,
-    realm,
-  };
-}
+import { assertHindsightBank, type HindsightBank } from "./bank.js";
 
 export type HindsightMemory = {
   id: string;
@@ -44,8 +23,8 @@ export interface HindsightAdapter {
 }
 
 /**
- * Deterministic test adapter. Its map keys include both installation and realm so
- * a caller cannot accidentally alias a personal bank to an organization bank.
+ * Deterministic test adapter. Its map keys include installation, workspace, and
+ * realm so callers cannot alias one workspace or realm to another.
  */
 export class InMemoryHindsightAdapter implements HindsightAdapter {
   readonly #banks = new Map<string, Map<string, HindsightMemory>>();
@@ -90,13 +69,10 @@ export class InMemoryHindsightAdapter implements HindsightAdapter {
   }
 
   #key(bank: HindsightBank): string {
-    if (!bank.id.startsWith(`${bank.realm}:${bank.installationId}:`)) {
-      throw new Error(
-        "Hindsight bank identity does not match its installation realm",
-      );
-    }
-    return `${bank.realm}\u0000${bank.installationId}\u0000${bank.id}`;
+    assertHindsightBank(bank);
+    return `${bank.realm}\u0000${bank.installationId}\u0000${bank.workspaceId}\u0000${bank.id}`;
   }
 }
 
+export * from "./bank.js";
 export * from "./http.js";

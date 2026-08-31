@@ -3,6 +3,7 @@ import type { Database, SqlExecutor } from "@vorton/database";
 import {
   InMemoryHindsightAdapter,
   type HindsightAdapter,
+  workspaceHindsightBank,
 } from "@vorton/memory";
 
 import {
@@ -30,12 +31,14 @@ const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
 class FakeDatabase {
   results: Array<Array<Record<string, unknown>>> = [];
   statements: string[] = [];
+  parameters: unknown[][] = [];
   asAdministrator<T>(
     work: (transaction: SqlExecutor) => Promise<T>,
   ): Promise<T> {
     return work({
-      query: async <Row>(text: string) => {
+      query: async <Row>(text: string, values: unknown[] = []) => {
         this.statements.push(text);
+        this.parameters.push(values);
         const rows = (this.results.shift() ?? []) as Row[];
         return { rows, rowCount: rows.length };
       },
@@ -198,6 +201,7 @@ describe("database executive request resolver", () => {
           role_version: 1,
           skill_markdown: "Database-owned role",
           content_sha256: "a".repeat(64),
+          workspace_realm: "organizational",
         },
       ],
       [],
@@ -213,14 +217,14 @@ describe("database executive request resolver", () => {
     );
   });
 
-  it("recalls memory retained in the canonical installation bank", async () => {
+  it("uses the authoritative workspace realm for bank and transcript routing", async () => {
     const database = new FakeDatabase();
     const memory = new InMemoryHindsightAdapter();
-    const bank = {
-      id: `organizational:${input.installationId}:${input.workspaceId}:default`,
-      installationId: `${input.installationId}:${input.workspaceId}`,
-      realm: "organizational" as const,
-    };
+    const bank = workspaceHindsightBank(
+      input.installationId,
+      input.workspaceId,
+      "personal",
+    );
     await memory.retain(bank, {
       id: "derived-1",
       text: "Assess synthetic evidence using derived context that remains untrusted",
@@ -246,6 +250,7 @@ describe("database executive request resolver", () => {
           role_version: 2,
           skill_markdown: "Database-owned role",
           content_sha256: "b".repeat(64),
+          workspace_realm: "personal",
         },
       ],
       [
@@ -288,6 +293,9 @@ describe("database executive request resolver", () => {
         },
       ],
     });
+    expect(database.statements[0]).toContain(
+      "join public.workspaces workspace",
+    );
     expect(database.statements[2]).toContain("public.memory_candidates");
     expect(database.statements[2]).toContain(
       "candidate.admission_state = 'admitted'",
@@ -298,6 +306,106 @@ describe("database executive request resolver", () => {
     expect(database.statements[2]).toContain(
       "successor.supersedes_revision_id",
     );
+    expect(database.statements[2]).toContain(
+      "revision.installation_realm = $3::public.installation_realm",
+    );
+    expect(database.statements[2]).toContain(
+      "revision.boundary = $5::public.source_boundary",
+    );
+    expect(database.parameters[2]?.[2]).toBe("personal");
+    expect(database.parameters[2]?.[4]).toBe("personal");
+  });
+
+  it("cannot recall another workspace bank in the same installation and realm", async () => {
+    const database = new FakeDatabase();
+    const memory = new InMemoryHindsightAdapter();
+    const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    await memory.retain(
+      workspaceHindsightBank(
+        input.installationId,
+        otherWorkspaceId,
+        "organizational",
+      ),
+      {
+        id: "other-workspace-memory",
+        text: "Assess synthetic evidence from the wrong workspace",
+        classification: "synthetic",
+        citations: [
+          {
+            sourceRevisionId: input.evidenceRecordIds[0]!,
+            sourceUri: "urn:vorton:synthetic:other-workspace",
+            revisionHash: "d".repeat(64),
+            locator: "fixture:other-workspace",
+          },
+        ],
+        sourceRevisionIds: [input.evidenceRecordIds[0]!],
+        invalidatedAt: null,
+      },
+    );
+    database.results = [
+      [
+        {
+          work_id: input.workId,
+          worker_id: input.workerId,
+          role_id: input.roleId,
+          role_name: "Reviewer",
+          role_version: 2,
+          skill_markdown: "Database-owned role",
+          content_sha256: "b".repeat(64),
+          workspace_realm: "organizational",
+        },
+      ],
+      [
+        {
+          id: input.evidenceRecordIds[0],
+          summary: "Database-owned evidence",
+          source_uri: null,
+          classification: "synthetic",
+        },
+      ],
+    ];
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+      memory,
+    );
+
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({
+      derivedContext: [],
+    });
+    expect(database.statements).toHaveLength(2);
+  });
+
+  it("fails closed when the authoritative workspace realm is invalid", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          work_id: input.workId,
+          worker_id: input.workerId,
+          role_id: input.roleId,
+          role_name: "Reviewer",
+          role_version: 2,
+          skill_markdown: "Database-owned role",
+          content_sha256: "b".repeat(64),
+          workspace_realm: "mixed",
+        },
+      ],
+    ];
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+      new InMemoryHindsightAdapter(),
+    );
+
+    await expect(resolver.resolveProposal(input, requester)).rejects.toThrow(
+      "no valid authoritative realm",
+    );
+    expect(database.statements).toHaveLength(1);
   });
 
   it("replaces a downgraded recalled classification with Postgres authority", async () => {
@@ -312,6 +420,7 @@ describe("database executive request resolver", () => {
           role_version: 2,
           skill_markdown: "Database-owned role",
           content_sha256: "b".repeat(64),
+          workspace_realm: "organizational",
         },
       ],
       [
@@ -396,6 +505,7 @@ describe("database executive request resolver", () => {
           role_version: 2,
           skill_markdown: "Database-owned role",
           content_sha256: "b".repeat(64),
+          workspace_realm: "organizational",
         },
       ],
       [

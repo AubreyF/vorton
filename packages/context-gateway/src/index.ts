@@ -12,10 +12,10 @@ import {
   type SourceRevision,
 } from "@vorton/contracts";
 import {
-  installationHindsightBank,
   type HindsightAdapter,
   type HindsightBank,
   type HindsightMemory,
+  workspaceHindsightBank,
 } from "@vorton/memory";
 
 export type AdmitSourceInput = Omit<
@@ -351,7 +351,7 @@ export class ContextGateway {
     workspaceId: string,
     realm: InstallationRealm,
   ): HindsightBank {
-    return installationHindsightBank(`${installationId}:${workspaceId}`, realm);
+    return workspaceHindsightBank(installationId, workspaceId, realm);
   }
 
   #sourceKey(

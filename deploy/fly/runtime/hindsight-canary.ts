@@ -4,6 +4,7 @@ import {
   HttpHindsightAdapter,
   type HindsightBank,
   type HindsightMemory,
+  workspaceHindsightBank,
 } from "@vorton/memory";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -282,6 +283,7 @@ function validateLineage(
   fact: ListedFact,
   source: CanarySource,
   scopeTags: string[],
+  bank: HindsightBank,
   expectedState: "valid" | "invalidated",
 ): string {
   if (typeof fact.id !== "string" || fact.id.length === 0) {
@@ -296,6 +298,18 @@ function validateLineage(
     );
   }
   const tags = asStringArray(fact.tags, `Hindsight fact ${fact.id} tags`);
+  const routingTags = tags.filter((tag) =>
+    ["vorton-installation:", "vorton-workspace:", "vorton-realm:"].some(
+      (prefix) => tag.startsWith(prefix),
+    ),
+  );
+  if (
+    routingTags.length !== scopeTags.length ||
+    new Set(routingTags).size !== scopeTags.length ||
+    scopeTags.some((tag) => !routingTags.includes(tag))
+  ) {
+    throw new Error(`Hindsight fact ${fact.id} crossed its routing scope`);
+  }
   for (const tag of [...scopeTags, source.sourceTag]) {
     if (!tags.includes(tag)) {
       throw new Error(`Hindsight fact ${fact.id} lost required source scope`);
@@ -308,7 +322,10 @@ function validateLineage(
   if (
     metadata.vorton_memory_id !== source.memory.id ||
     metadata.vorton_classification !== "synthetic" ||
-    metadata.vorton_lineage_version !== "1" ||
+    metadata.vorton_installation_id !== bank.installationId ||
+    metadata.vorton_workspace_id !== bank.workspaceId ||
+    metadata.vorton_realm !== bank.realm ||
+    metadata.vorton_lineage_version !== "2" ||
     metadata.vorton_invalidated_at !== ""
   ) {
     throw new Error(`Hindsight fact ${fact.id} lost Vorton lineage metadata`);
@@ -547,15 +564,17 @@ export async function runHindsightCanary(
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const runId = (options.uuid ?? randomUUID)();
   const installationId = (options.uuid ?? randomUUID)();
+  const workspaceId = (options.uuid ?? randomUUID)();
   const marker = `VortonCanary${runId.replaceAll("-", "").slice(0, 12)}`;
-  const bank: HindsightBank = {
-    id: `organizational:${installationId}:hindsight-release-canary-${runId}`,
+  const bank = workspaceHindsightBank(
     installationId,
-    realm: "organizational",
-  };
+    workspaceId,
+    "organizational",
+  );
   const path = bankPath(bank);
   const scopeTags = [
     `vorton-installation:${installationId}`,
+    `vorton-workspace:${workspaceId}`,
     "vorton-realm:organizational",
   ];
   const firstText =
@@ -600,10 +619,10 @@ export async function runHindsightCanary(
       throw new Error("Hindsight retain produced no cited source facts");
     }
     const firstFactIds = firstFacts.map((fact) =>
-      validateLineage(fact, firstSource, scopeTags, "valid"),
+      validateLineage(fact, firstSource, scopeTags, bank, "valid"),
     );
     secondFacts.forEach((fact) =>
-      validateLineage(fact, secondSource, scopeTags, "valid"),
+      validateLineage(fact, secondSource, scopeTags, bank, "valid"),
     );
 
     await pollConsolidation({ client, path, pollIntervalMs, sleep });
@@ -636,7 +655,7 @@ export async function runHindsightCanary(
     );
     const archivedIds = new Set(
       archived.map((fact) =>
-        validateLineage(fact, firstSource, scopeTags, "invalidated"),
+        validateLineage(fact, firstSource, scopeTags, bank, "invalidated"),
       ),
     );
     if (!firstFactIds.every((id) => archivedIds.has(id))) {

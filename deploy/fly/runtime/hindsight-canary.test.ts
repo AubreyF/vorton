@@ -25,6 +25,7 @@ class FakeHindsight {
   failConsolidation = false;
   unhealthyOperation: string | null = null;
   cleanupStatus = 200;
+  extraRoutingTag: string | null = null;
 
   fetch = vi.fn(
     async (
@@ -80,7 +81,10 @@ class FakeHindsight {
             text: `${item.content} extracted-${String(index + 1)}`,
             fact_type: index % 2 === 0 ? "world" : "experience",
             document_id: item.document_id,
-            tags: item.tags,
+            tags: [
+              ...item.tags,
+              ...(this.extraRoutingTag ? [this.extraRoutingTag] : []),
+            ],
             metadata: item.metadata,
             state: "valid",
             invalidated_at: null,
@@ -207,6 +211,7 @@ function options(server: FakeHindsight) {
   const uuids = [
     "11111111-2222-4333-8444-555555555555",
     "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
   ];
   return {
     baseUrl: "http://hindsight.internal:8888",
@@ -237,6 +242,22 @@ describe("Hindsight release canary", () => {
     expect(server.facts.get("fact-1")?.state).toBe("invalidated");
     expect(server.facts.get("fact-2")?.state).toBe("invalidated");
     expect(server.facts.get("fact-3")?.state).toBe("valid");
+    for (const fact of server.facts.values()) {
+      expect(fact.tags).toContain(
+        "vorton-workspace:bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+      );
+      expect(fact.metadata).toMatchObject({
+        vorton_installation_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        vorton_workspace_id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+        vorton_realm: "organizational",
+        vorton_lineage_version: "2",
+      });
+    }
+    expect(server.calls[0]?.path).toContain(
+      encodeURIComponent(
+        "organizational:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee:bbbbbbbb-cccc-4ddd-8eee-ffffffffffff:default",
+      ),
+    );
     expect(server.calls.filter((call) => call.method === "PATCH")).toHaveLength(
       2,
     );
@@ -259,6 +280,17 @@ describe("Hindsight release canary", () => {
     );
     expect(server.deleted).toBe(true);
     expect(server.calls.at(-1)?.method).toBe("DELETE");
+  });
+
+  it("fails closed on an extra foreign workspace scope and still cleans up", async () => {
+    const server = new FakeHindsight();
+    server.extraRoutingTag =
+      "vorton-workspace:cccccccc-dddd-4eee-8fff-111111111111";
+
+    await expect(runHindsightCanary(options(server))).rejects.toThrow(
+      "crossed its routing scope",
+    );
+    expect(server.deleted).toBe(true);
   });
 
   it("fails on an unhealthy LLM operation before retaining and still cleans up", async () => {

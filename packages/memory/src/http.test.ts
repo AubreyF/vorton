@@ -2,20 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   HttpHindsightAdapter,
-  type HindsightBank,
+  workspaceHindsightBank,
   type HindsightMemory,
 } from "./index.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "c07905c2-656e-43e3-a130-fd1429964caa";
 const sourceRevisionId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
-const bank: HindsightBank = {
-  id: `organizational:${installationId}:default`,
+const bank = workspaceHindsightBank(
   installationId,
-  realm: "organizational",
-};
+  workspaceId,
+  "organizational",
+);
 const observationTags = [
   `vorton-installation:${installationId}`,
+  `vorton-workspace:${workspaceId}`,
   "vorton-realm:organizational",
 ];
 const memory: HindsightMemory = {
@@ -48,12 +50,15 @@ function lineageMetadata(input: {
   invalidatedAt?: string;
 }): Record<string, string> {
   return {
+    vorton_installation_id: installationId,
+    vorton_workspace_id: workspaceId,
+    vorton_realm: "organizational",
     vorton_memory_id: input.memoryId,
     vorton_citations: JSON.stringify(input.citations),
     vorton_source_revision_ids: JSON.stringify(input.sourceRevisionIds),
     vorton_invalidated_at: input.invalidatedAt ?? "",
     vorton_classification: input.classification ?? "synthetic",
-    vorton_lineage_version: "1",
+    vorton_lineage_version: "2",
   };
 }
 
@@ -74,6 +79,7 @@ function sourceFact(input: {
     document_id: input.memoryId,
     tags: [
       `vorton-installation:${installationId}`,
+      `vorton-workspace:${workspaceId}`,
       "vorton-realm:organizational",
       ...sourceRevisionIds.map((id) => `vorton-source:${id}`),
     ],
@@ -99,6 +105,7 @@ const rawFallback = {
   document_id: memory.id,
   tags: [
     `vorton-installation:${installationId}`,
+    `vorton-workspace:${workspaceId}`,
     "vorton-realm:organizational",
     `vorton-source:${sourceRevisionId}`,
   ],
@@ -141,6 +148,12 @@ describe("HTTP Hindsight adapter", () => {
     });
     await adapter.retain(bank, memory);
     expect(calls).toHaveLength(2);
+    expect(calls[0]?.url).toBe(
+      `http://hindsight.internal:8888/v1/default/banks/${encodeURIComponent(bank.id)}`,
+    );
+    expect(calls[1]?.url).toBe(
+      `http://hindsight.internal:8888/v1/default/banks/${encodeURIComponent(bank.id)}/memories`,
+    );
     expect(calls[0]?.init?.headers).toMatchObject({
       authorization: "Bearer synthetic-secret",
     });
@@ -151,10 +164,17 @@ describe("HTTP Hindsight adapter", () => {
       observation_scopes: [
         [
           `vorton-installation:${installationId}`,
+          `vorton-workspace:${workspaceId}`,
           "vorton-realm:organizational",
         ],
       ],
     });
+    expect(body.items[0].tags).toEqual([
+      `vorton-installation:${installationId}`,
+      `vorton-workspace:${workspaceId}`,
+      "vorton-realm:organizational",
+      `vorton-source:${sourceRevisionId}`,
+    ]);
     expect(body.items[0].observation_scopes[0]).not.toContain(
       `vorton-source:${sourceRevisionId}`,
     );
@@ -165,6 +185,85 @@ describe("HTTP Hindsight adapter", () => {
       JSON.parse(body.items[0].metadata.vorton_source_revision_ids),
     ).toEqual([sourceRevisionId]);
     expect(body.items[0].metadata.vorton_classification).toBe("synthetic");
+    expect(body.items[0].metadata).toMatchObject({
+      vorton_installation_id: installationId,
+      vorton_workspace_id: workspaceId,
+      vorton_realm: "organizational",
+      vorton_lineage_version: "2",
+    });
+  });
+
+  it("routes same-realm workspaces through distinct paths, scopes, and lineage", async () => {
+    const otherWorkspaceId = "8af0569c-1eba-4b2e-97c2-c12570208531";
+    const otherBank = workspaceHindsightBank(
+      installationId,
+      otherWorkspaceId,
+      "organizational",
+    );
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const fetch = vi.fn(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({
+          url: String(url),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        return Response.json({});
+      },
+    );
+    const adapter = new HttpHindsightAdapter({
+      baseUrl: "http://hindsight.internal:8888",
+      apiKey: "synthetic-secret",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await adapter.retain(otherBank, memory);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      `http://hindsight.internal:8888/v1/default/banks/${encodeURIComponent(otherBank.id)}`,
+      `http://hindsight.internal:8888/v1/default/banks/${encodeURIComponent(otherBank.id)}/memories`,
+    ]);
+    expect(calls[1]?.body).toMatchObject({
+      items: [
+        {
+          tags: [
+            `vorton-installation:${installationId}`,
+            `vorton-workspace:${otherWorkspaceId}`,
+            "vorton-realm:organizational",
+            `vorton-source:${sourceRevisionId}`,
+          ],
+          observation_scopes: [
+            [
+              `vorton-installation:${installationId}`,
+              `vorton-workspace:${otherWorkspaceId}`,
+              "vorton-realm:organizational",
+            ],
+          ],
+          metadata: {
+            vorton_installation_id: installationId,
+            vorton_workspace_id: otherWorkspaceId,
+            vorton_realm: "organizational",
+            vorton_lineage_version: "2",
+          },
+        },
+      ],
+    });
+  });
+
+  it("rejects a mismatched bank ID and workspace before making a request", async () => {
+    const fetch = vi.fn(async () => Response.json({}));
+    const adapter = new HttpHindsightAdapter({
+      baseUrl: "http://hindsight.internal:8888",
+      apiKey: "synthetic-secret",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await expect(
+      adapter.ensureBank({
+        ...bank,
+        workspaceId: "8af0569c-1eba-4b2e-97c2-c12570208531",
+      }),
+    ).rejects.toThrow("does not match");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("requests raw facts and fully hydrated native observations within the stable bank scope", async () => {
@@ -196,6 +295,7 @@ describe("HTTP Hindsight adapter", () => {
       max_tokens: 4096,
       tags: [
         `vorton-installation:${installationId}`,
+        `vorton-workspace:${workspaceId}`,
         "vorton-realm:organizational",
       ],
       tags_match: "all_strict",
@@ -289,8 +389,32 @@ describe("HTTP Hindsight adapter", () => {
       },
     },
     {
-      name: "wrong observation scope",
-      observation: { tags: ["vorton-realm:personal"] },
+      name: "missing workspace observation scope",
+      observation: {
+        tags: [
+          `vorton-installation:${installationId}`,
+          "vorton-realm:organizational",
+        ],
+      },
+      response: {
+        source_facts: {
+          "fact-source": sourceFact({
+            id: "fact-source",
+            memoryId: "source-memory",
+          }),
+        },
+        source_facts_truncated: false,
+      },
+    },
+    {
+      name: "foreign workspace observation scope",
+      observation: {
+        tags: [
+          `vorton-installation:${installationId}`,
+          "vorton-workspace:8af0569c-1eba-4b2e-97c2-c12570208531",
+          "vorton-realm:organizational",
+        ],
+      },
       response: {
         source_facts: {
           "fact-source": sourceFact({
@@ -331,6 +455,66 @@ describe("HTTP Hindsight adapter", () => {
       ]);
     },
   );
+
+  it.each([
+    {
+      name: "missing workspace lineage metadata",
+      result: (() => {
+        const { vorton_workspace_id: _omitted, ...metadata } =
+          rawFallback.metadata;
+        return { ...rawFallback, metadata };
+      })(),
+    },
+    {
+      name: "foreign workspace tag",
+      result: {
+        ...rawFallback,
+        tags: rawFallback.tags.map((tag) =>
+          tag === `vorton-workspace:${workspaceId}`
+            ? "vorton-workspace:8af0569c-1eba-4b2e-97c2-c12570208531"
+            : tag,
+        ),
+      },
+    },
+    {
+      name: "additional foreign workspace tag",
+      result: {
+        ...rawFallback,
+        tags: [
+          ...rawFallback.tags,
+          "vorton-workspace:8af0569c-1eba-4b2e-97c2-c12570208531",
+        ],
+      },
+    },
+    {
+      name: "foreign workspace lineage metadata",
+      result: {
+        ...rawFallback,
+        metadata: {
+          ...rawFallback.metadata,
+          vorton_workspace_id: "8af0569c-1eba-4b2e-97c2-c12570208531",
+        },
+      },
+    },
+  ])("drops a raw fact with $name", async ({ result }) => {
+    const calls: string[] = [];
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return Response.json({ results: [result] });
+    });
+    const adapter = new HttpHindsightAdapter({
+      baseUrl: "http://hindsight.internal:8888",
+      apiKey: "synthetic-secret",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await expect(adapter.retrieve(bank, "synthetic query")).resolves.toEqual(
+      [],
+    );
+    expect(calls).toEqual([
+      `http://hindsight.internal:8888/v1/default/banks/${encodeURIComponent(bank.id)}/memories/recall`,
+    ]);
+  });
 
   it.each([
     {
@@ -406,6 +590,25 @@ describe("HTTP Hindsight adapter", () => {
         tags: fact.tags.filter(
           (tag) => tag !== `vorton-installation:${installationId}`,
         ),
+      }),
+    },
+    {
+      name: "missing workspace tag",
+      mutate: (fact: ReturnType<typeof sourceFact>) => ({
+        ...fact,
+        tags: fact.tags.filter(
+          (tag) => tag !== `vorton-workspace:${workspaceId}`,
+        ),
+      }),
+    },
+    {
+      name: "foreign workspace metadata",
+      mutate: (fact: ReturnType<typeof sourceFact>) => ({
+        ...fact,
+        metadata: {
+          ...fact.metadata,
+          vorton_workspace_id: "8af0569c-1eba-4b2e-97c2-c12570208531",
+        },
       }),
     },
     {
