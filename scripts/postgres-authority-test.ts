@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import {
   mkdtemp,
@@ -23,6 +23,11 @@ import { Database } from "@vorton/database";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
 import { DatabaseExecutiveCouncilResolver } from "../apps/api/src/council-resolver.js";
+import {
+  addWorkspaceToExistingInstallation,
+  buildWorkspaceAdditionPlan,
+  type WorkspaceAdditionConfig,
+} from "../deploy/workspaces/add-workspace.js";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(__dirname, "..");
@@ -40,6 +45,8 @@ const otherRoleId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const otherPolicyId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const organizationalBankId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const personalBankId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const releaseAdoptionReceiptId = "88888888-8888-4888-8888-888888888888";
+const workspaceCreationReceiptId = "99999999-9999-4999-8999-999999999999";
 
 interface BootstrapResult {
   status: string;
@@ -61,6 +68,24 @@ function requireCondition(
   message: string,
 ): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonical(item)]),
+    );
+  }
+  return value;
+}
+
+function canonicalSha256(value: unknown): string {
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex")}`;
 }
 
 async function unusedPort(): Promise<number> {
@@ -299,6 +324,31 @@ async function setSignedContext(
   );
 }
 
+async function setSignedInstallationStepUpContext(
+  client: Client,
+  installationId: string,
+  subjectId: string,
+  authTime: number,
+): Promise<void> {
+  await setSignedContext(client, "person", installationId, "*", subjectId);
+  const transaction = await client.query<{ txid: string }>(
+    "select txid_current()::text as txid",
+  );
+  const txid = transaction.rows[0]?.txid;
+  requireCondition(txid, "PostgreSQL did not return a transaction ID");
+  const signature = createHmac("sha256", contextSecret)
+    .update(
+      `${txid}|installation-person|${installationId}|${subjectId}|aal2|${String(authTime)}`,
+    )
+    .digest("hex");
+  await client.query(
+    `select set_config('vorton.aal', 'aal2', true),
+            set_config('vorton.auth_time', $1, true),
+            set_config('vorton.step_up_signature', $2, true)`,
+    [String(authTime), signature],
+  );
+}
+
 async function inRuntimeTransaction<T>(
   databaseUrl: string,
   role: "authenticated" | "aubos_worker",
@@ -319,6 +369,26 @@ async function inRuntimeTransaction<T>(
   } finally {
     await client.end();
   }
+}
+
+async function expectSqlState(
+  client: Client,
+  sql: string,
+  values: unknown[],
+  expectedCode: string,
+  label: string,
+): Promise<void> {
+  try {
+    await client.query(sql, values);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    requireCondition(
+      code === expectedCode,
+      `${label} failed with SQLSTATE ${code ?? "unknown"}, not ${expectedCode}`,
+    );
+    return;
+  }
+  throw new Error(`${label} unexpectedly succeeded`);
 }
 
 async function expectRuntimeDenied(
@@ -370,6 +440,8 @@ async function expectRuntimeSqlState(
 
 async function seedAuthorityFixtures(
   admin: Client,
+  adminDatabaseUrl: string,
+  runtimeDatabaseUrl: string,
   bootstrap: BootstrapResult,
 ): Promise<string> {
   const owner = await admin.query<{ id: string }>(
@@ -378,19 +450,529 @@ async function seedAuthorityFixtures(
   );
   const ownerPersonId = owner.rows[0]?.id;
   requireCondition(ownerPersonId, "Bootstrap owner was not persisted");
-  await admin.query(
-    `insert into public.workspaces
-       (id, installation_id, slug, display_name, realm, created_by_person_id)
-     values ($1, $2, 'personal-hostile-fixture', 'Personal hostile fixture',
-             'personal', $3)`,
-    [otherWorkspaceId, bootstrap.installationId, ownerPersonId],
+  const releasePlanHash = `sha256:${"1".repeat(64)}`;
+  const manifestSha256 = `sha256:${"2".repeat(64)}`;
+  const archiveSha256 = `sha256:${"3".repeat(64)}`;
+  const workspaceIsolationProofSha256 = `sha256:${"4".repeat(64)}`;
+  const workspaceIsolationProofHash = `sha256:${"5".repeat(64)}`;
+  const release = {
+    version: "0.4.0",
+    sourceCommit: "a".repeat(40),
+    manifestSha256,
+    archiveSha256,
+    coreMigrationHead: "20260830000200_workspace_creation_authority",
+    workspaceIsolationProofSha256,
+    workspaceIsolationProofHash,
+    imageDigests: {
+      "control-plane": `sha256:${"6".repeat(64)}`,
+      web: `sha256:${"7".repeat(64)}`,
+      worker: `sha256:${"8".repeat(64)}`,
+    },
+  };
+  const authTime = Math.floor(Date.now() / 1000);
+  const createReleaseApproval = async (validFor: string): Promise<string> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setSignedInstallationStepUpContext(
+          client,
+          bootstrap.installationId,
+          ownerAuthUserId,
+          authTime,
+        ),
+      async (client) => {
+        const result = await client.query<{ id: string }>(
+          `select public.create_release_adoption_approval(
+            $1, $2, $3::jsonb, clock_timestamp() + $4::interval
+          )->>'approvalId' as id`,
+          [
+            bootstrap.installationId,
+            releasePlanHash,
+            JSON.stringify(release),
+            validFor,
+          ],
+        );
+        const id = result.rows[0]?.id;
+        requireCondition(id, "Release adoption approval was not recorded");
+        return id;
+      },
+    );
+  const expectInvalidReleaseApproval = async (
+    exactReleaseJson: string,
+    label: string,
+  ): Promise<void> => {
+    try {
+      await inRuntimeTransaction(
+        runtimeDatabaseUrl,
+        "authenticated",
+        (client) =>
+          setSignedInstallationStepUpContext(
+            client,
+            bootstrap.installationId,
+            ownerAuthUserId,
+            authTime,
+          ),
+        (client) =>
+          client.query(
+            `select public.create_release_adoption_approval(
+              $1, $2, $3::jsonb, clock_timestamp() + interval '1 hour'
+            )`,
+            [bootstrap.installationId, releasePlanHash, exactReleaseJson],
+          ),
+      );
+    } catch (error) {
+      requireCondition(
+        (error as { code?: string }).code === "P0001",
+        `${label} failed with the wrong SQL state`,
+      );
+      return;
+    }
+    throw new Error(`${label} unexpectedly succeeded`);
+  };
+  await expectInvalidReleaseApproval(
+    JSON.stringify({ ...release, version: {} }),
+    "Object release version approval",
+  );
+  await expectInvalidReleaseApproval(
+    JSON.stringify({ ...release, version: true }),
+    "Boolean release version approval",
+  );
+  await expectInvalidReleaseApproval(
+    JSON.stringify(release).replace(
+      `"sourceCommit":"${release.sourceCommit}"`,
+      `"sourceCommit":${"1".repeat(40)}`,
+    ),
+    "Numeric release source commit approval",
+  );
+  const releaseApprovalId = await createReleaseApproval("1 hour");
+  const substitutionReceiptId = "77777777-7777-4777-8777-777777777777";
+  for (const [name, substituted] of [
+    ["version", { ...release, version: "0.4.1" }],
+    [
+      "core migration head",
+      { ...release, coreMigrationHead: "20260830000100_workspaces" },
+    ],
+    [
+      "proof byte digest",
+      {
+        ...release,
+        workspaceIsolationProofSha256: `sha256:${"9".repeat(64)}`,
+      },
+    ],
+    [
+      "proof canonical hash",
+      {
+        ...release,
+        workspaceIsolationProofHash: `sha256:${"a".repeat(64)}`,
+      },
+    ],
+    [
+      "image digests",
+      {
+        ...release,
+        imageDigests: {
+          ...release.imageDigests,
+          worker: `sha256:${"b".repeat(64)}`,
+        },
+      },
+    ],
+    [
+      "null image digest",
+      {
+        ...release,
+        imageDigests: { ...release.imageDigests, worker: null },
+      },
+    ],
+  ] as const) {
+    try {
+      await admin.query(
+        `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)`,
+        [
+          bootstrap.installationId,
+          releaseApprovalId,
+          substitutionReceiptId,
+          releasePlanHash,
+          JSON.stringify(substituted),
+        ],
+      );
+    } catch (error) {
+      requireCondition(
+        (error as { code?: string }).code === "P0001",
+        `Release ${name} substitution did not fail closed`,
+      );
+      continue;
+    }
+    throw new Error(`Release ${name} substitution unexpectedly succeeded`);
+  }
+  await expectSqlState(
+    admin,
+    `select public.apply_release_adoption($1, $2, $2, $3, $4::jsonb)`,
+    [
+      bootstrap.installationId,
+      releaseApprovalId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
+    "P0001",
+    "Release adoption receipt and approval ID reuse",
+  );
+  const concurrentApprovalId = await createReleaseApproval("1 hour");
+  const concurrentReceiptId = "66666666-6666-4666-8666-666666666666";
+  const concurrentLeft = await connect(adminDatabaseUrl);
+  const concurrentRight = await connect(adminDatabaseUrl);
+  try {
+    const applyConcurrent = (client: Client) =>
+      client.query<{ document: Record<string, unknown> }>(
+        `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb) as document`,
+        [
+          bootstrap.installationId,
+          concurrentApprovalId,
+          concurrentReceiptId,
+          releasePlanHash,
+          JSON.stringify(release),
+        ],
+      );
+    const [left, right] = await Promise.all([
+      applyConcurrent(concurrentLeft),
+      applyConcurrent(concurrentRight),
+    ]);
+    requireCondition(
+      JSON.stringify(left.rows[0]?.document) ===
+        JSON.stringify(right.rows[0]?.document),
+      "Concurrent exact release applies did not converge on one receipt",
+    );
+    requireCondition(
+      left.rows[0]?.document.approvalConsumptionCount === 1,
+      "Concurrent exact release applies consumed approval more than once",
+    );
+    await expectSqlState(
+      admin,
+      `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)`,
+      [
+        bootstrap.installationId,
+        concurrentApprovalId,
+        substitutionReceiptId,
+        releasePlanHash,
+        JSON.stringify(release),
+      ],
+      "P0001",
+      "Concurrent release adoption conflicting receipt retry",
+    );
+  } finally {
+    await concurrentLeft.end();
+    await concurrentRight.end();
+  }
+
+  const expiringApprovalId = await createReleaseApproval("1500 milliseconds");
+  const expiringReceiptId = "55555555-5555-4555-8555-555555555555";
+  const firstExpiring = await admin.query<{
+    document: Record<string, unknown>;
+  }>(
+    `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb) as document`,
+    [
+      bootstrap.installationId,
+      expiringApprovalId,
+      expiringReceiptId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
+  );
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 1700));
+  const expiredReplay = await admin.query<{
+    document: Record<string, unknown>;
+  }>(
+    `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb) as document`,
+    [
+      bootstrap.installationId,
+      expiringApprovalId,
+      expiringReceiptId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
+  );
+  requireCondition(
+    JSON.stringify(firstExpiring.rows[0]?.document) ===
+      JSON.stringify(expiredReplay.rows[0]?.document),
+    "Exact release adoption replay failed after approval expiry",
+  );
+  await expectSqlState(
+    admin,
+    `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)`,
+    [
+      bootstrap.installationId,
+      expiringApprovalId,
+      substitutionReceiptId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
+    "P0001",
+    "Expired release adoption conflicting receipt retry",
   );
   await admin.query(
-    `insert into public.workspace_memberships
-       (installation_id, workspace_id, person_id, kind)
-     values ($1, $2, $3, 'owner')`,
-    [bootstrap.installationId, otherWorkspaceId, ownerPersonId],
+    `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)`,
+    [
+      bootstrap.installationId,
+      releaseApprovalId,
+      releaseAdoptionReceiptId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
   );
+  const persistedReleaseReceipt = (
+    await admin.query<{
+      adopted_at: Date;
+      approval_consumed_at: Date;
+      approval_consumption_count: number;
+      approval_id: string;
+      installation_id: string;
+      owner_person_id: string;
+      plan_hash: string;
+      receipt_hash: string;
+      release: typeof release;
+      state: Record<string, boolean>;
+    }>(
+      `select adopted_at, approval_consumed_at, approval_consumption_count,
+              approval_id::text, installation_id::text, owner_person_id::text,
+              plan_hash, receipt_hash, release, state
+         from public.release_adoption_receipts
+        where installation_id = $1 and id = $2`,
+      [bootstrap.installationId, releaseAdoptionReceiptId],
+    )
+  ).rows[0];
+  requireCondition(persistedReleaseReceipt, "Release receipt cannot be read");
+  const releaseReceipt = persistedReleaseReceipt;
+  const receiptDocument = {
+    contract: "vorton.release-adoption-receipt.v1",
+    receiptId: releaseAdoptionReceiptId,
+    receiptPlane: "installation-postgres",
+    installationId: persistedReleaseReceipt.installation_id,
+    ownerPersonId: persistedReleaseReceipt.owner_person_id,
+    approvalId: persistedReleaseReceipt.approval_id,
+    planHash: persistedReleaseReceipt.plan_hash,
+    release: persistedReleaseReceipt.release,
+    status: "adopted",
+    adoptedAt: persistedReleaseReceipt.adopted_at.toISOString(),
+    approvalConsumedAt:
+      persistedReleaseReceipt.approval_consumed_at.toISOString(),
+    approvalConsumptionCount:
+      persistedReleaseReceipt.approval_consumption_count,
+    state: persistedReleaseReceipt.state,
+  };
+  requireCondition(
+    persistedReleaseReceipt.receipt_hash === canonicalSha256(receiptDocument),
+    "PostgreSQL release adoption receipt hash is not canonical",
+  );
+  await expectSqlState(
+    admin,
+    "update public.release_adoption_receipts set receipt_hash = $1 where installation_id = $2 and id = $3",
+    [
+      `sha256:${"0".repeat(64)}`,
+      bootstrap.installationId,
+      releaseAdoptionReceiptId,
+    ],
+    "P0001",
+    "Release adoption receipt hash substitution",
+  );
+  await admin.query(
+    "update public.people set kind = 'member' where installation_id = $1 and id = $2",
+    [bootstrap.installationId, ownerPersonId],
+  );
+  try {
+    const replay = await admin.query<{ receipt_hash: string }>(
+      `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)
+                ->>'receiptHash' as receipt_hash`,
+      [
+        bootstrap.installationId,
+        releaseApprovalId,
+        releaseAdoptionReceiptId,
+        releasePlanHash,
+        JSON.stringify(release),
+      ],
+    );
+    requireCondition(
+      replay.rows[0]?.receipt_hash === releaseReceipt.receipt_hash,
+      "Exact release adoption retry did not return the immutable receipt",
+    );
+    await expectSqlState(
+      admin,
+      `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)`,
+      [
+        bootstrap.installationId,
+        releaseApprovalId,
+        substitutionReceiptId,
+        releasePlanHash,
+        JSON.stringify(release),
+      ],
+      "P0001",
+      "Conflicting release adoption retry",
+    );
+  } finally {
+    await admin.query(
+      "update public.people set kind = 'owner' where installation_id = $1 and id = $2",
+      [bootstrap.installationId, ownerPersonId],
+    );
+  }
+  const workspaceConfig: WorkspaceAdditionConfig = {
+    installationId: bootstrap.installationId,
+    personId: ownerPersonId,
+    authUserId: ownerAuthUserId,
+    workspaceId: otherWorkspaceId,
+    workspaceSlug: "aubos",
+    workspaceDisplayName: "AubOS cloud",
+    workspaceRealm: "personal",
+    adoptedRelease: {
+      adoptionReceiptId: releaseAdoptionReceiptId,
+      adoptionReceiptSha256: releaseReceipt.receipt_hash,
+      receiptPlane: "installation-postgres",
+      manifestSha256,
+      sourceCommit: release.sourceCommit,
+      migrationHead: release.coreMigrationHead,
+      workspaceIsolationProofSha256,
+      workspaceIsolationProofHash,
+      status: "adopted",
+      adoptedAt: releaseReceipt.adopted_at.toISOString(),
+    },
+  };
+  const workspacePlan = buildWorkspaceAdditionPlan(workspaceConfig);
+  const forgedStepUp = async (client: Client): Promise<void> => {
+    await setSignedContext(
+      client,
+      "person",
+      bootstrap.installationId,
+      "*",
+      ownerAuthUserId,
+    );
+    await client.query(
+      `select set_config('vorton.aal', 'aal2', true),
+              set_config('vorton.auth_time', $1, true),
+              set_config('vorton.step_up_signature', '', true)`,
+      [String(authTime)],
+    );
+  };
+  const approvalSql = `select id::text as id from public.create_workspace_creation_approval(
+    $1, $2, 'aubos', 'AubOS cloud', 'personal', $3, $4, $5
+  )`;
+  const approvalValues = [
+    bootstrap.installationId,
+    otherWorkspaceId,
+    releaseAdoptionReceiptId,
+    releaseReceipt.receipt_hash,
+    workspacePlan.workspacePlanSha256,
+  ];
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    forgedStepUp,
+    approvalSql,
+    approvalValues,
+    "P0001",
+    "Unsigned step-up workspace creation approval",
+  );
+  const approvalId = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    (client) =>
+      setSignedInstallationStepUpContext(
+        client,
+        bootstrap.installationId,
+        ownerAuthUserId,
+        authTime,
+      ),
+    async (client) => {
+      const result = await client.query<{ id: string }>(
+        approvalSql,
+        approvalValues,
+      );
+      const id = result.rows[0]?.id;
+      requireCondition(id, "Workspace creation approval was not recorded");
+      return id;
+    },
+  );
+  const applyClient = await connect(adminDatabaseUrl);
+  const demotionClient = await connect(adminDatabaseUrl);
+  try {
+    await applyClient.query("begin");
+    await applyClient.query(
+      "select id from public.apply_workspace_creation($1, $2, $3, $4)",
+      [
+        bootstrap.installationId,
+        approvalId,
+        workspaceCreationReceiptId,
+        workspacePlan.workspacePlanSha256,
+      ],
+    );
+    await demotionClient.query("begin");
+    let demotionSettled = false;
+    const demotion = demotionClient
+      .query(
+        "update public.people set kind = 'member' where installation_id = $1 and id = $2",
+        [bootstrap.installationId, ownerPersonId],
+      )
+      .finally(() => {
+        demotionSettled = true;
+      });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    requireCondition(
+      !demotionSettled,
+      "Workspace apply did not hold the live owner row through transaction commit",
+    );
+    await applyClient.query("commit");
+    await demotion;
+    await demotionClient.query("rollback");
+  } catch (error) {
+    await applyClient.query("rollback").catch(() => undefined);
+    await demotionClient.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await applyClient.end();
+    await demotionClient.end();
+  }
+  const addition = await addWorkspaceToExistingInstallation(
+    admin,
+    workspaceConfig,
+    {
+      approvalId,
+      receiptId: workspaceCreationReceiptId,
+      expectedWorkspacePlanSha256: workspacePlan.workspacePlanSha256,
+    },
+  );
+  requireCondition(
+    addition.status === "already-applied",
+    "Workspace addition did not reconcile its atomic PostgreSQL receipt",
+  );
+  await admin.query(
+    "update public.people set kind = 'member' where installation_id = $1 and id = $2",
+    [bootstrap.installationId, ownerPersonId],
+  );
+  try {
+    await admin.query(
+      "select id from public.apply_workspace_creation($1, $2, $3, $4)",
+      [
+        bootstrap.installationId,
+        approvalId,
+        workspaceCreationReceiptId,
+        workspacePlan.workspacePlanSha256,
+      ],
+    );
+    await expectSqlState(
+      admin,
+      "select id from public.apply_workspace_creation($1, $2, $3, $4)",
+      [
+        bootstrap.installationId,
+        approvalId,
+        substitutionReceiptId,
+        workspacePlan.workspacePlanSha256,
+      ],
+      "P0001",
+      "Conflicting workspace creation retry",
+    );
+  } finally {
+    await admin.query(
+      "update public.people set kind = 'owner' where installation_id = $1 and id = $2",
+      [bootstrap.installationId, ownerPersonId],
+    );
+  }
   await admin.query(
     `insert into public.work
        (id, installation_id, workspace_id, title, requested_outcome, state)
@@ -1251,7 +1833,12 @@ async function main(): Promise<void> {
     await replayRuntimeLogin.end();
 
     await proveRoleShape(admin);
-    const ownerPersonId = await seedAuthorityFixtures(admin, bootstrap);
+    const ownerPersonId = await seedAuthorityFixtures(
+      admin,
+      adminDatabaseUrl,
+      runtimeDatabaseUrl,
+      bootstrap,
+    );
     await proveWorkspaceResourceCoexistence(admin, bootstrap, ownerPersonId);
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
@@ -1279,6 +1866,17 @@ async function main(): Promise<void> {
             signedWorkerProposalAndRunScoped: true,
             sameNamedWorkspaceResourcesCoexist: true,
             personalAndOrganizationalMemoryBanksSeparated: true,
+            installationScopedReleaseAdoptionApprovalConsumed: true,
+            releaseAdoptionExactReleaseSubstitutionsDenied: true,
+            releaseAdoptionReceiptHashCanonicalAndImmutable: true,
+            releaseAdoptionExactReplaySurvivesOwnerDemotion: true,
+            releaseAdoptionConcurrentExactApplyConvergesOnce: true,
+            releaseAdoptionExactReplaySurvivesExpiry: true,
+            installationScopedWorkspaceApprovalConsumed: true,
+            unsignedWorkspaceCreationStepUpDenied: true,
+            workspaceApplyOwnerDemotionSerialized: true,
+            workspaceCreationExactReplaySurvivesOwnerDemotion: true,
+            emptyWorkspaceAdditionReceiptBound: true,
             workerHumanAuthorityDenied: true,
             councilAttemptFenced: true,
             councilStorageDenied: true,

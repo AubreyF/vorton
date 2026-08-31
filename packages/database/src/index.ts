@@ -21,6 +21,13 @@ export interface WorkerContext {
   credentialId?: string;
 }
 
+export interface InstallationStepUpPersonContext {
+  authUserId: string;
+  installationId: string;
+  aal: "aal2";
+  authTime: number;
+}
+
 export type DatabaseContext = PersonContext | WorkerContext;
 
 export type DatabaseConfig = PoolConfig & { contextSigningSecret: string };
@@ -62,6 +69,40 @@ export class Database {
       { authUserId, installationId: "*", workspaceId: "*" },
       work,
     );
+  }
+
+  async asInstallationPersonWithStepUp<T>(
+    context: InstallationStepUpPersonContext,
+    work: TransactionWork<T>,
+  ): Promise<T> {
+    return this.#transaction(async (client, transactionId) => {
+      await this.#installContext(client, transactionId, {
+        kind: "person",
+        installationId: context.installationId,
+        workspaceId: "*",
+        subjectId: context.authUserId,
+        credentialId: "",
+      });
+      const stepUpPayload = [
+        transactionId,
+        "installation-person",
+        context.installationId,
+        context.authUserId,
+        context.aal,
+        String(context.authTime),
+      ].join("|");
+      const stepUpSignature = createHmac("sha256", this.#contextSigningSecret)
+        .update(stepUpPayload)
+        .digest("hex");
+      await client.query(
+        `select set_config('vorton.aal', $1, true),
+                set_config('vorton.auth_time', $2, true),
+                set_config('vorton.step_up_signature', $3, true)`,
+        [context.aal, String(context.authTime), stepUpSignature],
+      );
+      await client.query("set local role authenticated");
+      return work(client);
+    });
   }
 
   async #asPerson<T>(

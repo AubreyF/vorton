@@ -64,4 +64,43 @@ describe("database authority context", () => {
       "at least 32 characters",
     );
   });
+
+  it("binds installation step-up AAL and auth time into a separate transaction signature", async () => {
+    const statements: Array<{ text: string; values?: readonly unknown[] }> = [];
+    const client = {
+      query: vi.fn(async (text: string, values?: readonly unknown[]) => {
+        statements.push({ text, values });
+        return text.includes("txid_current()")
+          ? { rows: [{ id: "5252" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }),
+      release: vi.fn(),
+    };
+    const pool = new Pool();
+    Object.defineProperty(pool, "connect", { value: async () => client });
+    Object.defineProperty(pool, "end", { value: async () => undefined });
+    const secret = "context-secret-that-is-at-least-32-characters";
+    const database = new Database(pool, secret);
+    const context = {
+      installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+      aal: "aal2" as const,
+      authTime: 1_788_148_800,
+    };
+
+    await database.asInstallationPersonWithStepUp(context, async () => {});
+
+    const stepUp = statements.find((item) =>
+      item.text.includes("vorton.step_up_signature"),
+    );
+    expect(stepUp?.values).toEqual([
+      "aal2",
+      String(context.authTime),
+      createHmac("sha256", secret)
+        .update(
+          `5252|installation-person|${context.installationId}|${context.authUserId}|aal2|${String(context.authTime)}`,
+        )
+        .digest("hex"),
+    ]);
+  });
 });

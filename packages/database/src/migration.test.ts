@@ -30,6 +30,10 @@ const workspaceMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000100_workspaces.sql",
   import.meta.url,
 );
+const workspaceCreationAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000200_workspace_creation_authority.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -233,5 +237,68 @@ describe("workspace migration contract", () => {
       "unique (installation_id, workspace_id, name, version)",
     );
     expect(sql).toContain("unique (installation_id, workspace_id)");
+  });
+});
+
+describe("workspace creation authority migration contract", () => {
+  it("uses an installation-scoped recent-AAL2 approval and immutable receipt", async () => {
+    const sql = await readFile(workspaceCreationAuthorityMigrationUrl, "utf8");
+    expect(sql).toContain("create table public.workspace_creation_approvals");
+    expect(sql).toContain("create table public.workspace_creation_receipts");
+    expect(sql).toContain("scope = 'workspace.create'");
+    expect(sql).toContain("aal = 'aal2'");
+    expect(sql).toContain("interval '10 minutes'");
+    expect(sql).toContain("workspace_creation_receipts_approval_fk");
+    expect(sql).toContain(
+      "release_adoption_receipt_id, release_adoption_receipt_sha256",
+    );
+    expect(sql).not.toContain(
+      "workspace_creation_receipts_owner_membership_fk",
+    );
+    expect(sql).toContain("without freezing later membership governance");
+    expect(sql).toContain("create function public.apply_workspace_creation");
+    expect(sql).toContain("approval.target_slug");
+    expect(sql).toContain("approval.target_display_name");
+    expect(sql).toContain("approval.target_realm");
+    expect(sql).toContain("approval.expires_at <= clock_timestamp()");
+    expect(sql).toContain("person.kind = 'owner'");
+    expect(sql).toContain("unique (installation_id, approval_id)");
+    expect(sql).toContain(
+      "Release adoption and workspace creation approvals and receipts are append-only",
+    );
+    expect(sql).toContain("create table public.release_adoption_approvals");
+    expect(sql).toContain("create table public.release_adoption_receipts");
+    expect(sql).toContain("create function public.apply_release_adoption");
+    expect(sql).toContain("exact_release <> approval.release");
+    expect(sql).toContain("vorton_canonical_jsonb(receipt_document)");
+    expect(sql).toContain('order by entry.key collate "C"');
+    expect(sql).toContain(
+      "Release adoption receipt ID must differ from approval ID",
+    );
+    expect(sql).toContain("image.key !~ '^[a-z][a-z0-9-]*$'");
+    expect(sql).toContain("image.value is null");
+    expect(sql).toContain("jsonb_typeof(value->'version') = 'string'");
+    expect(sql).toContain("jsonb_typeof(value->'sourceCommit') = 'string'");
+    expect(sql).toContain("check (id <> approval_id)");
+    expect(sql).toContain("receipt.source_commit <> approval.source_commit");
+    expect(sql).toContain("workspaceIsolationProofSha256");
+    expect(sql).toContain("workspaceIsolationProofHash");
+    expect(sql).toContain("for share");
+  });
+
+  it("records approval without consulting an existing workspace membership", async () => {
+    const sql = await readFile(workspaceCreationAuthorityMigrationUrl, "utf8");
+    expect(sql).toContain("create_workspace_creation_approval");
+    expect(sql).toContain("person.kind = 'owner'");
+    expect(sql).not.toContain("join public.workspace_memberships");
+    expect(sql).toContain(
+      "Signed installation-person AAL2 context is required to approve workspace creation",
+    );
+    expect(sql).toContain("vorton_installation_step_up_context_valid");
+    expect(sql).toContain("vorton.step_up_signature");
+    expect(sql).toContain("revoke select, insert, update, delete");
+    expect(sql).not.toContain(
+      "grant select on public.workspace_creation_approvals",
+    );
   });
 });
