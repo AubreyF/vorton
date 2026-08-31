@@ -7,6 +7,7 @@ import { DatabaseExecutiveCouncilResolver } from "./council-resolver.js";
 import { DatabaseExecutiveLedger } from "./database-ledger.js";
 import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import { DatabaseInstallationAuthority } from "./installation-authority.js";
+import { DatabaseModuleLifecycleAuthority } from "./module-lifecycle-authority.js";
 import { readApiEnvironment } from "./env.js";
 import { RemoteExecutiveWorkerAdapter } from "./remote-worker.js";
 import { DatabaseExecutiveRequestResolver } from "./request-resolver.js";
@@ -65,6 +66,7 @@ const server = createApiServer({
   workerRuns: new DatabaseWorkerRunRecorder(database),
   councilResolver: new DatabaseExecutiveCouncilResolver(database, worker),
   installationAuthority: new DatabaseInstallationAuthority(database),
+  moduleLifecycleAuthority: new DatabaseModuleLifecycleAuthority(database),
   release: env.release,
   allowedOrigin: env.allowedOrigin,
 });

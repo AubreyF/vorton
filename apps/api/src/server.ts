@@ -13,6 +13,7 @@ import {
 } from "@vorton/executive";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 import {
+  moduleLifecycleActionApprovalRequestSchema,
   releaseAdoptionApprovalRequestSchema,
   workspaceCreationApprovalRequestSchema,
 } from "@vorton/contracts";
@@ -39,6 +40,14 @@ import {
   type DatabaseInstallationAuthority,
 } from "./installation-authority.js";
 import {
+  ModuleLifecycleAuthorityConflictError,
+  ModuleLifecycleAuthorityForbiddenError,
+  ModuleLifecycleAuthorityInputError,
+  ModuleLifecycleAuthorityIntegrityError,
+  requireModuleLifecycleRecentAal2,
+  type DatabaseModuleLifecycleAuthority,
+} from "./module-lifecycle-authority.js";
+import {
   ExecutiveRequestInputError,
   ExecutiveRequestResolutionError,
   parseProposalInput,
@@ -55,6 +64,7 @@ export interface ApiServerDependencies {
   workerRuns: DatabaseWorkerRunRecorder;
   councilResolver: DatabaseExecutiveCouncilResolver;
   installationAuthority: DatabaseInstallationAuthority;
+  moduleLifecycleAuthority: DatabaseModuleLifecycleAuthority;
   release: string;
   allowedOrigin: string;
 }
@@ -257,6 +267,52 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
                 identity,
               );
         send(201, result);
+        return;
+      }
+      const moduleLifecycleAuthorityRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/module-lifecycle-action-approvals$/,
+      );
+      if (
+        request.method === "POST" &&
+        moduleLifecycleAuthorityRoute?.[1] &&
+        moduleLifecycleAuthorityRoute[2]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireModuleLifecycleRecentAal2(identity);
+        const installationId = moduleLifecycleAuthorityRoute[1];
+        const workspaceId = moduleLifecycleAuthorityRoute[2];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "installationId and workspaceId must be canonical UUIDs",
+          );
+        }
+        const exactRequest = moduleLifecycleActionApprovalRequestSchema.parse(
+          objectBody(await readJson(request)),
+        );
+        if (
+          exactRequest.binding.vortonInstallationId !== installationId ||
+          exactRequest.binding.workspaceId !== workspaceId
+        ) {
+          throw new ModuleLifecycleAuthorityInputError(
+            "The lifecycle binding must match the installation and workspace path",
+          );
+        }
+        send(
+          201,
+          await dependencies.moduleLifecycleAuthority.approve(
+            installationId,
+            workspaceId,
+            exactRequest,
+            identity,
+          ),
+        );
         return;
       }
       const councilRoute = url.pathname.match(
@@ -541,6 +597,60 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         return;
       }
       if (error instanceof InstallationAuthorityIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleAuthorityInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleAuthorityForbiddenError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleAuthorityConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "module_lifecycle_authority_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleAuthorityIntegrityError) {
         json(
           response,
           500,

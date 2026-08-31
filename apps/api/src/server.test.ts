@@ -7,6 +7,12 @@ import type { Database } from "@vorton/database";
 
 import type { AuthenticatedIdentity } from "./auth.js";
 import { InstallationAuthorityIntegrityError } from "./installation-authority.js";
+import {
+  ModuleLifecycleAuthorityConflictError,
+  ModuleLifecycleAuthorityForbiddenError,
+  ModuleLifecycleAuthorityInputError,
+  ModuleLifecycleAuthorityIntegrityError,
+} from "./module-lifecycle-authority.js";
 import { createApiServer } from "./server.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
@@ -74,6 +80,12 @@ async function runtime(
   const installationAuthorityCalls: Array<{
     operation: "release" | "workspace";
     installationId: string;
+    request: unknown;
+    identity: AuthenticatedIdentity;
+  }> = [];
+  const moduleLifecycleAuthorityCalls: Array<{
+    installationId: string;
+    workspaceId: string;
     request: unknown;
     identity: AuthenticatedIdentity;
   }> = [];
@@ -272,6 +284,50 @@ async function runtime(
         throw new Error("not configured in this fixture");
       },
     } as never,
+    moduleLifecycleAuthority: {
+      approve: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        request: { approvalId: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        if (request.approvalId === "66666666-6666-4666-8666-666666666666") {
+          throw new ModuleLifecycleAuthorityInputError(
+            "The module lifecycle approval request is invalid",
+          );
+        }
+        if (request.approvalId === "77777777-7777-4777-8777-777777777777") {
+          throw new ModuleLifecycleAuthorityForbiddenError(
+            "Live workspace owner authority with recent AAL2 is required",
+          );
+        }
+        if (request.approvalId === "88888888-8888-4888-8888-888888888888") {
+          throw new ModuleLifecycleAuthorityConflictError(
+            "The requested approval conflicts with immutable lifecycle authority",
+          );
+        }
+        if (request.approvalId === "99999999-9999-4999-8999-999999999999") {
+          throw new ModuleLifecycleAuthorityIntegrityError(
+            "sensitive malformed lifecycle receipt detail",
+          );
+        }
+        moduleLifecycleAuthorityCalls.push({
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract: "vorton.module-lifecycle-action-approval.v1",
+            approvalId: request.approvalId,
+          },
+          receipt: {
+            contract: "vorton.module-lifecycle-approval-receipt.v1",
+          },
+        };
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
@@ -284,6 +340,7 @@ async function runtime(
     evidence,
     councilCalls,
     installationAuthorityCalls,
+    moduleLifecycleAuthorityCalls,
   };
 }
 
@@ -297,6 +354,33 @@ function proposal(evidenceId: string) {
     objective: "Assess the synthetic fixture",
     evidenceRecordIds: [evidenceId],
     background: false,
+  };
+}
+
+function moduleLifecycleApproval(
+  approvalId = "22222222-2222-4222-8222-222222222222",
+) {
+  const digest = (character: string) => `sha256:${character.repeat(64)}`;
+  return {
+    approvalId,
+    binding: {
+      vortonInstallationId: installationId,
+      workspaceId,
+      realm: "organizational",
+      module: "tasks",
+      sequence: 1,
+      migrationPlanHash: digest("1"),
+      sourceSnapshotSha256: digest("2"),
+      targetPreimageSha256: digest("3"),
+      targetPostimageSha256: digest("4"),
+      target: {
+        action: "backup",
+        backupId: "33333333-3333-4333-8333-333333333333",
+        storageObjectKey: "tasks/sequence-1/preimage.enc",
+        encryptionKeyBindingId: "44444444-4444-4444-8444-444444444444",
+      },
+    },
+    expiresAt: "2026-08-31T12:00:00.000Z",
   };
 }
 
@@ -507,6 +591,154 @@ describe("control-plane API", () => {
     const payload = JSON.stringify(await response.json());
     expect(payload).toContain("internal_error");
     expect(payload).not.toContain("sensitive malformed");
+  });
+
+  it("routes a strict lifecycle approval and returns both no-store documents", async () => {
+    const { baseUrl, moduleLifecycleAuthorityCalls } = await runtime();
+    const body = moduleLifecycleApproval();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          origin: "https://control.vorton.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      approval: {
+        contract: "vorton.module-lifecycle-action-approval.v1",
+        approvalId: body.approvalId,
+      },
+      receipt: {
+        contract: "vorton.module-lifecycle-approval-receipt.v1",
+      },
+    });
+    expect(moduleLifecycleAuthorityCalls).toEqual([
+      {
+        installationId,
+        workspaceId,
+        request: body,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+    ]);
+  });
+
+  it("rejects future lifecycle AAL2 and cross-workspace bindings before the adapter", async () => {
+    const future = await runtime({
+      authUserId,
+      aal: "aal2",
+      authTime: Math.floor(Date.now() / 1_000) + 30,
+    });
+    const route = `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals`;
+    const futureResponse = await fetch(`${future.baseUrl}${route}`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer verified-by-fixture",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(moduleLifecycleApproval()),
+    });
+    expect(futureResponse.status).toBe(403);
+    await expect(futureResponse.json()).resolves.toMatchObject({
+      error: { code: "aal2_required" },
+    });
+    expect(future.moduleLifecycleAuthorityCalls).toEqual([]);
+
+    const current = await runtime();
+    const crossBound = moduleLifecycleApproval();
+    crossBound.binding.workspaceId = crypto.randomUUID();
+    const crossBoundResponse = await fetch(`${current.baseUrl}${route}`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer verified-by-fixture",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(crossBound),
+    });
+    expect(crossBoundResponse.status).toBe(400);
+    expect(current.moduleLifecycleAuthorityCalls).toEqual([]);
+
+    const malformedPathResponse = await fetch(
+      `${current.baseUrl}/v1/installations/not-a-uuid/workspaces/${workspaceId}/module-lifecycle-action-approvals`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer verified-by-fixture" },
+      },
+    );
+    expect(malformedPathResponse.status).toBe(400);
+    expect(current.moduleLifecycleAuthorityCalls).toEqual([]);
+  });
+
+  it("hides lifecycle serializer and hash failures behind a generic 500", async () => {
+    const { baseUrl } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          origin: "https://control.vorton.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(
+          moduleLifecycleApproval("99999999-9999-4999-8999-999999999999"),
+        ),
+      },
+    );
+    expect(response.status).toBe(500);
+    const payload = JSON.stringify(await response.json());
+    expect(payload).toContain("internal_error");
+    expect(payload).not.toContain("sensitive malformed");
+  });
+
+  it("maps lifecycle input, lost authority, and immutable replay conflicts", async () => {
+    const { baseUrl } = await runtime();
+    const route = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      "content-type": "application/json",
+    };
+    const cases = [
+      ["66666666-6666-4666-8666-666666666666", 400, "invalid_request"],
+      ["77777777-7777-4777-8777-777777777777", 403, "forbidden"],
+      [
+        "88888888-8888-4888-8888-888888888888",
+        409,
+        "module_lifecycle_authority_conflict",
+      ],
+    ] as const;
+    for (const [approvalId, status, code] of cases) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(moduleLifecycleApproval(approvalId)),
+      });
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({ error: { code } });
+    }
+  });
+
+  it("does not expose lifecycle apply, consume, or action routes", async () => {
+    const { baseUrl } = await runtime();
+    for (const path of [
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals/${crypto.randomUUID()}/consume`,
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-actions`,
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-apply`,
+    ]) {
+      const response = await fetch(`${baseUrl}${path}`, { method: "POST" });
+      expect(response.status).toBe(404);
+    }
   });
 
   it("persists model output only as a recommendation proposal", async () => {

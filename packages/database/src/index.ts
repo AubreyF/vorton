@@ -28,6 +28,14 @@ export interface InstallationStepUpPersonContext {
   authTime: number;
 }
 
+export interface WorkspaceStepUpPersonContext {
+  authUserId: string;
+  vortonInstallationId: string;
+  workspaceId: string;
+  aal: "aal2";
+  authTime: number;
+}
+
 export type DatabaseContext = PersonContext | WorkerContext;
 
 export type DatabaseConfig = PoolConfig & { contextSigningSecret: string };
@@ -101,6 +109,51 @@ export class Database {
         [context.aal, String(context.authTime), stepUpSignature],
       );
       await client.query("set local role authenticated");
+      return work(client);
+    });
+  }
+
+  async asWorkspacePersonWithStepUp<T>(
+    context: WorkspaceStepUpPersonContext,
+    work: TransactionWork<T>,
+  ): Promise<T> {
+    if ("personId" in context) {
+      throw new Error(
+        "Workspace step-up context must not provide personId; PostgreSQL resolves it live",
+      );
+    }
+    return this.#transaction(async (client, transactionId) => {
+      await this.#installContext(client, transactionId, {
+        kind: "person",
+        installationId: context.vortonInstallationId,
+        workspaceId: context.workspaceId,
+        subjectId: context.authUserId,
+        credentialId: "",
+      });
+      // Domain separation prevents this workspace proof from satisfying the
+      // installation-owner step-up boundary, even with the same signing key.
+      const stepUpPayload = [
+        transactionId,
+        "workspace-person",
+        context.vortonInstallationId,
+        context.workspaceId,
+        context.authUserId,
+        context.aal,
+        String(context.authTime),
+      ].join("|");
+      const stepUpSignature = createHmac("sha256", this.#contextSigningSecret)
+        .update(stepUpPayload)
+        .digest("hex");
+      await client.query(
+        `select set_config('vorton.workspace_step_up_aal', $1, true),
+                set_config('vorton.workspace_step_up_auth_time', $2, true),
+                set_config('vorton.workspace_step_up_signature', $3, true)`,
+        [context.aal, String(context.authTime), stepUpSignature],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: context.authUserId, role: "authenticated" }),
+      ]);
       return work(client);
     });
   }

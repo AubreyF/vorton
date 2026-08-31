@@ -16,8 +16,14 @@ import { promisify } from "node:util";
 import { Client } from "pg";
 
 import {
+  canonicalModuleLifecycleJson,
   executiveWorkerJobSchema,
+  hashModuleLifecycleApprovalCore,
+  hashModuleLifecycleApprovalReceipt,
+  moduleLifecycleCanonicalSha256,
+  parseModuleLifecycleApprovalCreation,
   type ExecutiveWorkerJobRequest,
+  type ModuleLifecycleApprovalCreation,
 } from "@vorton/contracts";
 import { Database } from "@vorton/database";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
@@ -346,6 +352,69 @@ async function setSignedInstallationStepUpContext(
             set_config('vorton.auth_time', $1, true),
             set_config('vorton.step_up_signature', $2, true)`,
     [String(authTime), signature],
+  );
+}
+
+async function setWorkspaceStepUpContext(
+  client: Client,
+  installationId: string,
+  workspaceId: string,
+  subjectId: string,
+  authTime: number,
+  options: {
+    aal?: "aal1" | "aal2";
+    baseSignature?: "signed" | "unsigned" | "forged";
+    stepUpSignature?: "signed" | "unsigned" | "forged";
+  } = {},
+): Promise<void> {
+  const transaction = await client.query<{ txid: string }>(
+    "select txid_current()::text as txid",
+  );
+  const txid = transaction.rows[0]?.txid;
+  requireCondition(txid, "PostgreSQL did not return a transaction ID");
+  const aal = options.aal ?? "aal2";
+  const signedBase = createHmac("sha256", contextSecret)
+    .update(`${txid}|person|${installationId}|${workspaceId}|${subjectId}|`)
+    .digest("hex");
+  const signedStepUp = createHmac("sha256", contextSecret)
+    .update(
+      `${txid}|workspace-person|${installationId}|${workspaceId}|${subjectId}|${aal}|${String(authTime)}`,
+    )
+    .digest("hex");
+  const signatureValue = (
+    kind: "signed" | "unsigned" | "forged" | undefined,
+    signed: string,
+  ): string => {
+    if (kind === "unsigned") return "";
+    if (kind === "forged") return "0".repeat(64);
+    return signed;
+  };
+  const baseSignature = signatureValue(options.baseSignature, signedBase);
+  const stepUpSignature = signatureValue(options.stepUpSignature, signedStepUp);
+  await client.query(
+    `select set_config('aubos.context_kind', 'person', true),
+            set_config('aubos.installation_id', $1, true),
+            set_config('aubos.subject_id', $3, true),
+            set_config('aubos.credential_id', '', true),
+            set_config('aubos.context_signature', $4, true),
+            set_config('vorton.context_kind', 'person', true),
+            set_config('vorton.installation_id', $1, true),
+            set_config('vorton.workspace_id', $2, true),
+            set_config('vorton.subject_id', $3, true),
+            set_config('vorton.credential_id', '', true),
+            set_config('vorton.context_signature', $4, true),
+            set_config('vorton.workspace_step_up_aal', $5, true),
+            set_config('vorton.workspace_step_up_auth_time', $6, true),
+            set_config('vorton.workspace_step_up_signature', $7, true)`,
+    [
+      installationId,
+      workspaceId,
+      subjectId,
+      baseSignature,
+      aal,
+      String(authTime),
+      stepUpSignature,
+    ],
   );
 }
 
@@ -1207,6 +1276,953 @@ async function proveWorkspaceResourceCoexistence(
   );
 }
 
+async function proveModuleLifecycleApprovalBoundary(
+  admin: Client,
+  adminDatabaseUrl: string,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  const noMembershipAuthUserId = randomUUID();
+  const noMembershipPersonId = randomUUID();
+  const nonOwnerAuthUserId = randomUUID();
+  const nonOwnerPersonId = randomUUID();
+  const revokedOwnerAuthUserId = randomUUID();
+  const revokedOwnerPersonId = randomUUID();
+  const serializedOwnerAuthUserId = randomUUID();
+  const serializedOwnerPersonId = randomUUID();
+  await admin.query(
+    `insert into auth.users (id, email) values
+       ($1, 'lifecycle-no-membership@synthetic.invalid'),
+       ($2, 'lifecycle-non-owner@synthetic.invalid'),
+       ($3, 'lifecycle-revoked-owner@synthetic.invalid'),
+       ($4, 'lifecycle-serialized-owner@synthetic.invalid')`,
+    [
+      noMembershipAuthUserId,
+      nonOwnerAuthUserId,
+      revokedOwnerAuthUserId,
+      serializedOwnerAuthUserId,
+    ],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values
+       ($1, $5, $2, 'Synthetic lifecycle person without membership', 'owner'),
+       ($3, $5, $4, 'Synthetic lifecycle non-owner member', 'owner'),
+       ($6, $5, $7, 'Synthetic lifecycle revoked owner', 'owner'),
+       ($8, $5, $9, 'Synthetic lifecycle serialized owner', 'owner')`,
+    [
+      noMembershipPersonId,
+      noMembershipAuthUserId,
+      nonOwnerPersonId,
+      nonOwnerAuthUserId,
+      bootstrap.installationId,
+      revokedOwnerPersonId,
+      revokedOwnerAuthUserId,
+      serializedOwnerPersonId,
+      serializedOwnerAuthUserId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values
+       ($1, $2, $3, 'member'),
+       ($1, $2, $4, 'owner'),
+       ($1, $2, $5, 'owner')`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      nonOwnerPersonId,
+      revokedOwnerPersonId,
+      serializedOwnerPersonId,
+    ],
+  );
+  await admin.query(
+    `delete from public.workspace_memberships
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, revokedOwnerPersonId],
+  );
+
+  const syntheticDigest = (label: string): string =>
+    `sha256:${createHash("sha256").update(label).digest("hex")}`;
+  const receiptReference = (label: string) => ({
+    receiptId: randomUUID(),
+    receiptSha256: syntheticDigest(label),
+  });
+  const lifecycleBinding = (
+    target: Record<string, unknown>,
+    sequence: number,
+    overrides: Partial<{
+      vortonInstallationId: string;
+      workspaceId: string;
+      realm: "personal" | "organizational";
+    }> = {},
+  ): Record<string, unknown> => ({
+    vortonInstallationId:
+      overrides.vortonInstallationId ?? bootstrap.installationId,
+    workspaceId: overrides.workspaceId ?? bootstrap.workspaceId,
+    realm: overrides.realm ?? "organizational",
+    module: "tasks",
+    sequence,
+    migrationPlanHash: syntheticDigest(`plan-${String(sequence)}`),
+    sourceSnapshotSha256: syntheticDigest(`source-${String(sequence)}`),
+    targetPreimageSha256: syntheticDigest(`preimage-${String(sequence)}`),
+    targetPostimageSha256: syntheticDigest(`postimage-${String(sequence)}`),
+    target,
+  });
+  const cloneBinding = (
+    binding: Record<string, unknown>,
+  ): Record<string, unknown> => structuredClone(binding);
+  const expiration = (millisecondsFromNow = 60 * 60 * 1_000): string =>
+    new Date(Date.now() + millisecondsFromNow).toISOString();
+  const createApprovalSql = `select public.create_module_lifecycle_action_approval(
+    $1, $2, $3, $4::jsonb, $5::timestamptz
+  ) as creation`;
+  const signedOwner =
+    (subjectId = ownerAuthUserId, authTime = Math.floor(Date.now() / 1_000)) =>
+    (client: Client): Promise<void> =>
+      setWorkspaceStepUpContext(
+        client,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        subjectId,
+        authTime,
+      );
+  const createApproval = async (
+    approvalId: string,
+    binding: Record<string, unknown>,
+    expiresAt: string,
+    subjectId = ownerAuthUserId,
+  ): Promise<ModuleLifecycleApprovalCreation> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedOwner(subjectId),
+      async (client) => {
+        const result = await client.query<{ creation: unknown }>(
+          createApprovalSql,
+          [
+            approvalId,
+            bootstrap.installationId,
+            bootstrap.workspaceId,
+            JSON.stringify(binding),
+            expiresAt,
+          ],
+        );
+        return parseModuleLifecycleApprovalCreation(result.rows[0]?.creation);
+      },
+    );
+  const denyApproval = (
+    label: string,
+    approvalId: string,
+    binding: Record<string, unknown>,
+    expiresAt: string,
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<void> =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      createApprovalSql,
+      [
+        approvalId,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        JSON.stringify(binding),
+        expiresAt,
+      ],
+      "P0001",
+      label,
+    );
+  const tableCounts = async (): Promise<Map<string, string>> => {
+    const tables = await admin.query<{ tablename: string }>(
+      `select tablename
+         from pg_tables
+        where schemaname = 'public'
+        order by tablename`,
+    );
+    const counts = new Map<string, string>();
+    for (const { tablename } of tables.rows) {
+      const quoted = `"${tablename.replaceAll('"', '""')}"`;
+      const result = await admin.query<{ count: string }>(
+        `select count(*)::text as count from public.${quoted}`,
+      );
+      counts.set(tablename, result.rows[0]?.count ?? "missing");
+    }
+    return counts;
+  };
+  const baselineCounts = await tableCounts();
+  const successfulApprovalIds: string[] = [];
+
+  const backupBinding = lifecycleBinding(
+    {
+      action: "backup",
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/sequence-1/preimage.json",
+      encryptionKeyBindingId: randomUUID(),
+    },
+    1,
+  );
+  const defaultExpiry = expiration();
+  const hostileContextCases: Array<{
+    label: string;
+    setup: (client: Client) => Promise<void>;
+  }> = [
+    {
+      label: "Unsigned workspace lifecycle base context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+          { baseSignature: "unsigned" },
+        ),
+    },
+    {
+      label: "Forged workspace lifecycle base context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+          { baseSignature: "forged" },
+        ),
+    },
+    {
+      label: "Unsigned workspace lifecycle step-up context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+          { stepUpSignature: "unsigned" },
+        ),
+    },
+    {
+      label: "Forged workspace lifecycle step-up context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+          { stepUpSignature: "forged" },
+        ),
+    },
+    {
+      label: "Wrong-installation signed lifecycle context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          otherInstallationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+        ),
+    },
+    {
+      label: "Wrong-workspace signed lifecycle context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          otherWorkspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+        ),
+    },
+    {
+      label: "Future workspace lifecycle AAL2",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000) + 120,
+        ),
+    },
+    {
+      label: "Stale workspace lifecycle AAL2",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000) - 601,
+        ),
+    },
+    {
+      label: "AAL1 workspace lifecycle context",
+      setup: (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1_000),
+          { aal: "aal1" },
+        ),
+    },
+  ];
+  for (const { label, setup } of hostileContextCases) {
+    await denyApproval(
+      label,
+      randomUUID(),
+      backupBinding,
+      defaultExpiry,
+      setup,
+    );
+  }
+
+  await denyApproval(
+    "Unknown lifecycle subject",
+    randomUUID(),
+    backupBinding,
+    defaultExpiry,
+    signedOwner(randomUUID()),
+  );
+  await denyApproval(
+    "Lifecycle subject without workspace membership",
+    randomUUID(),
+    backupBinding,
+    defaultExpiry,
+    signedOwner(noMembershipAuthUserId),
+  );
+  await denyApproval(
+    "Lifecycle non-owner workspace member",
+    randomUUID(),
+    backupBinding,
+    defaultExpiry,
+    signedOwner(nonOwnerAuthUserId),
+  );
+  await denyApproval(
+    "Revoked lifecycle workspace owner",
+    randomUUID(),
+    backupBinding,
+    defaultExpiry,
+    signedOwner(revokedOwnerAuthUserId),
+  );
+  await denyApproval(
+    "Lifecycle binding with wrong installation",
+    randomUUID(),
+    lifecycleBinding(backupBinding.target as Record<string, unknown>, 2, {
+      vortonInstallationId: otherInstallationId,
+    }),
+    defaultExpiry,
+  );
+  await denyApproval(
+    "Lifecycle binding with wrong workspace",
+    randomUUID(),
+    lifecycleBinding(backupBinding.target as Record<string, unknown>, 3, {
+      workspaceId: otherWorkspaceId,
+    }),
+    defaultExpiry,
+  );
+  await denyApproval(
+    "Lifecycle binding with wrong realm",
+    randomUUID(),
+    lifecycleBinding(backupBinding.target as Record<string, unknown>, 4, {
+      realm: "personal",
+    }),
+    defaultExpiry,
+  );
+  await denyApproval(
+    "Lifecycle binding with unknown action",
+    randomUUID(),
+    lifecycleBinding({ action: "publish" }, 5),
+    defaultExpiry,
+  );
+  const microsecondExpiry = `${defaultExpiry.slice(0, -1)}123Z`;
+  await denyApproval(
+    "Microsecond-precision lifecycle expiry",
+    randomUUID(),
+    backupBinding,
+    microsecondExpiry,
+  );
+
+  const canonicalVector = {
+    z: null,
+    a: {
+      timestamp: "2026-08-30T12:00:00.000Z",
+      uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      integer: 42,
+      array: [3, "x", false],
+      nested: { b: 2, a: 1 },
+    },
+  };
+  const expectedCanonicalVector =
+    '{"a":{"array":[3,"x",false],"integer":42,"nested":{"a":1,"b":2},"timestamp":"2026-08-30T12:00:00.000Z","uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},"z":null}';
+  const expectedCanonicalDigest =
+    "sha256:12b1b0f57cff0749342d1d85bdd5ec6fcbb5f024209ca22b408e31959e5e8c6e";
+  requireCondition(
+    canonicalModuleLifecycleJson(canonicalVector) === expectedCanonicalVector,
+    "TypeScript lifecycle canonical vector changed",
+  );
+  requireCondition(
+    (await moduleLifecycleCanonicalSha256(canonicalVector)) ===
+      expectedCanonicalDigest,
+    "TypeScript lifecycle canonical vector hash changed",
+  );
+  const sqlVector = await admin.query<{ canonical: string; digest: string }>(
+    `select public.vorton_canonical_jsonb($1::jsonb) as canonical,
+            public.vorton_module_lifecycle_hash($1::jsonb) as digest`,
+    [JSON.stringify(canonicalVector)],
+  );
+  requireCondition(
+    sqlVector.rows[0]?.canonical === expectedCanonicalVector &&
+      sqlVector.rows[0]?.digest === expectedCanonicalDigest,
+    "PostgreSQL and TypeScript lifecycle canonical vectors diverged",
+  );
+
+  const backupApprovalId = randomUUID();
+  const backupCreation = await createApproval(
+    backupApprovalId,
+    backupBinding,
+    defaultExpiry,
+  );
+  successfulApprovalIds.push(backupApprovalId);
+  requireCondition(
+    (await hashModuleLifecycleApprovalCore(backupCreation.approval)) ===
+      backupCreation.receipt.approvalHash,
+    "PostgreSQL lifecycle approvalHash differs from TypeScript",
+  );
+  requireCondition(
+    (await hashModuleLifecycleApprovalReceipt(backupCreation.receipt)) ===
+      backupCreation.receipt.receiptHash,
+    "PostgreSQL lifecycle receiptHash differs from TypeScript",
+  );
+  requireCondition(
+    backupCreation.approval.approvalReceiptId ===
+      backupCreation.receipt.receiptId &&
+      backupCreation.approval.approvalReceiptSha256 ===
+        backupCreation.receipt.receiptHash &&
+      Object.values(backupCreation.receipt.effects).every(
+        (effect) => effect === false,
+      ),
+    "Atomic lifecycle approval receipt claims an effect or mismatches approval",
+  );
+  const persistedBackup = await admin.query<{
+    approval_hash: string;
+    approval_record_id: string;
+    approval_receipt_id: string;
+    receipt_hash: string;
+    record_kind: string;
+    record_payload: unknown;
+    record_summary: string;
+    record_classification: string;
+    record_actor_person_id: string;
+    record_work_id: string | null;
+  }>(
+    `select approval.approval_hash,
+            approval.approval_record_id::text,
+            receipt.receipt_id::text as approval_receipt_id,
+            receipt.receipt_hash,
+            record.kind::text as record_kind,
+            record.payload as record_payload,
+            record.summary as record_summary,
+            record.classification::text as record_classification,
+            record.actor_person_id::text as record_actor_person_id,
+            record.work_id::text as record_work_id
+       from public.module_lifecycle_action_approvals approval
+       join public.module_lifecycle_approval_receipts receipt
+         on receipt.installation_id = approval.installation_id
+        and receipt.workspace_id = approval.workspace_id
+        and receipt.approval_id = approval.approval_id
+       join public.records record
+         on record.installation_id = approval.installation_id
+        and record.workspace_id = approval.workspace_id
+        and record.id = approval.approval_record_id
+      where approval.installation_id = $1
+        and approval.workspace_id = $2
+        and approval.approval_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, backupApprovalId],
+  );
+  const persisted = persistedBackup.rows[0];
+  requireCondition(
+    persisted?.approval_hash === backupCreation.receipt.approvalHash &&
+      persisted.receipt_hash === backupCreation.receipt.receiptHash &&
+      persisted.approval_record_id ===
+        backupCreation.approval.approvalRecordId &&
+      persisted.approval_receipt_id === backupCreation.receipt.receiptId &&
+      persisted.record_kind === "approval" &&
+      persisted.record_summary ===
+        "Approved exact module lifecycle backup action" &&
+      persisted.record_classification === "internal" &&
+      persisted.record_actor_person_id === ownerPersonId &&
+      persisted.record_work_id === null &&
+      canonicalModuleLifecycleJson(persisted.record_payload) ===
+        canonicalModuleLifecycleJson(backupCreation.approval),
+    "Lifecycle approval, receipt, and authoritative Record were not atomic",
+  );
+  const exactBackupReplay = await createApproval(
+    backupApprovalId,
+    backupBinding,
+    defaultExpiry,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(exactBackupReplay) ===
+      canonicalModuleLifecycleJson(backupCreation),
+    "Exact lifecycle approval replay did not return immutable authority",
+  );
+  const conflictingBackup = cloneBinding(backupBinding);
+  conflictingBackup.sequence = 2;
+  await denyApproval(
+    "Conflicting lifecycle approval replay",
+    backupApprovalId,
+    conflictingBackup,
+    defaultExpiry,
+  );
+  await admin.query(
+    `update public.workspace_memberships set kind = 'member'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+  );
+  try {
+    await denyApproval(
+      "Exact lifecycle replay after owner revocation",
+      backupApprovalId,
+      backupBinding,
+      defaultExpiry,
+    );
+  } finally {
+    await admin.query(
+      `update public.workspace_memberships set kind = 'owner'
+        where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+      [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+    );
+  }
+
+  const backupReceipt = receiptReference("action-backup-receipt");
+  const recoveryBinding = lifecycleBinding(
+    {
+      action: "recovery",
+      recoveryId: randomUUID(),
+      recoveryNamespace: "tasks-recovery",
+      backupReceipt,
+    },
+    6,
+  );
+  const recoveryApprovalId = randomUUID();
+  await createApproval(recoveryApprovalId, recoveryBinding, expiration());
+  successfulApprovalIds.push(recoveryApprovalId);
+
+  const recoveryReceipt = receiptReference("action-recovery-receipt");
+  const deletionBinding = lifecycleBinding(
+    {
+      action: "deletion",
+      mode: "controlled-fixture",
+      rehearsalId: randomUUID(),
+      controlledFixtureId: randomUUID(),
+      productionDeletion: false,
+      noProductionRecords: true,
+      backupReceipt,
+      recoveryReceipt,
+      surfaces: {
+        database: true,
+        storage: true,
+        memory: true,
+        search: true,
+        backups: true,
+      },
+    },
+    7,
+  );
+  const deletionApprovalId = randomUUID();
+  await createApproval(deletionApprovalId, deletionBinding, expiration());
+  successfulApprovalIds.push(deletionApprovalId);
+
+  const deletionReceipt = receiptReference("action-deletion-receipt");
+  const rollbackBinding = lifecycleBinding(
+    {
+      action: "rollback",
+      rollbackId: randomUUID(),
+      rollbackNamespace: "tasks-rollback",
+      backupReceipt,
+      recoveryReceipt,
+      deletionRehearsalReceipt: deletionReceipt,
+    },
+    8,
+  );
+  const rollbackApprovalId = randomUUID();
+  await createApproval(rollbackApprovalId, rollbackBinding, expiration());
+  successfulApprovalIds.push(rollbackApprovalId);
+
+  const duplicatePrerequisiteId = cloneBinding(deletionBinding);
+  const duplicateIdTarget = duplicatePrerequisiteId.target as Record<
+    string,
+    unknown
+  >;
+  duplicateIdTarget.recoveryReceipt = duplicateIdTarget.backupReceipt;
+  await denyApproval(
+    "Duplicate lifecycle prerequisite receipt identity",
+    randomUUID(),
+    duplicatePrerequisiteId,
+    expiration(),
+  );
+  const duplicatePrerequisiteDigest = cloneBinding(deletionBinding);
+  const duplicateDigestTarget = duplicatePrerequisiteDigest.target as {
+    backupReceipt: { receiptSha256: unknown };
+    recoveryReceipt: { receiptSha256: unknown };
+  };
+  duplicateDigestTarget.recoveryReceipt.receiptSha256 =
+    duplicateDigestTarget.backupReceipt.receiptSha256;
+  await denyApproval(
+    "Duplicate lifecycle prerequisite receipt digest",
+    randomUUID(),
+    duplicatePrerequisiteDigest,
+    expiration(),
+  );
+  const identityHelpers = await admin.query<{
+    approval_record_collision_denied: boolean;
+    approval_receipt_collision_denied: boolean;
+    approval_digest_collision_denied: boolean;
+  }>(
+    `select
+       not public.vorton_module_lifecycle_identities_distinct(
+         $1, $2, $3, $4::jsonb
+       ) as approval_record_collision_denied,
+       not public.vorton_module_lifecycle_identities_distinct(
+         $5, $6, $7, $4::jsonb
+       ) as approval_receipt_collision_denied,
+       not public.vorton_module_lifecycle_receipt_hash_distinct(
+         $8, $4::jsonb
+       ) as approval_digest_collision_denied`,
+    [
+      randomUUID(),
+      backupReceipt.receiptId,
+      randomUUID(),
+      JSON.stringify(recoveryBinding),
+      randomUUID(),
+      randomUUID(),
+      backupReceipt.receiptId,
+      backupReceipt.receiptSha256,
+    ],
+  );
+  requireCondition(
+    identityHelpers.rows[0]?.approval_record_collision_denied &&
+      identityHelpers.rows[0]?.approval_receipt_collision_denied &&
+      identityHelpers.rows[0]?.approval_digest_collision_denied,
+    "PostgreSQL lifecycle identity or digest collision helper accepted reuse",
+  );
+
+  await expectSqlState(
+    admin,
+    `update public.module_lifecycle_action_approvals
+        set binding = binding where installation_id = $1 and approval_id = $2`,
+    [bootstrap.installationId, backupApprovalId],
+    "P0001",
+    "Immutable lifecycle approval update",
+  );
+  await expectSqlState(
+    admin,
+    `delete from public.module_lifecycle_approval_receipts
+      where installation_id = $1 and approval_id = $2`,
+    [bootstrap.installationId, backupApprovalId],
+    "P0001",
+    "Immutable lifecycle approval receipt delete",
+  );
+
+  const expectRoleSqlState = async (
+    role: "anon" | "authenticated" | "aubos_worker",
+    sql: string,
+    values: unknown[],
+    label: string,
+  ): Promise<void> => {
+    const client = await connect(adminDatabaseUrl);
+    try {
+      await client.query("begin");
+      await client.query(`set local role ${role}`);
+      await expectSqlState(client, sql, values, "42501", label);
+    } finally {
+      await client.query("rollback").catch(() => undefined);
+      await client.end();
+    }
+  };
+  for (const role of ["anon", "authenticated", "aubos_worker"] as const) {
+    await expectRoleSqlState(
+      role,
+      "select count(*) from public.module_lifecycle_action_approvals",
+      [],
+      `${role} direct lifecycle approval read`,
+    );
+    await expectRoleSqlState(
+      role,
+      "insert into public.module_lifecycle_approval_receipts default values",
+      [],
+      `${role} direct lifecycle receipt write`,
+    );
+    await expectRoleSqlState(
+      role,
+      "select public.vorton_module_lifecycle_hash('{}'::jsonb)",
+      [],
+      `${role} lifecycle helper execution`,
+    );
+  }
+  for (const role of ["anon", "aubos_worker"] as const) {
+    await expectRoleSqlState(
+      role,
+      createApprovalSql,
+      [
+        randomUUID(),
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        JSON.stringify(backupBinding),
+        expiration(),
+      ],
+      `${role} lifecycle approval function execution`,
+    );
+  }
+
+  const assertApprovalAbsent = async (
+    approvalId: string,
+    recordsBefore: string,
+    label: string,
+  ): Promise<void> => {
+    const result = await admin.query<{
+      approvals: string;
+      receipts: string;
+      records: string;
+    }>(
+      `select
+         (select count(*)::text from public.module_lifecycle_action_approvals
+           where approval_id = $1) as approvals,
+         (select count(*)::text from public.module_lifecycle_approval_receipts
+           where approval_id = $1) as receipts,
+         (select count(*)::text from public.records) as records`,
+      [approvalId],
+    );
+    requireCondition(
+      result.rows[0]?.approvals === "0" &&
+        result.rows[0]?.receipts === "0" &&
+        result.rows[0]?.records === recordsBefore,
+      `${label} did not roll back approval, receipt, and Record atomically`,
+    );
+  };
+  const recordsBeforeReceiptFailure = (
+    await admin.query<{ count: string }>(
+      "select count(*)::text as count from public.records",
+    )
+  ).rows[0]?.count;
+  requireCondition(
+    recordsBeforeReceiptFailure,
+    "PostgreSQL did not count Records before receipt failure",
+  );
+  await admin.query(`
+    create function public.vorton_test_fail_lifecycle_receipt_insert()
+    returns trigger language plpgsql as $$
+    begin
+      raise exception 'Synthetic lifecycle receipt insertion failure';
+    end
+    $$;
+    create trigger vorton_test_fail_lifecycle_receipt_insert
+      before insert on public.module_lifecycle_approval_receipts
+      for each row execute function public.vorton_test_fail_lifecycle_receipt_insert();
+  `);
+  const receiptFailureApprovalId = randomUUID();
+  try {
+    await denyApproval(
+      "Synthetic lifecycle receipt insertion rollback",
+      receiptFailureApprovalId,
+      backupBinding,
+      expiration(),
+    );
+  } finally {
+    await admin.query(`
+      drop trigger vorton_test_fail_lifecycle_receipt_insert
+        on public.module_lifecycle_approval_receipts;
+      drop function public.vorton_test_fail_lifecycle_receipt_insert();
+    `);
+  }
+  await assertApprovalAbsent(
+    receiptFailureApprovalId,
+    recordsBeforeReceiptFailure,
+    "Lifecycle receipt insertion failure",
+  );
+
+  const recordsBeforeRecordFailure = (
+    await admin.query<{ count: string }>(
+      "select count(*)::text as count from public.records",
+    )
+  ).rows[0]?.count;
+  requireCondition(
+    recordsBeforeRecordFailure,
+    "PostgreSQL did not count Records before Record failure",
+  );
+  await admin.query(`
+    create function public.vorton_test_fail_lifecycle_record_insert()
+    returns trigger language plpgsql as $$
+    begin
+      raise exception 'Synthetic lifecycle Record insertion failure';
+    end
+    $$;
+    create trigger vorton_test_fail_lifecycle_record_insert
+      before insert on public.records
+      for each row
+      when (new.summary like 'Approved exact module lifecycle %')
+      execute function public.vorton_test_fail_lifecycle_record_insert();
+  `);
+  const recordFailureApprovalId = randomUUID();
+  try {
+    await denyApproval(
+      "Synthetic lifecycle Record insertion rollback",
+      recordFailureApprovalId,
+      backupBinding,
+      expiration(),
+    );
+  } finally {
+    await admin.query(`
+      drop trigger vorton_test_fail_lifecycle_record_insert on public.records;
+      drop function public.vorton_test_fail_lifecycle_record_insert();
+    `);
+  }
+  await assertApprovalAbsent(
+    recordFailureApprovalId,
+    recordsBeforeRecordFailure,
+    "Lifecycle Record insertion failure",
+  );
+
+  const serializedApprovalId = randomUUID();
+  const serializedExpiry = expiration();
+  const approvalClient = await connect(runtimeDatabaseUrl);
+  const membershipClient = await connect(adminDatabaseUrl);
+  let serializedCreation: ModuleLifecycleApprovalCreation | undefined;
+  try {
+    await approvalClient.query("begin");
+    await setWorkspaceStepUpContext(
+      approvalClient,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      serializedOwnerAuthUserId,
+      Math.floor(Date.now() / 1_000),
+    );
+    await approvalClient.query("set local role authenticated");
+    const creation = await approvalClient.query<{ creation: unknown }>(
+      createApprovalSql,
+      [
+        serializedApprovalId,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        JSON.stringify(backupBinding),
+        serializedExpiry,
+      ],
+    );
+    serializedCreation = await parseModuleLifecycleApprovalCreation(
+      creation.rows[0]?.creation,
+    );
+
+    for (const [label, sql] of [
+      [
+        "Lifecycle owner demotion serialization",
+        `update public.workspace_memberships set kind = 'member'
+          where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+      ],
+      [
+        "Lifecycle owner deletion serialization",
+        `delete from public.workspace_memberships
+          where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+      ],
+    ] as const) {
+      await membershipClient.query("begin");
+      await membershipClient.query("set local lock_timeout = '100ms'");
+      await expectSqlState(
+        membershipClient,
+        sql,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          serializedOwnerPersonId,
+        ],
+        "55P03",
+        label,
+      );
+      await membershipClient.query("rollback");
+    }
+    await approvalClient.query("commit");
+  } catch (error) {
+    await approvalClient.query("rollback").catch(() => undefined);
+    await membershipClient.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await approvalClient.end();
+    await membershipClient.end();
+  }
+  requireCondition(
+    serializedCreation,
+    "Serialized lifecycle approval was not returned",
+  );
+  successfulApprovalIds.push(serializedApprovalId);
+  await admin.query(
+    `delete from public.workspace_memberships
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, serializedOwnerPersonId],
+  );
+  try {
+    await denyApproval(
+      "Exact lifecycle replay after membership deletion",
+      serializedApprovalId,
+      backupBinding,
+      serializedExpiry,
+      signedOwner(serializedOwnerAuthUserId),
+    );
+  } finally {
+    await admin.query(
+      `insert into public.workspace_memberships
+         (installation_id, workspace_id, person_id, kind)
+       values ($1, $2, $3, 'owner')`,
+      [
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        serializedOwnerPersonId,
+      ],
+    );
+  }
+
+  const finalCounts = await tableCounts();
+  for (const [table, before] of baselineCounts) {
+    const after = finalCounts.get(table);
+    if (table === "module_lifecycle_action_approvals") {
+      requireCondition(
+        Number(after) - Number(before) === successfulApprovalIds.length,
+        "Lifecycle approval count does not match successful authority events",
+      );
+    } else if (table === "module_lifecycle_approval_receipts") {
+      requireCondition(
+        Number(after) - Number(before) === successfulApprovalIds.length,
+        "Lifecycle approval receipt count does not match approvals",
+      );
+    } else if (table === "records") {
+      requireCondition(
+        Number(after) - Number(before) === successfulApprovalIds.length,
+        "Lifecycle approval did not write exactly one Record per approval",
+      );
+    } else {
+      requireCondition(
+        after === before,
+        `Lifecycle approval unexpectedly mutated public.${table}`,
+      );
+    }
+  }
+  const actionReceiptTable = await admin.query<{ present: boolean }>(
+    `select to_regclass('public.module_lifecycle_action_receipts') is not null
+      as present`,
+  );
+  requireCondition(
+    !actionReceiptTable.rows[0]?.present,
+    "Approval creation unexpectedly installed an action-consumption ledger",
+  );
+}
+
 async function proveRoleShape(admin: Client): Promise<void> {
   const shape = await admin.query<{
     rolcanlogin: boolean;
@@ -1910,6 +2926,13 @@ async function main(): Promise<void> {
       bootstrap,
     );
     await proveWorkspaceResourceCoexistence(admin, bootstrap, ownerPersonId);
+    await proveModuleLifecycleApprovalBoundary(
+      admin,
+      adminDatabaseUrl,
+      runtimeDatabaseUrl,
+      bootstrap,
+      ownerPersonId,
+    );
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveCouncilResolverFrozenEvidenceRead(runtimeDatabaseUrl, bootstrap);
@@ -1947,6 +2970,19 @@ async function main(): Promise<void> {
             workspaceApplyOwnerDemotionSerialized: true,
             workspaceCreationExactReplaySurvivesOwnerDemotion: true,
             emptyWorkspaceAdditionReceiptBound: true,
+            moduleLifecycleUnsignedAndForgedContextsDenied: true,
+            moduleLifecycleWorkspaceOwnerRevocationLive: true,
+            moduleLifecycleRecentAal2Bound: true,
+            moduleLifecycleMillisecondExpiryExact: true,
+            moduleLifecycleApprovalReceiptAndRecordAtomic: true,
+            moduleLifecycleHashesCrossLanguageCanonical: true,
+            moduleLifecycleIdentityAndDigestReuseDenied: true,
+            moduleLifecycleAuthorityAppendOnly: true,
+            moduleLifecycleDirectAccessAndHelpersDenied: true,
+            moduleLifecycleConflictingReplayDenied: true,
+            moduleLifecycleMembershipMutationSerialized: true,
+            moduleLifecycleFailureRollsBackAtomically: true,
+            moduleLifecycleApprovalHasNoActionEffects: true,
             workerHumanAuthorityDenied: true,
             councilAttemptFenced: true,
             councilStorageDenied: true,

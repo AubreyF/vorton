@@ -38,6 +38,10 @@ const installationAuthorityApiMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000300_installation_authority_api.sql",
   import.meta.url,
 );
+const moduleLifecycleAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000400_module_lifecycle_authority.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -330,5 +334,103 @@ describe("installation authority API migration contract", () => {
     );
     expect(sql).not.toContain("grant execute on function public.apply_");
     expect(sql).not.toContain("workspace_memberships");
+  });
+});
+
+describe("module lifecycle authority migration contract", () => {
+  it("matches the contract canonical JSON and SHA-256 vector", async () => {
+    const sql = await readFile(moduleLifecycleAuthorityMigrationUrl, "utf8");
+    const canonical =
+      '{"a":{"array":[3,"x",false],"integer":42,"nested":{"a":1,"b":2},"timestamp":"2026-08-30T12:00:00.000Z","uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},"z":null}';
+    const digest =
+      "sha256:12b1b0f57cff0749342d1d85bdd5ec6fcbb5f024209ca22b408e31959e5e8c6e";
+
+    expect(sql).toContain(canonical);
+    expect(sql).toContain(digest);
+    expect(sql).toContain("vorton_canonical_jsonb(value)");
+  });
+
+  it("binds exact workspace-owner AAL2 authority and atomic no-effect receipts", async () => {
+    const sql = await readFile(moduleLifecycleAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain("create type public.module_lifecycle_action as enum");
+    for (const action of ["backup", "recovery", "deletion", "rollback"]) {
+      expect(sql).toContain(`'${action}'`);
+    }
+    expect(sql).toContain("vorton_module_lifecycle_binding_valid");
+    expect(sql).toContain("object_key !~ '^[a-z0-9._/-]+$'");
+    expect(sql).toContain("vorton_workspace_step_up_context_valid");
+    expect(sql).toContain("|workspace-person|");
+    expect(sql).toContain(") <= approved_at");
+    expect(sql).toContain("+ interval '10 minutes'");
+    expect(sql).toContain("membership.kind = 'owner'");
+    expect(sql).toContain("for share of membership, workspace, person");
+    expect(sql).toContain("gen_random_uuid()");
+    expect(sql).toContain("module_lifecycle_approvals_distinct_ids");
+    expect(sql).toContain("module_lifecycle_approvals_record_fk");
+    expect(sql).toContain("deferrable initially deferred");
+    expect(sql).toContain(
+      "alter table public.records drop constraint records_workspace_person_fk",
+    );
+    expect(sql).toContain("module_lifecycle_approval_receipts_distinct_ids");
+    expect(sql).toContain("module_lifecycle_approval_receipts_distinct_hashes");
+    expect(sql).toContain('approvalConsumed": false');
+    expect(sql).toContain(
+      "insert into public.module_lifecycle_action_approvals",
+    );
+    expect(sql).toContain(
+      "insert into public.module_lifecycle_approval_receipts",
+    );
+    expect(sql).toContain("insert into public.records");
+    expect(sql).toContain(
+      "public.module_lifecycle_approval_document(approval, receipt)",
+    );
+    expect(sql).toContain("approval_record.kind is distinct from 'approval'");
+    expect(sql).not.toContain("module_lifecycle_approvals_membership_fk");
+    expect(sql).not.toContain("create function public.consume_");
+    expect(sql).not.toContain("create function public.execute_");
+  });
+
+  it("keeps exact replay live, immutable, and narrowly granted", async () => {
+    const sql = await readFile(moduleLifecycleAuthorityMigrationUrl, "utf8");
+
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toContain("approval.binding is distinct from exact_binding");
+    expect(sql).toContain(
+      "approval.expires_at is distinct from target_expires_at",
+    );
+    expect(sql).toContain("target_expires_at is distinct from date_trunc(");
+    expect(sql).toContain(
+      "Module lifecycle approval retry conflicts with immutable authority",
+    );
+    expect(sql).toContain(
+      "Signed workspace-person AAL2 context is required to approve module lifecycle action",
+    );
+    expect(sql).toContain(
+      "Live workspace owner authority is required to approve module lifecycle action",
+    );
+    expect(sql).toContain("Exact module lifecycle binding is invalid");
+    expect(sql).toContain(
+      "Module lifecycle binding does not match workspace authority",
+    );
+    expect(sql).toContain(
+      "Module lifecycle approvals and approval-creation receipts are append-only",
+    );
+    expect(sql).toContain(
+      "alter table public.module_lifecycle_action_approvals enable row level security",
+    );
+    expect(sql).toContain(
+      "alter table public.module_lifecycle_approval_receipts enable row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.module_lifecycle_action_approvals",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.create_module_lifecycle_action_approval",
+    );
+    expect(sql).not.toContain(
+      "grant select on public.module_lifecycle_action_approvals",
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
   });
 });
