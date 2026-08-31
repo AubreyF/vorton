@@ -2,6 +2,8 @@
 
 Vorton separates organizational authority from remembered context. Postgres and immutable source records answer what was decided, approved, assigned, and observed. The memory system helps workers retrieve, connect, consolidate, and reflect on that material.
 
+The durable source-custody and engine-portability rules are recorded in [ADR 0005](decisions/0005-source-custody-and-memory-engine-boundary.md). Omi and other providers supply source material. Hindsight and future engines derive memory behind the Context Gateway. Neither replaces Vorton-owned source history or Postgres authority.
+
 ## Components
 
 ### Source store

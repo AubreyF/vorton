@@ -3,7 +3,12 @@ import { createServer } from "node:http";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AuthenticationError, createSupabaseIdentityVerifier } from "./auth.js";
+import {
+  AuthenticationError,
+  StepUpAuthenticationError,
+  createSupabaseIdentityVerifier,
+  requireRecentAal2,
+} from "./auth.js";
 
 const issuer = "https://abcdefghijklmnopqrst.supabase.co/auth/v1";
 const audience = "authenticated";
@@ -43,7 +48,11 @@ async function fixture() {
     jwksUrl: `http://127.0.0.1:${String(address.port)}`,
   });
   const sign = (subject: string, key = privateKey) =>
-    new SignJWT({ role: "authenticated" })
+    new SignJWT({
+      role: "authenticated",
+      aal: "aal2",
+      auth_time: Math.floor(Date.now() / 1000),
+    })
       .setProtectedHeader({ alg: "ES256", kid: "fixture-key" })
       .setIssuer(issuer)
       .setAudience(audience)
@@ -55,6 +64,19 @@ async function fixture() {
 }
 
 describe("Supabase JWT identity boundary", () => {
+  it("accepts only a recent AAL2 authentication for sensitive actions", () => {
+    const now = 2_000_000_000;
+    expect(() =>
+      requireRecentAal2({ authUserId, aal: "aal2", authTime: now - 60 }, now),
+    ).not.toThrow();
+    expect(() =>
+      requireRecentAal2({ authUserId, aal: "aal1", authTime: now }, now),
+    ).toThrow(StepUpAuthenticationError);
+    expect(() =>
+      requireRecentAal2({ authUserId, aal: "aal2", authTime: now - 601 }, now),
+    ).toThrow(StepUpAuthenticationError);
+  });
+
   it("requires a bearer token", async () => {
     const { verifier } = await fixture();
     await expect(verifier.verify(undefined)).rejects.toBeInstanceOf(
@@ -66,7 +88,7 @@ describe("Supabase JWT identity boundary", () => {
     const { verifier, sign } = await fixture();
     await expect(
       verifier.verify(`Bearer ${await sign(authUserId)}`),
-    ).resolves.toEqual({ authUserId });
+    ).resolves.toMatchObject({ authUserId, aal: "aal2" });
     await expect(
       verifier.verify("Bearer definitely-not-a-jwt"),
     ).rejects.toThrow("invalid");

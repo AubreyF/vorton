@@ -5,6 +5,10 @@ import { AccountMenu } from "./design-system/account-menu.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
 import { HorizontalNavigation } from "./design-system/horizontal-navigation.js";
 import {
+  resolveSelectedWorkspace,
+  WorkspaceSwitcher,
+} from "./design-system/workspace-switcher.js";
+import {
   SectionNavigator,
   type SectionNavigationItem,
 } from "./design-system/section-navigator.js";
@@ -24,7 +28,14 @@ const primarySections = [
 
 type SectionId = (typeof primarySections)[number][0];
 type Installation = RuntimeBootstrap["installations"][number];
-type WorkItem = Installation["workItems"][number];
+type Workspace = Installation["workspaces"][number];
+type WorkItem = Workspace["workItems"][number];
+
+export const WORKSPACE_SELECTION_STORAGE_PREFIX = "vorton.selected-workspace";
+
+export function workspaceSelectionStorageKey(installationId: string) {
+  return `${WORKSPACE_SELECTION_STORAGE_PREFIX}:${installationId}`;
+}
 
 const secondarySections: Record<SectionId, readonly string[]> = {
   command: ["Briefing", "Council", "Decisions", "Activity"],
@@ -99,12 +110,20 @@ function initialSubsection(section: SectionId): string {
 
 export function AuthenticApp() {
   const runtime = useBrowserRuntime();
+  const installation = runtime.bootstrap.installations[0]!;
+  const workspaceStorageKey = workspaceSelectionStorageKey(installation.id);
   const [section, setSection] = useState<SectionId>(initialSection);
   const [subsection, setSubsection] = useState(() =>
     initialSubsection(initialSection()),
   );
-  const installationName =
-    runtime.bootstrap.installations[0]?.displayName ?? "Private installation";
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
+    () => localStorage.getItem(workspaceStorageKey),
+  );
+  const workspace = resolveSelectedWorkspace(
+    installation.workspaces,
+    selectedWorkspaceId,
+  )!;
+  const workspaceName = workspace.displayName;
 
   useEffect(() => {
     const onHashChange = () => {
@@ -117,8 +136,14 @@ export function AuthenticApp() {
   }, []);
 
   useEffect(() => {
-    document.title = installationName;
-  }, [installationName]);
+    document.title = workspaceName;
+  }, [workspaceName]);
+
+  useEffect(() => {
+    if (selectedWorkspaceId === workspace.id) return;
+    setSelectedWorkspaceId(workspace.id);
+    localStorage.setItem(workspaceStorageKey, workspace.id);
+  }, [selectedWorkspaceId, workspace.id, workspaceStorageKey]);
 
   function navigate(next: SectionId) {
     const nextSubsection = secondarySections[next][0]!;
@@ -132,6 +157,13 @@ export function AuthenticApp() {
     setSubsection(next);
   }
 
+  function selectWorkspace(workspaceId: string) {
+    const next = resolveSelectedWorkspace(installation.workspaces, workspaceId);
+    if (!next || next.id !== workspaceId) return;
+    localStorage.setItem(workspaceStorageKey, workspaceId);
+    setSelectedWorkspaceId(workspaceId);
+  }
+
   return (
     <div
       className={`dashboard-shell ${section === "command" || section === "tools" ? "single-level-navigation" : ""}`}
@@ -142,24 +174,21 @@ export function AuthenticApp() {
       </a>
       <header className="topbar">
         <div className="brand-block">
-          <button
-            className="brand-mark"
-            type="button"
-            onClick={() => navigate("command")}
-            aria-label={`${installationName} Command Bridge`}
-          >
-            {installationName}
-          </button>
+          <WorkspaceSwitcher
+            workspaces={installation.workspaces}
+            selectedWorkspace={workspace}
+            onSelect={selectWorkspace}
+          />
         </div>
         <PrimaryNavigation
-          installationName={installationName}
+          workspaceName={workspaceName}
           section={section}
           navigate={navigate}
         />
         <div className="topbar-actions">
           <AccountMenu
             email={runtime.session.user.email}
-            installationName={installationName}
+            installationName={workspaceName}
             onSignOut={() => runtime.signOut()}
           />
         </div>
@@ -171,36 +200,33 @@ export function AuthenticApp() {
           navigate={navigateSubsection}
         />
       )}
-      <PrivacyState
-        installation={runtime.bootstrap.installations[0]?.displayName}
-      />
-      <main id="dashboard-content" className="view-frame" tabIndex={-1}>
+      <PrivacyState workspace={workspaceName} />
+      <main
+        key={workspace.id}
+        id="dashboard-content"
+        className="view-frame"
+        tabIndex={-1}
+      >
         {section === "command" ? (
           <CommandBridgePage
-            installationName={installationName}
-            installation={runtime.bootstrap.installations[0]}
+            vortonInstallationId={installation.id}
+            workspace={workspace}
             subsection={subsection}
             navigate={navigateSubsection}
           />
         ) : section === "tasks" ? (
-          <WorkModule
-            installation={runtime.bootstrap.installations[0]}
-            view={subsection}
-          />
+          <WorkModule workspace={workspace} view={subsection} />
         ) : section === "tools" ? (
           <ToolsView
-            installationName={installationName}
+            installationName={workspaceName}
             view={subsection}
             navigate={navigateSubsection}
           />
         ) : section === "factory" ? (
-          <FactoryModule
-            installationName={installationName}
-            view={subsection}
-          />
+          <FactoryModule installationName={workspaceName} view={subsection} />
         ) : (
           <ModuleFoundation
-            installationName={installationName}
+            installationName={workspaceName}
             section={section}
             view={subsection}
           />
@@ -300,18 +326,18 @@ function FactoryModule({
 }
 
 function PrimaryNavigation({
-  installationName,
+  workspaceName,
   section,
   navigate,
 }: {
-  installationName: string;
+  workspaceName: string;
   section: SectionId;
   navigate: (section: SectionId) => void;
 }) {
   return (
     <HorizontalNavigation
       activeKey={section}
-      label={`${installationName} sections`}
+      label={`${workspaceName} sections`}
       shellClassName="primary-nav-shell"
       navigationClassName="primary-navigation"
       trackClassName="primary-navigation__track"
@@ -368,14 +394,14 @@ function SecondaryNavigation({
 }
 
 function WorkModule({
-  installation,
+  workspace,
   view,
 }: {
-  installation?: Installation;
+  workspace?: Workspace;
   view: string;
 }) {
-  const installationName = installation?.displayName ?? "Private installation";
-  const allWork = installation?.workItems ?? [];
+  const workspaceName = workspace?.displayName ?? "Private workspace";
+  const allWork = workspace?.workItems ?? [];
   const openWork = allWork.filter(
     (work) => work.state !== "completed" && work.state !== "cancelled",
   );
@@ -394,7 +420,7 @@ function WorkModule({
     <section className="work-module">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">{installationName} / Work</p>
+          <p className="eyebrow">{workspaceName} / Work</p>
           <h1>Tasks</h1>
           <p className="lede">
             Governed commitments across people and workers, ordered by declared
@@ -423,7 +449,7 @@ function WorkModule({
           {visibleWork.map((work) => (
             <WorkCard
               key={work.id}
-              installationName={installation?.displayName ?? "Installation"}
+              installationName={workspace?.displayName ?? "Workspace"}
               work={work}
             />
           ))}
@@ -431,7 +457,7 @@ function WorkModule({
       ) : (
         <div className="directional-empty-state">
           <h2>{emptyWorkHeading(view)}</h2>
-          <p>{emptyWorkDetail(view, installationName)}</p>
+          <p>{emptyWorkDetail(view, workspaceName)}</p>
         </div>
       )}
     </section>
@@ -543,18 +569,15 @@ function emptyWorkDetail(view: string, installationName: string): string {
   return `Create Work through an authorized planning flow. ${installationName} will not manufacture tasks from silence.`;
 }
 
-function PrivacyState({ installation }: { installation?: string }) {
+function PrivacyState({ workspace }: { workspace?: string }) {
   return (
-    <div
-      className="privacy-state"
-      aria-label="Private organizational installation"
-    >
+    <div className="privacy-state" aria-label="Private workspace">
       <span className="privacy-shield" aria-hidden="true">
         <svg viewBox="0 0 24 24">
           <path d="M12 3 19 6v5c0 5-3.1 8.3-7 10-3.9-1.7-7-5-7-10V6l7-3Z" />
         </svg>
       </span>
-      {installation ?? "Private installation"}
+      {workspace ?? "Private workspace"}
     </div>
   );
 }
@@ -567,16 +590,17 @@ export function commandSectionIdFromSubsection(subsection: string) {
 }
 
 function CommandBridgePage({
-  installationName,
-  installation,
+  vortonInstallationId,
+  workspace,
   subsection,
   navigate,
 }: {
-  installationName: string;
-  installation?: Installation;
+  vortonInstallationId: string;
+  workspace?: Workspace;
   subsection: string;
   navigate(subsection: string): void;
 }) {
+  const workspaceName = workspace?.displayName ?? "Private workspace";
   return (
     <SectionNavigator
       items={commandBridgeSections}
@@ -589,17 +613,24 @@ function CommandBridgePage({
         className="command-page-section command-page-section-briefing"
         aria-label="Briefing"
       >
-        <CommandBriefing installationName={installationName} />
+        <CommandBriefing
+          vortonInstallationId={vortonInstallationId}
+          workspace={workspace}
+        />
       </section>
       <section
         id="command-council"
         className="command-page-section command-page-section-council"
         aria-label="Council"
       >
-        <ExecutiveCouncil installation={installation} embedded />
+        <ExecutiveCouncil
+          vortonInstallationId={vortonInstallationId}
+          workspace={workspace}
+          embedded
+        />
       </section>
       <CommandDecisions />
-      <CommandActivity installation={installation} />
+      <CommandActivity workspace={workspace} workspaceName={workspaceName} />
     </SectionNavigator>
   );
 }
@@ -634,8 +665,14 @@ function CommandDecisions() {
   );
 }
 
-function CommandActivity({ installation }: { installation?: Installation }) {
-  const recentWork = [...(installation?.workItems ?? [])]
+function CommandActivity({
+  workspace,
+  workspaceName,
+}: {
+  workspace?: Workspace;
+  workspaceName: string;
+}) {
+  const recentWork = [...(workspace?.workItems ?? [])]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 6);
 
@@ -650,8 +687,8 @@ function CommandActivity({ installation }: { installation?: Installation }) {
           <p className="eyebrow">Governed activity</p>
           <h2 id="command-activity-heading">Current organizational change</h2>
           <p>
-            This is the installation-scoped Work projection. It observes
-            declared state and custody without manufacturing an execution log.
+            This is the {workspaceName} Work projection. It observes declared
+            state and custody without manufacturing an execution log.
           </p>
         </div>
         <span className="status-pill status-good">
@@ -684,17 +721,23 @@ function CommandActivity({ installation }: { installation?: Installation }) {
       ) : (
         <div className="directional-empty-state">
           <h3>No governed activity is available</h3>
-          <p>Work will appear here after it enters this installation.</p>
+          <p>Work will appear here after it enters this workspace.</p>
         </div>
       )}
     </section>
   );
 }
 
-function CommandBriefing({ installationName }: { installationName: string }) {
+function CommandBriefing({
+  vortonInstallationId,
+  workspace,
+}: {
+  vortonInstallationId: string;
+  workspace?: Workspace;
+}) {
   const runtime = useBrowserRuntime();
-  const installation = runtime.bootstrap.installations[0];
-  const binding = installation?.proposalBindings[0];
+  const workspaceName = workspace?.displayName ?? "Private workspace";
+  const binding = workspace?.proposalBindings[0];
   const evidence = binding?.evidence ?? [];
   const [objective, setObjective] = useState("");
   const [status, setStatus] = useState<string>();
@@ -710,12 +753,13 @@ function CommandBriefing({ installationName }: { installationName: string }) {
   );
 
   async function requestRecommendation() {
-    if (!installation || !binding || !objective.trim()) return;
+    if (!workspace || !binding || !objective.trim()) return;
     setBusy(true);
     setStatus(undefined);
     try {
       const payload = (await runtime.submitExecutive("proposals", {
-        installationId: installation.id,
+        installationId: vortonInstallationId,
+        workspaceId: workspace.id,
         workId: binding.workId,
         workerId: binding.workerId,
         roleId: binding.roleId,
@@ -754,7 +798,7 @@ function CommandBriefing({ installationName }: { installationName: string }) {
           <p>
             {binding
               ? "One governed executive lane is ready. Zero external actions are authorized."
-              : "No governed executive lane is available for this installation."}
+              : "No governed executive lane is available for this workspace."}
           </p>
         </aside>
       </section>
@@ -785,7 +829,7 @@ function CommandBriefing({ installationName }: { installationName: string }) {
               <AgentPromptButton
                 compact
                 spec={{
-                  installationName,
+                  installationName: workspaceName,
                   kind: "work item",
                   id: binding.workId,
                   title: binding.workTitle,

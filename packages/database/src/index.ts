@@ -11,11 +11,13 @@ export interface SqlExecutor {
 export interface PersonContext {
   authUserId: string;
   installationId: string;
+  workspaceId: string;
 }
 
 export interface WorkerContext {
   workerId: string;
   installationId: string;
+  workspaceId: string;
   credentialId?: string;
 }
 
@@ -56,7 +58,10 @@ export class Database {
     authUserId: string,
     work: TransactionWork<T>,
   ): Promise<T> {
-    return this.#asPerson({ authUserId, installationId: "*" }, work);
+    return this.#asPerson(
+      { authUserId, installationId: "*", workspaceId: "*" },
+      work,
+    );
   }
 
   async #asPerson<T>(
@@ -67,6 +72,7 @@ export class Database {
       await this.#installContext(client, transactionId, {
         kind: "person",
         installationId: context.installationId,
+        workspaceId: context.workspaceId,
         subjectId: context.authUserId,
         credentialId: "",
       });
@@ -86,6 +92,7 @@ export class Database {
       await this.#installContext(client, transactionId, {
         kind: "worker",
         installationId: context.installationId,
+        workspaceId: context.workspaceId,
         subjectId: context.workerId,
         credentialId: context.credentialId ?? "",
       });
@@ -108,6 +115,7 @@ export class Database {
     context: {
       kind: "person" | "worker";
       installationId: string;
+      workspaceId: string;
       subjectId: string;
       credentialId: string;
     },
@@ -116,6 +124,7 @@ export class Database {
       transactionId,
       context.kind,
       context.installationId,
+      context.workspaceId,
       context.subjectId,
       context.credentialId,
     ].join("|");
@@ -125,17 +134,19 @@ export class Database {
     await client.query(
       `select set_config('aubos.context_kind', $1, true),
               set_config('aubos.installation_id', $2, true),
-              set_config('aubos.subject_id', $3, true),
-              set_config('aubos.credential_id', $4, true),
+              set_config('vorton.workspace_id', $3, true),
+              set_config('aubos.subject_id', $4, true),
+              set_config('aubos.credential_id', $5, true),
               set_config('vorton.context_kind', $1, true),
               set_config('vorton.installation_id', $2, true),
-              set_config('vorton.subject_id', $3, true),
-              set_config('vorton.credential_id', $4, true),
-              set_config('aubos.context_signature', $5, true),
-              set_config('vorton.context_signature', $5, true)`,
+              set_config('vorton.subject_id', $4, true),
+              set_config('vorton.credential_id', $5, true),
+              set_config('aubos.context_signature', $6, true),
+              set_config('vorton.context_signature', $6, true)`,
       [
         context.kind,
         context.installationId,
+        context.workspaceId,
         context.subjectId,
         context.credentialId,
         signature,

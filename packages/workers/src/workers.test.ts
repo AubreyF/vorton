@@ -6,6 +6,7 @@ const evidenceRecordId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const roleId = "d37f356b-6297-4cd1-902d-c2755423a612";
 const request = {
   installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   workId: "7fb46f09-3894-4c24-933c-77c7a403341c",
   workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
   role: {
@@ -99,6 +100,7 @@ describe("executive worker providers", () => {
     expect(body).not.toHaveProperty("user");
     expect(body.metadata).toEqual({
       installation_id: request.installationId,
+      workspace_id: request.workspaceId,
       work_id: request.workId,
       worker_id: request.workerId,
       role_sha256: request.role.contentSha256,
@@ -235,6 +237,8 @@ describe("executive worker providers", () => {
       ...request,
       council: {
         protocol: "vorton.executive-council.v1",
+        installationId: request.installationId,
+        workspaceId: request.workspaceId,
         phase: "review",
         roleId,
         workUpdatedAt: "2026-08-30T12:00:00.000Z",
@@ -242,6 +246,8 @@ describe("executive worker providers", () => {
         inputRecordIds: [evidenceRecordId, ...peerIds],
         peerContext: peerIds.map((recordId, index) => ({
           recordId,
+          installationId: request.installationId,
+          workspaceId: request.workspaceId,
           kind: "proposal" as const,
           phase: "proposal" as const,
           roleId: peerRoleIds[index]!,

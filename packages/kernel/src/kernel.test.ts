@@ -11,6 +11,7 @@ import {
 } from "./kernel.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const personId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
@@ -55,7 +56,7 @@ class FakeDatabase {
   }
 }
 
-const actor = { installationId, authUserId };
+const actor = { installationId, workspaceId, authUserId };
 
 function ownerRow() {
   return {
@@ -87,8 +88,8 @@ describe("worker credentials", () => {
       expiresAt: "2026-08-28T12:05:00.000Z",
     });
     const insert = fake.statements[1];
-    expect(insert?.text).toContain("decode($3, 'hex')");
-    expect(insert?.values?.[2]).toMatch(/^[a-f0-9]{64}$/);
+    expect(insert?.text).toContain("decode($4, 'hex')");
+    expect(insert?.values?.[3]).toMatch(/^[a-f0-9]{64}$/);
     expect(insert?.values).not.toContain(result.token);
   });
 
@@ -107,7 +108,7 @@ describe("authority boundaries", () => {
     const fake = new FakeDatabase();
     await new WorkService(fake as unknown as Database).list(actor);
     expect(fake.statements[0]?.text).toContain("where installation_id = $1");
-    expect(fake.statements[0]?.values).toEqual([installationId]);
+    expect(fake.statements[0]?.values).toEqual([installationId, workspaceId]);
   });
 
   it("assigning a role touches no capability grant", async () => {
@@ -130,6 +131,7 @@ describe("authority boundaries", () => {
       actor,
       {
         installationId,
+        workspaceId,
         kind: "evidence",
         summary: "Synthetic evidence",
         payload: { fixture: true },
@@ -151,6 +153,7 @@ describe("authority boundaries", () => {
     await expect(
       service.grant(actor, {
         installationId: "36bb264a-668f-45a6-8da0-6e5cad3fc026",
+        workspaceId,
         policyId: personId,
         principalKind: "worker",
         principalId: workerId,

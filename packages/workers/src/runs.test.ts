@@ -5,6 +5,7 @@ import type { Database, SqlExecutor } from "@vorton/database";
 import { WorkerRunsService } from "./runs.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const workId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const credentialId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
@@ -34,9 +35,10 @@ class FakeDatabase {
   }
 }
 
-const context = { installationId, workerId, credentialId };
+const context = { installationId, workspaceId, workerId, credentialId };
 const request = {
   installationId,
+  workspaceId,
   workId,
   workerId,
   role: {
@@ -65,6 +67,7 @@ const job = {
   store: false,
   background: false,
   installationId,
+  workspaceId,
   workId,
   workerId,
   recommendation: {
@@ -116,7 +119,7 @@ describe("worker run persistence", () => {
       job,
     );
     expect(database.statements[0]?.text).toContain(
-      "set status = $4, error = $5",
+      "set status = $5, error = $6",
     );
     expect(database.statements[0]?.text).not.toContain("recommendation");
   });

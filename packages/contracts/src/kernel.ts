@@ -54,6 +54,7 @@ export const recordActorSchema = z
 
 export const workInputSchema = z.object({
   installationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   title: z.string().trim().min(1).max(240),
   requestedOutcome: z.string().trim().min(1),
   acceptanceCriteria: z.array(z.string().trim().min(1)).default([]),
@@ -63,6 +64,7 @@ export const workInputSchema = z.object({
 
 export const recordInputSchema = z.object({
   installationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   workId: z.string().uuid().nullable().default(null),
   kind: recordKindSchema,
   summary: z.string().trim().min(1),
@@ -74,6 +76,7 @@ export const recordInputSchema = z.object({
 
 export const capabilityGrantInputSchema = z.object({
   installationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   policyId: z.string().uuid(),
   principalKind: principalKindSchema,
   principalId: z.string().uuid(),
@@ -86,6 +89,7 @@ export const capabilityGrantInputSchema = z.object({
 export const workerAdvertisementSchema = z.object({
   workerId: z.string().uuid(),
   installationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   provider: z.string().min(1),
   billingRealm: z.string().min(1),
   host: z.string().min(1),

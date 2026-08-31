@@ -50,6 +50,7 @@ export interface PersonRow extends IdRow {
 
 export interface WorkerRow extends IdRow {
   installation_id: string;
+  workspace_id: string;
   name: string;
   provider: string;
   billing_realm: string;
@@ -67,6 +68,7 @@ export interface WorkerRow extends IdRow {
 
 export interface RoleRow extends IdRow {
   installation_id: string;
+  workspace_id: string;
   name: string;
   version: number;
   skill_markdown: string;
@@ -77,6 +79,7 @@ export interface RoleRow extends IdRow {
 
 export interface WorkRow extends IdRow {
   installation_id: string;
+  workspace_id: string;
   title: string;
   requested_outcome: string;
   acceptance_criteria: string[];
@@ -93,6 +96,7 @@ export interface WorkRow extends IdRow {
 
 export interface PolicyRow extends IdRow {
   installation_id: string;
+  workspace_id: string;
   name: string;
   version: number;
   definition: Record<string, unknown>;
@@ -103,6 +107,7 @@ export interface PolicyRow extends IdRow {
 
 export interface RecordRow extends IdRow {
   installation_id: string;
+  workspace_id: string;
   work_id: string | null;
   kind: RecordInput["kind"];
   summary: string;
@@ -143,10 +148,17 @@ async function requireOwner(
   context: PersonContext,
 ): Promise<PersonRow> {
   const result = await transaction.query<PersonRow>(
-    `select id, installation_id, auth_user_id, display_name, kind, created_at
-       from public.people
-      where installation_id = $1 and auth_user_id = $2 and kind = 'owner'`,
-    [context.installationId, context.authUserId],
+    `select person.id, person.installation_id, person.auth_user_id,
+            person.display_name, person.kind, person.created_at
+       from public.people person
+       join public.workspace_memberships membership
+         on membership.installation_id = person.installation_id
+        and membership.person_id = person.id
+      where person.installation_id = $1
+        and membership.workspace_id = $2
+        and person.auth_user_id = $3
+        and membership.kind = 'owner'`,
+    [context.installationId, context.workspaceId, context.authUserId],
   );
   const person = result.rows[0];
   if (!person) throw new Error("Owner authority is required");
@@ -172,6 +184,13 @@ export class PeopleService {
       );
       const person = result.rows[0];
       if (!person) throw new Error("Person provisioning failed");
+      await transaction.query(
+        `insert into public.workspace_memberships
+          (installation_id, workspace_id, person_id, kind)
+         values ($1, $2, $3, $4)
+         on conflict (workspace_id, person_id) do update set kind = excluded.kind`,
+        [actor.installationId, actor.workspaceId, person.id, kind],
+      );
       return person.id;
     });
   }
@@ -180,10 +199,16 @@ export class PeopleService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<PersonRow>(
         `select id, installation_id, auth_user_id, display_name, kind, created_at
-           from public.people
+           from public.people person
           where installation_id = $1
+            and exists (
+              select 1 from public.workspace_memberships membership
+               where membership.installation_id = person.installation_id
+                 and membership.workspace_id = $2
+                 and membership.person_id = person.id
+            )
           order by created_at, id`,
-        [context.installationId],
+        [context.installationId, context.workspaceId],
       );
       return result.rows;
     });
@@ -194,8 +219,14 @@ export class PeopleService {
       const result = await transaction.query<PersonRow>(
         `select id, installation_id, auth_user_id, display_name, kind, created_at
            from public.people
-          where installation_id = $1 and auth_user_id = $2`,
-        [context.installationId, context.authUserId],
+          where installation_id = $1 and auth_user_id = $3
+            and exists (
+              select 1 from public.workspace_memberships membership
+               where membership.installation_id = people.installation_id
+                 and membership.workspace_id = $2
+                 and membership.person_id = people.id
+            )`,
+        [context.installationId, context.workspaceId, context.authUserId],
       );
       const person = result.rows[0];
       if (!person)
@@ -223,13 +254,13 @@ export class WorkersService {
   list(context: PersonContext): Promise<WorkerRow[]> {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<WorkerRow>(
-        `select id, installation_id, name, provider, billing_realm, host, runtime, model,
+        `select id, installation_id, workspace_id, name, provider, billing_realm, host, runtime, model,
                 advertised_capabilities, data_classification_ceiling, isolation,
                 network_policy, health, last_seen_at, created_at
            from public.workers
-          where installation_id = $1
+          where installation_id = $1 and workspace_id = $2
           order by name, id`,
-        [context.installationId],
+        [context.installationId, context.workspaceId],
       );
       return result.rows;
     });
@@ -256,11 +287,12 @@ export class WorkersService {
       const person = await requireOwner(transaction, actor);
       const result = await transaction.query<IdRow>(
         `insert into public.workers
-          (installation_id, name, provider, billing_realm, host, runtime, model,
+          (installation_id, workspace_id, name, provider, billing_realm, host, runtime, model,
            data_classification_ceiling, isolation, network_policy)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
         [
           actor.installationId,
+          actor.workspaceId,
           input.name,
           input.provider,
           input.billingRealm,
@@ -276,10 +308,11 @@ export class WorkersService {
       if (!worker) throw new Error("Worker registration failed");
       await transaction.query(
         `insert into public.records
-          (installation_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, 'decision', 'Worker registered', $2::jsonb, 'internal', $3)`,
+          (installation_id, workspace_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, 'decision', 'Worker registered', $3::jsonb, 'internal', $4)`,
         [
           actor.installationId,
+          actor.workspaceId,
           JSON.stringify({ workerId: worker.id, name: input.name }),
           person.id,
         ],
@@ -292,7 +325,8 @@ export class WorkersService {
     const advertisement = workerAdvertisementSchema.parse(input);
     if (
       advertisement.workerId !== context.workerId ||
-      advertisement.installationId !== context.installationId
+      advertisement.installationId !== context.installationId ||
+      advertisement.workspaceId !== context.workspaceId
     ) {
       throw new Error(
         "Worker advertisement cannot cross its credential boundary",
@@ -301,13 +335,14 @@ export class WorkersService {
     return this.database.asWorker(context, async (transaction) => {
       await transaction.query(
         `update public.workers
-            set provider = $3, billing_realm = $4, host = $5, runtime = $6,
-                model = $7, advertised_capabilities = $8,
-                data_classification_ceiling = $9, isolation = $10,
-                network_policy = $11, health = $12, last_seen_at = now()
-          where installation_id = $1 and id = $2`,
+            set provider = $4, billing_realm = $5, host = $6, runtime = $7,
+                model = $8, advertised_capabilities = $9,
+                data_classification_ceiling = $10, isolation = $11,
+                network_policy = $12, health = $13, last_seen_at = now()
+          where installation_id = $1 and workspace_id = $2 and id = $3`,
         [
           context.installationId,
+          context.workspaceId,
           context.workerId,
           advertisement.provider,
           advertisement.billingRealm,
@@ -349,11 +384,12 @@ export class WorkersService {
       const person = await requireOwner(transaction, actor);
       const result = await transaction.query<IdRow>(
         `insert into public.worker_credentials
-          (installation_id, worker_id, token_hash, token_hint, issued_at, expires_at, issued_by_person_id)
-         values ($1, $2, decode($3, 'hex'), $4, $5, $6, $7)
+          (installation_id, workspace_id, worker_id, token_hash, token_hint, issued_at, expires_at, issued_by_person_id)
+         values ($1, $2, $3, decode($4, 'hex'), $5, $6, $7, $8)
          returning id`,
         [
           actor.installationId,
+          actor.workspaceId,
           workerId,
           tokenHash,
           tokenHint,
@@ -366,10 +402,11 @@ export class WorkersService {
       if (!credential) throw new Error("Credential issuance failed");
       await transaction.query(
         `insert into public.records
-          (installation_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, 'receipt', 'Worker credential issued', $2::jsonb, 'internal', $3)`,
+          (installation_id, workspace_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, 'receipt', 'Worker credential issued', $3::jsonb, 'internal', $4)`,
         [
           actor.installationId,
+          actor.workspaceId,
           JSON.stringify({
             credentialId: credential.id,
             workerId,
@@ -395,10 +432,12 @@ export class WorkersService {
       const result = await transaction.query<{
         id: string;
         installation_id: string;
+        workspace_id: string;
         worker_id: string;
         expires_at: Date;
       }>(
-        `select credential.id, credential.installation_id, credential.worker_id, credential.expires_at
+        `select credential.id, credential.installation_id, credential.workspace_id,
+                credential.worker_id, credential.expires_at
            from public.worker_credentials credential
           where credential.token_hash = decode($1, 'hex')
             and credential.expires_at > now()
@@ -413,6 +452,7 @@ export class WorkersService {
         ? {
             credentialId: row.id,
             installationId: row.installation_id,
+            workspaceId: row.workspace_id,
             workerId: row.worker_id,
             expiresAt: row.expires_at.toISOString(),
           }
@@ -432,16 +472,23 @@ export class WorkersService {
       const person = await requireOwner(transaction, actor);
       await transaction.query(
         `insert into public.worker_credential_revocations
-          (installation_id, credential_id, revoked_by_person_id, reason)
-         values ($1, $2, $3, $4)`,
-        [actor.installationId, credentialId, person.id, reason],
+          (installation_id, workspace_id, credential_id, revoked_by_person_id, reason)
+         values ($1, $2, $3, $4, $5)`,
+        [
+          actor.installationId,
+          actor.workspaceId,
+          credentialId,
+          person.id,
+          reason,
+        ],
       );
       await transaction.query(
         `insert into public.records
-          (installation_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, 'decision', 'Worker credential revoked', $2::jsonb, 'internal', $3)`,
+          (installation_id, workspace_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, 'decision', 'Worker credential revoked', $3::jsonb, 'internal', $4)`,
         [
           actor.installationId,
+          actor.workspaceId,
           JSON.stringify({ credentialId, reason }),
           person.id,
         ],
@@ -456,12 +503,12 @@ export class RolesService {
   list(context: PersonContext): Promise<RoleRow[]> {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<RoleRow>(
-        `select id, installation_id, name, version, skill_markdown, content_sha256,
+        `select id, installation_id, workspace_id, name, version, skill_markdown, content_sha256,
                 created_by_person_id, created_at
            from public.roles
-          where installation_id = $1
+          where installation_id = $1 and workspace_id = $2
           order by name, version desc`,
-        [context.installationId],
+        [context.installationId, context.workspaceId],
       );
       return result.rows;
     });
@@ -483,11 +530,12 @@ export class RolesService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<IdRow>(
         `insert into public.roles
-          (installation_id, name, version, skill_markdown, content_sha256, created_by_person_id)
-         values ($1, $2, $3, $4, $5, public.current_person_id($1))
+          (installation_id, workspace_id, name, version, skill_markdown, content_sha256, created_by_person_id)
+         values ($1, $2, $3, $4, $5, $6, public.current_workspace_person_id($1, $2))
          returning id`,
         [
           context.installationId,
+          context.workspaceId,
           input.name,
           input.version,
           input.skillMarkdown,
@@ -510,9 +558,9 @@ export class RolesService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<IdRow>(
         `insert into public.worker_role_assignments
-          (installation_id, worker_id, role_id, assigned_by_person_id)
-         values ($1, $2, $3, public.current_person_id($1)) returning id`,
-        [context.installationId, workerId, roleId],
+          (installation_id, workspace_id, worker_id, role_id, assigned_by_person_id)
+         values ($1, $2, $3, $4, public.current_workspace_person_id($1, $2)) returning id`,
+        [context.installationId, context.workspaceId, workerId, roleId],
       );
       const assignment = result.rows[0];
       if (!assignment) throw new Error("Role assignment failed");
@@ -527,14 +575,14 @@ export class WorkService {
   list(context: PersonContext): Promise<WorkRow[]> {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<WorkRow>(
-        `select id, installation_id, title, requested_outcome, acceptance_criteria,
+        `select id, installation_id, workspace_id, title, requested_outcome, acceptance_criteria,
                 state, priority, parent_work_id, requested_by_person_id,
                 custodian_person_id, custodian_worker_id, lease_expires_at,
                 created_at, updated_at
            from public.work
-          where installation_id = $1
+          where installation_id = $1 and workspace_id = $2
           order by priority desc, created_at, id`,
-        [context.installationId],
+        [context.installationId, context.workspaceId],
       );
       return result.rows;
     });
@@ -542,7 +590,10 @@ export class WorkService {
 
   create(context: PersonContext, input: WorkInput): Promise<string> {
     const work = workInputSchema.parse(input);
-    if (work.installationId !== context.installationId) {
+    if (
+      work.installationId !== context.installationId ||
+      work.workspaceId !== context.workspaceId
+    ) {
       throw new Error(
         "Work cannot cross the authenticated installation boundary",
       );
@@ -550,11 +601,13 @@ export class WorkService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<IdRow>(
         `insert into public.work
-          (installation_id, title, requested_outcome, acceptance_criteria, parent_work_id,
+          (installation_id, workspace_id, title, requested_outcome, acceptance_criteria, parent_work_id,
            priority, requested_by_person_id)
-         values ($1, $2, $3, $4::jsonb, $5, $6, public.current_person_id($1)) returning id`,
+         values ($1, $2, $3, $4, $5::jsonb, $6, $7,
+                 public.current_workspace_person_id($1, $2)) returning id`,
         [
           work.installationId,
+          work.workspaceId,
           work.title,
           work.requestedOutcome,
           JSON.stringify(work.acceptanceCriteria),
@@ -581,10 +634,17 @@ export class WorkService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query(
         `update public.work
-            set state = 'leased', custodian_worker_id = $3,
-                custodian_person_id = null, lease_expires_at = $4
-          where installation_id = $1 and id = $2 and state in ('ready', 'review')`,
-        [context.installationId, workId, workerId, expiresAt.toISOString()],
+            set state = 'leased', custodian_worker_id = $4,
+                custodian_person_id = null, lease_expires_at = $5
+          where installation_id = $1 and workspace_id = $2 and id = $3
+            and state in ('ready', 'review')`,
+        [
+          context.installationId,
+          context.workspaceId,
+          workId,
+          workerId,
+          expiresAt.toISOString(),
+        ],
       );
       if (result.rowCount !== 1)
         throw new Error("Work is not available to lease");
@@ -612,12 +672,12 @@ export class PolicyService {
   list(context: PersonContext): Promise<PolicyRow[]> {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<PolicyRow>(
-        `select id, installation_id, name, version, definition, content_sha256,
+        `select id, installation_id, workspace_id, name, version, definition, content_sha256,
                 created_by_person_id, created_at
            from public.policies
-          where installation_id = $1
+          where installation_id = $1 and workspace_id = $2
           order by name, version desc`,
-        [context.installationId],
+        [context.installationId, context.workspaceId],
       );
       return result.rows;
     });
@@ -637,10 +697,12 @@ export class PolicyService {
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<IdRow>(
         `insert into public.policies
-          (installation_id, name, version, definition, content_sha256, created_by_person_id)
-         values ($1, $2, $3, $4::jsonb, $5, public.current_person_id($1)) returning id`,
+          (installation_id, workspace_id, name, version, definition, content_sha256, created_by_person_id)
+         values ($1, $2, $3, $4, $5::jsonb, $6,
+                 public.current_workspace_person_id($1, $2)) returning id`,
         [
           context.installationId,
+          context.workspaceId,
           input.name,
           input.version,
           encoded,
@@ -658,17 +720,22 @@ export class PolicyService {
     input: CapabilityGrantInput,
   ): Promise<string> {
     const grant = capabilityGrantInputSchema.parse(input);
-    if (grant.installationId !== context.installationId) {
+    if (
+      grant.installationId !== context.installationId ||
+      grant.workspaceId !== context.workspaceId
+    ) {
       throw new Error("A capability grant cannot cross installations");
     }
     return await this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<IdRow>(
         `insert into public.capability_grants
-          (installation_id, policy_id, principal_kind, person_id, worker_id, capability,
+          (installation_id, workspace_id, policy_id, principal_kind, person_id, worker_id, capability,
            mode, work_id, expires_at, granted_by_person_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, public.current_person_id($1)) returning id`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 public.current_workspace_person_id($1, $2)) returning id`,
         [
           grant.installationId,
+          grant.workspaceId,
           grant.policyId,
           grant.principalKind,
           grant.principalKind === "person" ? grant.principalId : null,
@@ -683,11 +750,12 @@ export class PolicyService {
       if (!row) throw new Error("Capability grant failed");
       await transaction.query(
         `insert into public.records
-          (installation_id, work_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, $2, 'approval', 'Capability granted', $3::jsonb, 'internal',
-                 public.current_person_id($1))`,
+          (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, $3, 'approval', 'Capability granted', $4::jsonb, 'internal',
+                 public.current_workspace_person_id($1, $2))`,
         [
           grant.installationId,
+          grant.workspaceId,
           grant.workId,
           JSON.stringify({
             grantId: row.id,
@@ -714,16 +782,20 @@ export class PolicyService {
     return this.database.asPerson(context, async (transaction) => {
       await transaction.query(
         `insert into public.capability_grant_revocations
-          (installation_id, grant_id, revoked_by_person_id, reason)
-         values ($1, $2, public.current_person_id($1), $3)`,
-        [context.installationId, grantId, reason],
+          (installation_id, workspace_id, grant_id, revoked_by_person_id, reason)
+         values ($1, $2, $3, public.current_workspace_person_id($1, $2), $4)`,
+        [context.installationId, context.workspaceId, grantId, reason],
       );
       await transaction.query(
         `insert into public.records
-          (installation_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, 'decision', 'Capability grant revoked', $2::jsonb, 'internal',
-                 public.current_person_id($1))`,
-        [context.installationId, JSON.stringify({ grantId, reason })],
+          (installation_id, workspace_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, 'decision', 'Capability grant revoked', $3::jsonb, 'internal',
+                 public.current_workspace_person_id($1, $2))`,
+        [
+          context.installationId,
+          context.workspaceId,
+          JSON.stringify({ grantId, reason }),
+        ],
       );
     });
   }
@@ -736,13 +808,13 @@ export class RecordsService {
     requireUuid(workId, "workId");
     return this.database.asPerson(context, async (transaction) => {
       const result = await transaction.query<RecordRow>(
-        `select id, installation_id, work_id, kind, summary, payload, source_uri,
+        `select id, installation_id, workspace_id, work_id, kind, summary, payload, source_uri,
                 classification, actor_person_id, actor_worker_id,
                 supersedes_record_id, created_at
            from public.records
-          where installation_id = $1 and work_id = $2
+          where installation_id = $1 and workspace_id = $2 and work_id = $3
           order by created_at, id`,
-        [context.installationId, workId],
+        [context.installationId, context.workspaceId, workId],
       );
       return result.rows;
     });
@@ -750,16 +822,27 @@ export class RecordsService {
 
   appendAsPerson(context: PersonContext, input: RecordInput): Promise<string> {
     const record = recordInputSchema.parse(input);
-    if (record.installationId !== context.installationId)
+    if (
+      record.installationId !== context.installationId ||
+      record.workspaceId !== context.workspaceId
+    )
       throw new Error("Record boundary mismatch");
     return this.database.asPerson(context, (transaction) =>
-      this.#append(transaction, record, "public.current_person_id($1)", null),
+      this.#append(
+        transaction,
+        record,
+        "public.current_workspace_person_id($1, $2)",
+        null,
+      ),
     );
   }
 
   appendAsWorker(context: WorkerContext, input: RecordInput): Promise<string> {
     const record = recordInputSchema.parse(input);
-    if (record.installationId !== context.installationId)
+    if (
+      record.installationId !== context.installationId ||
+      record.workspaceId !== context.workspaceId
+    )
       throw new Error("Record boundary mismatch");
     return this.database.asWorker(context, (transaction) =>
       this.#append(transaction, record, null, "public.current_worker_id()"),
@@ -774,12 +857,13 @@ export class RecordsService {
   ): Promise<string> {
     const result = await transaction.query<IdRow>(
       `insert into public.records
-        (installation_id, work_id, kind, summary, payload, source_uri, classification,
+        (installation_id, workspace_id, work_id, kind, summary, payload, source_uri, classification,
          supersedes_record_id, actor_person_id, actor_worker_id)
-       values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8,
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9,
          ${personExpression ?? "null"}, ${workerExpression ?? "null"}) returning id`,
       [
         record.installationId,
+        record.workspaceId,
         record.workId,
         record.kind,
         record.summary,

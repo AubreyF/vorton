@@ -67,6 +67,7 @@ export class FakeExecutiveWorkerAdapter implements ExecutiveWorkerProvider {
         store: false,
         background: request.background,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         recommendation,

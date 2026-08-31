@@ -1571,11 +1571,32 @@
   .command-intro,
   .recommendation-composer,
   .module-intro {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .command-intro > *,
+  .recommendation-composer > *,
+  .module-intro > *,
+  .recommendation-composer label,
+  .recommendation-composer textarea {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .work-summary {
     width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .work-summary > div {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .work-summary > div + div {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 
   .factory-authority-grid,
@@ -1635,6 +1656,31 @@
 
   .section-heading {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .section-heading > *,
+  .command-section-heading > *,
+  .command-lane > header > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .command-section-heading,
+  .command-lane > header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .command-section-heading h2,
+  .section-heading h2,
+  .command-lane h2,
+  .recommendation-composer h2,
+  .directional-empty-state h2,
+  .directional-empty-state h3,
+  .directional-empty-state p,
+  .primary-button {
+    overflow-wrap: anywhere;
   }
 
   .briefing-card,
@@ -1647,6 +1693,11 @@
   .recommendation-composer .primary-button,
   .composer-status {
     grid-column: 1;
+  }
+
+  .recommendation-composer .primary-button {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .evidence-list article {

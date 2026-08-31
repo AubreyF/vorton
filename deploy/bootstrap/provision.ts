@@ -56,6 +56,7 @@ interface SqlClient {
 
 interface Identifiers {
   installationId: string;
+  workspaceId: string;
   personId: string;
   workerId: string;
   roleId: string;
@@ -169,6 +170,7 @@ function deterministicUuid(slugValue: string, kind: string): string {
 function identifiersFor(slugValue: string): Identifiers {
   return {
     installationId: deterministicUuid(slugValue, "installation"),
+    workspaceId: deterministicUuid(slugValue, "workspace"),
     personId: deterministicUuid(slugValue, "owner"),
     workerId: deterministicUuid(slugValue, "executive-worker"),
     roleId: deterministicUuid(slugValue, "strategic-reviewer-role-v1"),
@@ -356,6 +358,12 @@ export function buildBootstrapPlan(
       displayName: config.installationName,
       realm: "organizational",
     },
+    workspace: {
+      id: ids.workspaceId,
+      slug: config.installationSlug,
+      displayName: config.installationName,
+      realm: "organizational",
+    },
     authOwner: { authUserId: "[provided]", kind: "owner" },
     runtimeDatabaseRole: {
       name: config.runtimeRole,
@@ -420,6 +428,24 @@ async function rowValue(
   const result = await client.query<ExistingRow>(
     `select to_jsonb(selected) as value from (select ${columns} from public.${table} where id = $1) selected`,
     [id],
+  );
+  return result.rows[0]?.value;
+}
+
+async function workspaceMembershipValue(
+  client: SqlClient,
+  installationId: string,
+  workspaceId: string,
+  personId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const result = await client.query<ExistingRow>(
+    `select to_jsonb(selected) as value
+       from (
+         select installation_id, workspace_id, person_id, kind
+           from public.workspace_memberships
+          where installation_id = $1 and workspace_id = $2 and person_id = $3
+       ) selected`,
+    [installationId, workspaceId, personId],
   );
   return result.rows[0]?.value;
 }
@@ -662,15 +688,68 @@ export async function provisionInstallation(
   );
 
   await client.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, $3, $4, 'organizational', $5) on conflict do nothing`,
+    [
+      ids.workspaceId,
+      ids.installationId,
+      config.installationSlug,
+      config.installationName,
+      ids.personId,
+    ],
+  );
+  assertExact(
+    "Workspace",
+    await rowValue(
+      client,
+      "workspaces",
+      ids.workspaceId,
+      "id, installation_id, slug, display_name, realm, created_by_person_id",
+    ),
+    {
+      id: ids.workspaceId,
+      installation_id: ids.installationId,
+      slug: config.installationSlug,
+      display_name: config.installationName,
+      realm: "organizational",
+      created_by_person_id: ids.personId,
+    },
+  );
+
+  await client.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner') on conflict do nothing`,
+    [ids.installationId, ids.workspaceId, ids.personId],
+  );
+  assertExact(
+    "Workspace owner membership",
+    await workspaceMembershipValue(
+      client,
+      ids.installationId,
+      ids.workspaceId,
+      ids.personId,
+    ),
+    {
+      installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
+      person_id: ids.personId,
+      kind: "owner",
+    },
+  );
+
+  await client.query(
     `insert into public.workers
-       (id, installation_id, name, provider, billing_realm, host, runtime, model,
+       (id, installation_id, workspace_id, name, provider, billing_realm, host, runtime, model,
         advertised_capabilities, data_classification_ceiling, isolation, network_policy, health)
-     values ($1, $2, $3, $4, $5, 'fly.io', $4, $6,
-             array['executive.propose'], $7, 'separate-service', 'private-api-only', 'offline')
+     values ($1, $2, $3, $4, $5, $6, 'fly.io', $5, $7,
+             array['executive.propose'], $8, 'separate-service', 'private-api-only', 'offline')
      on conflict do nothing`,
     [
       ids.workerId,
       ids.installationId,
+      ids.workspaceId,
       config.workerName,
       config.provider,
       config.billingRealm,
@@ -684,12 +763,13 @@ export async function provisionInstallation(
       client,
       "workers",
       ids.workerId,
-      `id, installation_id, name, provider, billing_realm, host, runtime, model,
+      `id, installation_id, workspace_id, name, provider, billing_realm, host, runtime, model,
        advertised_capabilities, data_classification_ceiling, isolation, network_policy, health`,
     ),
     {
       id: ids.workerId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       name: config.workerName,
       provider: config.provider,
       billing_realm: config.billingRealm,
@@ -707,11 +787,12 @@ export async function provisionInstallation(
   const roleHash = sha256(config.roleSkillMarkdown);
   await client.query(
     `insert into public.roles
-       (id, installation_id, name, version, skill_markdown, content_sha256, created_by_person_id)
-     values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing`,
+       (id, installation_id, workspace_id, name, version, skill_markdown, content_sha256, created_by_person_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,
     [
       ids.roleId,
       ids.installationId,
+      ids.workspaceId,
       config.roleName,
       config.roleVersion,
       config.roleSkillMarkdown,
@@ -725,11 +806,12 @@ export async function provisionInstallation(
       client,
       "roles",
       ids.roleId,
-      "id, installation_id, name, version, skill_markdown, content_sha256, created_by_person_id",
+      "id, installation_id, workspace_id, name, version, skill_markdown, content_sha256, created_by_person_id",
     ),
     {
       id: ids.roleId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       name: config.roleName,
       version: config.roleVersion,
       skill_markdown: config.roleSkillMarkdown,
@@ -744,9 +826,16 @@ export async function provisionInstallation(
   );
   await client.query(
     `insert into public.worker_role_assignments
-       (id, installation_id, worker_id, role_id, assigned_by_person_id)
-     values ($1, $2, $3, $4, $5) on conflict do nothing`,
-    [assignmentId, ids.installationId, ids.workerId, ids.roleId, ids.personId],
+       (id, installation_id, workspace_id, worker_id, role_id, assigned_by_person_id)
+     values ($1, $2, $3, $4, $5, $6) on conflict do nothing`,
+    [
+      assignmentId,
+      ids.installationId,
+      ids.workspaceId,
+      ids.workerId,
+      ids.roleId,
+      ids.personId,
+    ],
   );
   assertExact(
     "Worker role assignment",
@@ -754,11 +843,12 @@ export async function provisionInstallation(
       client,
       "worker_role_assignments",
       assignmentId,
-      "id, installation_id, worker_id, role_id, assigned_by_person_id",
+      "id, installation_id, workspace_id, worker_id, role_id, assigned_by_person_id",
     ),
     {
       id: assignmentId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       worker_id: ids.workerId,
       role_id: ids.roleId,
       assigned_by_person_id: ids.personId,
@@ -774,12 +864,13 @@ export async function provisionInstallation(
   const policyEncoded = JSON.stringify(canonical(policyDefinition));
   await client.query(
     `insert into public.policies
-       (id, installation_id, name, version, definition, content_sha256, created_by_person_id)
-     values ($1, $2, 'Executive recommendation only', 1, $3::jsonb, $4, $5)
+       (id, installation_id, workspace_id, name, version, definition, content_sha256, created_by_person_id)
+     values ($1, $2, $3, 'Executive recommendation only', 1, $4::jsonb, $5, $6)
      on conflict do nothing`,
     [
       ids.policyId,
       ids.installationId,
+      ids.workspaceId,
       policyEncoded,
       sha256(policyEncoded),
       ids.personId,
@@ -791,11 +882,12 @@ export async function provisionInstallation(
       client,
       "policies",
       ids.policyId,
-      "id, installation_id, name, version, definition, content_sha256, created_by_person_id",
+      "id, installation_id, workspace_id, name, version, definition, content_sha256, created_by_person_id",
     ),
     {
       id: ids.policyId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       name: "Executive recommendation only",
       version: 1,
       definition: policyDefinition,
@@ -806,13 +898,14 @@ export async function provisionInstallation(
 
   await client.query(
     `insert into public.work
-       (id, installation_id, title, requested_outcome, acceptance_criteria, state,
+       (id, installation_id, workspace_id, title, requested_outcome, acceptance_criteria, state,
         priority, requested_by_person_id)
-     values ($1, $2, $3, $4, $5::jsonb, 'ready', 70, $6)
+     values ($1, $2, $3, $4, $5, $6::jsonb, 'ready', 70, $7)
      on conflict do nothing`,
     [
       ids.workId,
       ids.installationId,
+      ids.workspaceId,
       config.workTitle,
       config.requestedOutcome,
       JSON.stringify(["Produce one evidence-cited structured recommendation."]),
@@ -825,11 +918,12 @@ export async function provisionInstallation(
       client,
       "work",
       ids.workId,
-      "id, installation_id, title, requested_outcome, acceptance_criteria, state, priority, requested_by_person_id",
+      "id, installation_id, workspace_id, title, requested_outcome, acceptance_criteria, state, priority, requested_by_person_id",
     ),
     {
       id: ids.workId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       title: config.workTitle,
       requested_outcome: config.requestedOutcome,
       acceptance_criteria: [
@@ -843,13 +937,14 @@ export async function provisionInstallation(
 
   await client.query(
     `insert into public.capability_grants
-       (id, installation_id, policy_id, principal_kind, worker_id, capability,
+       (id, installation_id, workspace_id, policy_id, principal_kind, worker_id, capability,
         mode, work_id, granted_by_person_id)
-     values ($1, $2, $3, 'worker', $4, 'executive.propose', 'recommend', $5, $6)
+     values ($1, $2, $3, $4, 'worker', $5, 'executive.propose', 'recommend', $6, $7)
      on conflict do nothing`,
     [
       ids.grantId,
       ids.installationId,
+      ids.workspaceId,
       ids.policyId,
       ids.workerId,
       ids.workId,
@@ -862,12 +957,13 @@ export async function provisionInstallation(
       client,
       "capability_grants",
       ids.grantId,
-      `id, installation_id, policy_id, principal_kind, person_id, worker_id,
+      `id, installation_id, workspace_id, policy_id, principal_kind, person_id, worker_id,
        capability, mode, work_id, expires_at, granted_by_person_id`,
     ),
     {
       id: ids.grantId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       policy_id: ids.policyId,
       principal_kind: "worker",
       person_id: null,
@@ -882,13 +978,14 @@ export async function provisionInstallation(
 
   await client.query(
     `insert into public.records
-       (id, installation_id, work_id, kind, summary, payload, source_uri,
+       (id, installation_id, workspace_id, work_id, kind, summary, payload, source_uri,
         classification, actor_person_id)
-     values ($1, $2, $3, 'evidence', $4, $5::jsonb, $6, $7, $8)
+     values ($1, $2, $3, $4, 'evidence', $5, $6::jsonb, $7, $8, $9)
      on conflict do nothing`,
     [
       ids.evidenceId,
       ids.installationId,
+      ids.workspaceId,
       ids.workId,
       config.evidenceSummary,
       JSON.stringify({ bootstrap: true, syntheticDefault: true }),
@@ -903,12 +1000,13 @@ export async function provisionInstallation(
       client,
       "records",
       ids.evidenceId,
-      `id, installation_id, work_id, kind, summary, payload, source_uri,
+      `id, installation_id, workspace_id, work_id, kind, summary, payload, source_uri,
        classification, actor_person_id, actor_worker_id, supersedes_record_id`,
     ),
     {
       id: ids.evidenceId,
       installation_id: ids.installationId,
+      workspace_id: ids.workspaceId,
       work_id: ids.workId,
       kind: "evidence",
       summary: config.evidenceSummary,
@@ -952,6 +1050,7 @@ export async function applyBootstrap(
     return {
       status: "applied",
       installationId: ids.installationId,
+      workspaceId: ids.workspaceId,
       workId: ids.workId,
       workerId: ids.workerId,
       roleId: ids.roleId,

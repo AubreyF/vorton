@@ -7,9 +7,9 @@ import {
 } from "./runtime.js";
 
 type Installation = RuntimeBootstrap["installations"][number];
-type WorkItem = Installation["workItems"][number];
-type EvidenceItem =
-  Installation["proposalBindings"][number]["evidence"][number];
+type Workspace = Installation["workspaces"][number];
+type WorkItem = Workspace["workItems"][number];
+type EvidenceItem = Workspace["proposalBindings"][number]["evidence"][number];
 
 export const EXECUTIVE_COUNCIL_ROLES = [
   "Chief Executive Officer",
@@ -20,8 +20,8 @@ export const EXECUTIVE_COUNCIL_ROLES = [
 ] as const;
 
 interface CouncilSurfaceProps {
-  installationName: string;
-  installationKind: Installation["personKind"];
+  workspaceName: string;
+  membershipKind: Workspace["personKind"];
   workItems: WorkItem[];
   selectedWorkId: string;
   evidence: EvidenceItem[];
@@ -35,22 +35,24 @@ interface CouncilSurfaceProps {
 }
 
 export function ExecutiveCouncil({
-  installation,
+  vortonInstallationId,
+  workspace,
   embedded = false,
 }: {
-  installation?: Installation;
+  vortonInstallationId: string;
+  workspace?: Workspace;
   embedded?: boolean;
 }) {
   const runtime = useBrowserRuntime();
   const workItems = useMemo(
     () =>
-      (installation?.workItems ?? []).filter(
+      (workspace?.workItems ?? []).filter(
         (work) => work.state !== "completed" && work.state !== "cancelled",
       ),
-    [installation],
+    [workspace],
   );
   const [selectedWorkId, setSelectedWorkId] = useState(
-    installation?.proposalBindings[0]?.workId ?? workItems[0]?.id ?? "",
+    workspace?.proposalBindings[0]?.workId ?? workItems[0]?.id ?? "",
   );
   const [council, setCouncil] = useState<ExecutiveCouncilState>();
   const [loading, setLoading] = useState(false);
@@ -58,7 +60,7 @@ export function ExecutiveCouncil({
   const [failure, setFailure] = useState<string>();
 
   useEffect(() => {
-    if (!installation || !selectedWorkId) {
+    if (!workspace || !selectedWorkId) {
       setCouncil(undefined);
       return;
     }
@@ -69,7 +71,7 @@ export function ExecutiveCouncil({
       existing?.work.id === selectedWorkId ? existing : undefined,
     );
     void runtime
-      .getExecutiveCouncil(selectedWorkId, installation.id)
+      .getExecutiveCouncil(selectedWorkId, vortonInstallationId, workspace.id)
       .then((state) => {
         if (current) setCouncil(state);
       })
@@ -87,15 +89,15 @@ export function ExecutiveCouncil({
     return () => {
       current = false;
     };
-  }, [installation, runtime, selectedWorkId]);
+  }, [runtime, selectedWorkId, vortonInstallationId, workspace]);
 
   const evidence =
-    installation?.proposalBindings.find(
+    workspace?.proposalBindings.find(
       (binding) => binding.workId === selectedWorkId,
     )?.evidence ?? [];
 
   async function convene() {
-    if (!installation || !selectedWorkId || running) return;
+    if (!workspace || !selectedWorkId || running) return;
     setRunning(true);
     setFailure(undefined);
     try {
@@ -103,12 +105,18 @@ export function ExecutiveCouncil({
         council ??
         (await runtime.installExecutiveCouncil(
           selectedWorkId,
-          installation.id,
+          vortonInstallationId,
+          workspace.id,
         ));
       setCouncil(startingState);
       const completed = await advanceCouncilUntilSettled(
         startingState,
-        () => runtime.advanceExecutiveCouncil(selectedWorkId, installation.id),
+        () =>
+          runtime.advanceExecutiveCouncil(
+            selectedWorkId,
+            vortonInstallationId,
+            workspace.id,
+          ),
         setCouncil,
       );
       setCouncil(completed);
@@ -126,8 +134,8 @@ export function ExecutiveCouncil({
 
   return (
     <CouncilSurface
-      installationName={installation?.displayName ?? "Private installation"}
-      installationKind={installation?.personKind ?? "member"}
+      workspaceName={workspace?.displayName ?? "Private workspace"}
+      membershipKind={workspace?.personKind ?? "member"}
       workItems={workItems}
       selectedWorkId={selectedWorkId}
       evidence={evidence}
@@ -170,8 +178,8 @@ export async function advanceCouncilUntilSettled(
 }
 
 export function CouncilSurface({
-  installationName,
-  installationKind,
+  workspaceName,
+  membershipKind,
   workItems,
   selectedWorkId,
   evidence,
@@ -206,9 +214,7 @@ export function CouncilSurface({
     <section className="council-module">
       <header className="module-intro">
         <div>
-          <p className="eyebrow">
-            {installationName} / Command Bridge / Council
-          </p>
+          <p className="eyebrow">{workspaceName} / Command Bridge / Council</p>
           <IntroHeading>Executive council</IntroHeading>
           <p className="lede">
             Five role skills examine one governed agenda independently, review
@@ -439,7 +445,7 @@ export function CouncilSurface({
                 running ||
                 !selectedWork ||
                 council?.phase === "complete" ||
-                installationKind !== "owner"
+                membershipKind !== "owner"
               }
               onClick={onConvene}
             >

@@ -29,6 +29,7 @@ export type AdmitSourceInput = Omit<
 export type ConsolidationLineage = {
   derivedMemoryId: string;
   installationId: string;
+  workspaceId: string;
   sourceRevisionIds: string[];
   parentMemoryIds: string[];
   createdAt: string;
@@ -53,7 +54,7 @@ export class ContextGateway {
   readonly #clock: GatewayClock;
   readonly #sources = new Map<string, AdmitSourceInput & SourceRevision>();
   readonly #deletedSources = new Map<string, string>();
-  readonly #installationRealms = new Map<string, InstallationRealm>();
+  readonly #workspaceRealms = new Map<string, InstallationRealm>();
   readonly #latestByObject = new Map<string, string>();
   readonly #lineage = new Map<string, ConsolidationLineage>();
   readonly #receipts: RetrievalReceipt[] = [];
@@ -65,7 +66,11 @@ export class ContextGateway {
   }
 
   async admit(input: AdmitSourceInput): Promise<SourceRevision> {
-    this.#assertRealm(input.installationId, input.installationRealm);
+    this.#assertRealm(
+      input.installationId,
+      input.workspaceId,
+      input.installationRealm,
+    );
     const expectedBoundary = realmBoundary(input.installationRealm);
     const admissionState: AdmissionState =
       input.boundary === "mixed" || input.boundary !== expectedBoundary
@@ -74,7 +79,7 @@ export class ContextGateway {
     const objectKey = this.#objectKey(input);
     const priorId = this.#latestByObject.get(objectKey) ?? null;
     const existing = this.#sources.get(
-      this.#sourceKey(input.installationId, input.id),
+      this.#sourceKey(input.installationId, input.workspaceId, input.id),
     );
     if (existing) return stripContent(existing);
 
@@ -85,7 +90,7 @@ export class ContextGateway {
       deletedAt: null,
     };
     this.#sources.set(
-      this.#sourceKey(input.installationId, input.id),
+      this.#sourceKey(input.installationId, input.workspaceId, input.id),
       revision,
     );
     this.#latestByObject.set(objectKey, input.id);
@@ -93,12 +98,17 @@ export class ContextGateway {
     if (priorId)
       await this.#invalidate(
         input.installationId,
+        input.workspaceId,
         input.installationRealm,
         priorId,
       );
     if (admissionState === "admitted") {
       await this.#hindsight.retain(
-        this.#bank(input.installationId, input.installationRealm),
+        this.#bank(
+          input.installationId,
+          input.workspaceId,
+          input.installationRealm,
+        ),
         {
           id: `source:${input.id}`,
           text: input.text,
@@ -114,13 +124,18 @@ export class ContextGateway {
 
   async consolidate(input: {
     installationId: string;
+    workspaceId: string;
     installationRealm: InstallationRealm;
     derivedMemoryId: string;
     text: string;
     sourceRevisionIds: string[];
     parentMemoryIds?: string[];
   }): Promise<ConsolidationLineage> {
-    this.#assertRealm(input.installationId, input.installationRealm);
+    this.#assertRealm(
+      input.installationId,
+      input.workspaceId,
+      input.installationRealm,
+    );
     if (input.sourceRevisionIds.length === 0) {
       throw new Error(
         "Consolidation requires at least one canonical source revision",
@@ -128,11 +143,12 @@ export class ContextGateway {
     }
     for (const parentId of input.parentMemoryIds ?? []) {
       const parent = this.#lineage.get(
-        this.#lineageKey(input.installationId, parentId),
+        this.#lineageKey(input.installationId, input.workspaceId, parentId),
       );
       if (
         !parent ||
         parent.installationId !== input.installationId ||
+        parent.workspaceId !== input.workspaceId ||
         parent.invalidatedAt
       ) {
         throw new Error(
@@ -142,12 +158,14 @@ export class ContextGateway {
     }
     const sources = input.sourceRevisionIds.map((id) => {
       const source = this.#sources.get(
-        this.#sourceKey(input.installationId, id),
+        this.#sourceKey(input.installationId, input.workspaceId, id),
       );
       if (
         !source ||
         source.admissionState !== "admitted" ||
-        this.#deletedSources.has(this.#sourceKey(input.installationId, id))
+        this.#deletedSources.has(
+          this.#sourceKey(input.installationId, input.workspaceId, id),
+        )
       ) {
         throw new Error(
           `Source revision ${id} is not active admitted material`,
@@ -167,17 +185,26 @@ export class ContextGateway {
     const lineage: ConsolidationLineage = {
       derivedMemoryId: input.derivedMemoryId,
       installationId: input.installationId,
+      workspaceId: input.workspaceId,
       sourceRevisionIds: [...input.sourceRevisionIds],
       parentMemoryIds: [...(input.parentMemoryIds ?? [])],
       createdAt: this.#clock.now(),
       invalidatedAt: null,
     };
     this.#lineage.set(
-      this.#lineageKey(input.installationId, input.derivedMemoryId),
+      this.#lineageKey(
+        input.installationId,
+        input.workspaceId,
+        input.derivedMemoryId,
+      ),
       lineage,
     );
     await this.#hindsight.retain(
-      this.#bank(input.installationId, input.installationRealm),
+      this.#bank(
+        input.installationId,
+        input.workspaceId,
+        input.installationRealm,
+      ),
       {
         id: input.derivedMemoryId,
         text: input.text,
@@ -192,15 +219,25 @@ export class ContextGateway {
 
   async retrieve(input: {
     installationId: string;
+    workspaceId: string;
     installationRealm: InstallationRealm;
     query: string;
   }): Promise<RetrievalResult> {
-    this.#assertRealm(input.installationId, input.installationRealm);
-    const bank = this.#bank(input.installationId, input.installationRealm);
+    this.#assertRealm(
+      input.installationId,
+      input.workspaceId,
+      input.installationRealm,
+    );
+    const bank = this.#bank(
+      input.installationId,
+      input.workspaceId,
+      input.installationRealm,
+    );
     const memories = await this.#hindsight.retrieve(bank, input.query);
     const admittedMemories = memories.flatMap((memory) => {
       const context = this.#toUntrustedContext(
         input.installationId,
+        input.workspaceId,
         input.installationRealm,
         memory,
       );
@@ -209,9 +246,10 @@ export class ContextGateway {
     this.#receiptSequence += 1;
     const receipt: RetrievalReceipt = {
       id: deterministicUuid(
-        `receipt:${this.#clock.now()}:${input.installationId}:${input.query}:${this.#receiptSequence}`,
+        `receipt:${this.#clock.now()}:${input.installationId}:${input.workspaceId}:${input.query}:${this.#receiptSequence}`,
       ),
       installationId: input.installationId,
+      workspaceId: input.workspaceId,
       bankId: bank.id,
       queryHash: sha256(input.query),
       resultIds: admittedMemories.map(({ memory }) => memory.id),
@@ -231,20 +269,34 @@ export class ContextGateway {
 
   async deleteSource(input: {
     installationId: string;
+    workspaceId: string;
     installationRealm: InstallationRealm;
     sourceRevisionId: string;
   }): Promise<void> {
-    this.#assertRealm(input.installationId, input.installationRealm);
+    this.#assertRealm(
+      input.installationId,
+      input.workspaceId,
+      input.installationRealm,
+    );
     const source = this.#sources.get(
-      this.#sourceKey(input.installationId, input.sourceRevisionId),
+      this.#sourceKey(
+        input.installationId,
+        input.workspaceId,
+        input.sourceRevisionId,
+      ),
     );
     if (!source || source.installationRealm !== input.installationRealm) return;
     this.#deletedSources.set(
-      this.#sourceKey(input.installationId, input.sourceRevisionId),
+      this.#sourceKey(
+        input.installationId,
+        input.workspaceId,
+        input.sourceRevisionId,
+      ),
       this.#clock.now(),
     );
     await this.#invalidate(
       input.installationId,
+      input.workspaceId,
       input.installationRealm,
       input.sourceRevisionId,
     );
@@ -252,36 +304,41 @@ export class ContextGateway {
 
   getLineage(
     installationId: string,
+    workspaceId: string,
     derivedMemoryId: string,
   ): ConsolidationLineage | null {
     const lineage = this.#lineage.get(
-      this.#lineageKey(installationId, derivedMemoryId),
+      this.#lineageKey(installationId, workspaceId, derivedMemoryId),
     );
     return lineage ? structuredClone(lineage) : null;
   }
 
-  getReceipts(installationId: string): RetrievalReceipt[] {
+  getReceipts(installationId: string, workspaceId: string): RetrievalReceipt[] {
     return structuredClone(
       this.#receipts.filter(
-        (receipt) => receipt.installationId === installationId,
+        (receipt) =>
+          receipt.installationId === installationId &&
+          receipt.workspaceId === workspaceId,
       ),
     );
   }
 
   async #invalidate(
     installationId: string,
+    workspaceId: string,
     realm: InstallationRealm,
     sourceRevisionId: string,
   ): Promise<void> {
     const at = this.#clock.now();
     await this.#hindsight.invalidateSource(
-      this.#bank(installationId, realm),
+      this.#bank(installationId, workspaceId, realm),
       sourceRevisionId,
       at,
     );
     for (const lineage of this.#lineage.values()) {
       if (
         lineage.installationId === installationId &&
+        lineage.workspaceId === workspaceId &&
         lineage.sourceRevisionIds.includes(sourceRevisionId)
       ) {
         lineage.invalidatedAt = at;
@@ -289,26 +346,41 @@ export class ContextGateway {
     }
   }
 
-  #bank(installationId: string, realm: InstallationRealm): HindsightBank {
-    return installationHindsightBank(installationId, realm);
+  #bank(
+    installationId: string,
+    workspaceId: string,
+    realm: InstallationRealm,
+  ): HindsightBank {
+    return installationHindsightBank(`${installationId}:${workspaceId}`, realm);
   }
 
-  #sourceKey(installationId: string, sourceRevisionId: string): string {
-    return `${installationId}\u0000${sourceRevisionId}`;
+  #sourceKey(
+    installationId: string,
+    workspaceId: string,
+    sourceRevisionId: string,
+  ): string {
+    return `${installationId}\u0000${workspaceId}\u0000${sourceRevisionId}`;
   }
 
-  #lineageKey(installationId: string, derivedMemoryId: string): string {
-    return `${installationId}\u0000${derivedMemoryId}`;
+  #lineageKey(
+    installationId: string,
+    workspaceId: string,
+    derivedMemoryId: string,
+  ): string {
+    return `${installationId}\u0000${workspaceId}\u0000${derivedMemoryId}`;
   }
 
   #toUntrustedContext(
     installationId: string,
+    workspaceId: string,
     realm: InstallationRealm,
     memory: HindsightMemory,
   ): RetrievedContext | null {
     if (memory.sourceRevisionIds.length === 0) return null;
     const sources = memory.sourceRevisionIds.map((sourceRevisionId) =>
-      this.#sources.get(this.#sourceKey(installationId, sourceRevisionId)),
+      this.#sources.get(
+        this.#sourceKey(installationId, workspaceId, sourceRevisionId),
+      ),
     );
     if (
       sources.some(
@@ -316,7 +388,9 @@ export class ContextGateway {
           !source ||
           source.admissionState !== "admitted" ||
           source.installationRealm !== realm ||
-          this.#deletedSources.has(this.#sourceKey(installationId, source.id)),
+          this.#deletedSources.has(
+            this.#sourceKey(installationId, workspaceId, source.id),
+          ),
       )
     ) {
       return null;
@@ -344,23 +418,28 @@ export class ContextGateway {
     return parsed.success ? parsed.data : null;
   }
 
-  #assertRealm(installationId: string, realm: InstallationRealm): void {
-    const established = this.#installationRealms.get(installationId);
+  #assertRealm(
+    installationId: string,
+    workspaceId: string,
+    realm: InstallationRealm,
+  ): void {
+    const key = `${installationId}\u0000${workspaceId}`;
+    const established = this.#workspaceRealms.get(key);
     if (established && established !== realm) {
       throw new Error(
-        "An installation cannot cross personal and organizational realms",
+        "A workspace cannot cross personal and organizational realms",
       );
     }
-    this.#installationRealms.set(installationId, realm);
+    this.#workspaceRealms.set(key, realm);
   }
 
   #objectKey(
     input: Pick<
       AdmitSourceInput,
-      "installationId" | "sourceType" | "sourceObjectId"
+      "installationId" | "workspaceId" | "sourceType" | "sourceObjectId"
     >,
   ): string {
-    return `${input.installationId}\u0000${input.sourceType}\u0000${input.sourceObjectId}`;
+    return `${input.installationId}\u0000${input.workspaceId}\u0000${input.sourceType}\u0000${input.sourceObjectId}`;
   }
 }
 

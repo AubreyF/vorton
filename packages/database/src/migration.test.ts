@@ -26,6 +26,10 @@ const executiveCouncilMigrationUrl = new URL(
   "../../../supabase/migrations/20260828000500_executive_council.sql",
   import.meta.url,
 );
+const workspaceMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000100_workspaces.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -198,5 +202,36 @@ describe("memory and conversations migration contract", () => {
     expect(sql).toContain("Canonical transcript revision accepted mutation");
     expect(sql).toContain("New installation omitted an explicit realm");
     expect(sql).toContain("Unknown installation accepted a source connection");
+  });
+});
+
+describe("workspace migration contract", () => {
+  it("makes workspace realm authoritative for sources and memory banks", async () => {
+    const sql = await readFile(workspaceMigrationUrl, "utf8");
+    expect(sql).toContain("source_connections_workspace_realm_fk");
+    expect(sql).toContain("memory_banks_workspace_realm_fk");
+    expect(sql).toContain(
+      "references public.workspaces(installation_id, id, realm) not valid",
+    );
+    expect(sql).toContain("drop constraint source_connections_installation_fk");
+    expect(sql).toContain("drop constraint memory_banks_installation_fk");
+    expect(sql).toContain("Workspace realm is authoritative");
+  });
+
+  it("replaces installation wide resource names with workspace identity", async () => {
+    const sql = await readFile(workspaceMigrationUrl, "utf8");
+    for (const constraint of [
+      "workers_installation_id_name_key",
+      "roles_installation_id_name_version_key",
+      "policies_installation_id_name_version_key",
+      "memory_banks_installation_id_key",
+    ]) {
+      expect(sql).toContain(`drop constraint ${constraint}`);
+    }
+    expect(sql).toContain("unique (installation_id, workspace_id, name)");
+    expect(sql).toContain(
+      "unique (installation_id, workspace_id, name, version)",
+    );
+    expect(sql).toContain("unique (installation_id, workspace_id)");
   });
 });

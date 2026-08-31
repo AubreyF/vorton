@@ -13,7 +13,12 @@ import {
 } from "@vorton/executive";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
-import { AuthenticationError, type IdentityVerifier } from "./auth.js";
+import {
+  AuthenticationError,
+  StepUpAuthenticationError,
+  requireRecentAal2,
+  type IdentityVerifier,
+} from "./auth.js";
 import {
   ExecutiveCouncilConflictError,
   ExecutiveCouncilInputError,
@@ -217,18 +222,24 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         const workId = councilRoute[1];
         if (request.method === "GET" && !councilRoute[2]) {
           const queryKeys = [...url.searchParams.keys()];
-          if (queryKeys.length !== 1 || queryKeys[0] !== "installationId") {
+          if (
+            queryKeys.length !== 2 ||
+            !queryKeys.includes("installationId") ||
+            !queryKeys.includes("workspaceId")
+          ) {
             throw new ExecutiveCouncilInputError(
-              "Council reads require only installationId",
+              "Council reads require only installationId and workspaceId",
             );
           }
           const parsed = parseCouncilInstallationInput({
             installationId: url.searchParams.get("installationId"),
+            workspaceId: url.searchParams.get("workspaceId"),
           });
           send(
             200,
             await dependencies.councilResolver.get(workId, {
               installationId: parsed.installationId,
+              workspaceId: parsed.workspaceId,
               authUserId: identity.authUserId,
             }),
           );
@@ -241,13 +252,19 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           const parsed = parseCouncilInstallationInput(
             objectBody(await readJson(request)),
           );
+          if (councilRoute[2] === "install") requireRecentAal2(identity);
           const requester = {
             installationId: parsed.installationId,
+            workspaceId: parsed.workspaceId,
             authUserId: identity.authUserId,
           };
           const result =
             councilRoute[2] === "install"
-              ? await dependencies.councilResolver.install(workId, requester)
+              ? await dependencies.councilResolver.install(workId, {
+                  ...requester,
+                  aal: identity.aal,
+                  authTime: identity.authTime,
+                })
               : await dependencies.councilResolver.advance(workId, requester);
           send(councilRoute[2] === "install" ? 201 : 200, result);
           return;
@@ -264,12 +281,14 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         const proposalInput = parseProposalInput(body);
         await dependencies.authorityVerifier.resolvePerson({
           installationId: proposalInput.installationId,
+          workspaceId: proposalInput.workspaceId,
           authUserId: identity.authUserId,
           requiredAuthority: "member",
           operation: "review",
         });
         const requester = {
           installationId: proposalInput.installationId,
+          workspaceId: proposalInput.workspaceId,
           authUserId: identity.authUserId,
         };
         const proposalRequest =
@@ -303,6 +322,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           proposalRecordId: requiredText(body, "proposalRecordId"),
           reviewer: {
             installationId: requiredText(body, "installationId"),
+            workspaceId: requiredText(body, "workspaceId"),
             authUserId: identity.authUserId,
           },
           summary: requiredText(body, "summary"),
@@ -323,6 +343,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           reviewRecordId: requiredText(body, "reviewRecordId"),
           decisionMaker: {
             installationId: requiredText(body, "installationId"),
+            workspaceId: requiredText(body, "workspaceId"),
             authUserId: identity.authUserId,
           },
           summary: requiredText(body, "summary"),
@@ -340,11 +361,13 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         const identity = await dependencies.identityVerifier.verify(
           request.headers.authorization,
         );
+        requireRecentAal2(identity);
         const body = objectBody(await readJson(request));
         const result = await workflow.approve({
           decisionRecordId: requiredText(body, "decisionRecordId"),
           approver: {
             installationId: requiredText(body, "installationId"),
+            workspaceId: requiredText(body, "workspaceId"),
             authUserId: identity.authUserId,
           },
           summary: requiredText(body, "summary"),
@@ -356,19 +379,27 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         const identity = await dependencies.identityVerifier.verify(
           request.headers.authorization,
         );
+        requireRecentAal2(identity);
         const body = objectBody(await readJson(request));
         const installationId = requiredText(body, "installationId");
+        const workspaceId = requiredText(body, "workspaceId");
         await dependencies.authorityVerifier.resolvePerson({
           installationId,
+          workspaceId,
           authUserId: identity.authUserId,
           requiredAuthority: "owner",
           operation: "approval",
         });
         const approvalRecordId = requiredText(body, "approvalRecordId");
-        const requester = { installationId, authUserId: identity.authUserId };
+        const requester = {
+          installationId,
+          workspaceId,
+          authUserId: identity.authUserId,
+        };
         const authority = await dependencies.requestResolver.resolveAuthority(
           {
             installationId,
+            workspaceId,
             approvalRecordId,
             capabilityGrantId: requiredText(body, "capabilityGrantId"),
           },
@@ -396,6 +427,17 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           response,
           401,
           { error: { code: "unauthorized", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof StepUpAuthenticationError) {
+        json(
+          response,
+          403,
+          { error: { code: "aal2_required", message: error.message } },
           request.headers.origin === dependencies.allowedOrigin
             ? dependencies.allowedOrigin
             : undefined,

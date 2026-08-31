@@ -62,6 +62,8 @@ export const executiveCouncilContributionPhaseSchema = z.enum([
 
 export const executiveCouncilPeerContextSchema = z.object({
   recordId: uuid,
+  installationId: uuid,
+  workspaceId: uuid,
   kind: z.enum(["proposal", "review"]),
   phase: z.enum(["proposal", "review"]),
   roleId: uuid,
@@ -75,6 +77,8 @@ export const executiveCouncilPeerContextSchema = z.object({
 export const executiveCouncilContextSchema = z
   .object({
     protocol: executiveCouncilProtocolSchema,
+    installationId: uuid,
+    workspaceId: uuid,
     phase: executiveCouncilContributionPhaseSchema,
     roleId: uuid,
     workUpdatedAt: z.string().datetime({ offset: true }),
@@ -94,13 +98,17 @@ export const executiveCouncilContextSchema = z
     }
     if (
       context.peerContext.some(
-        (peer) => !context.inputRecordIds.includes(peer.recordId),
+        (peer) =>
+          !context.inputRecordIds.includes(peer.recordId) ||
+          peer.installationId !== context.installationId ||
+          peer.workspaceId !== context.workspaceId,
       )
     ) {
       issue.addIssue({
         code: "custom",
         path: ["inputRecordIds"],
-        message: "Council input records must include every peer record",
+        message:
+          "Council input records and peer records must share one installation and workspace",
       });
     }
     if (context.phase === "proposal" && context.peerContext.length !== 0) {
@@ -168,6 +176,7 @@ export const executiveEvidenceSchema = z.object({
 export const executiveWorkerJobRequestSchema = z
   .object({
     installationId: uuid,
+    workspaceId: uuid,
     workId: uuid,
     workerId: uuid,
     role: executiveRoleSchema,
@@ -192,6 +201,8 @@ export const executiveWorkerJobRequestSchema = z
 
 export const executiveCouncilRecordSchema = z.object({
   id: uuid,
+  installationId: uuid,
+  workspaceId: uuid,
   kind: z.enum(["proposal", "review"]),
   summary: z.string().trim().min(1),
   actorWorkerId: uuid,
@@ -212,6 +223,7 @@ export const executiveCouncilRecordSchema = z.object({
 export const executiveCouncilStateSchema = z.object({
   protocol: executiveCouncilProtocolSchema,
   installationId: uuid,
+  workspaceId: uuid,
   work: z.object({
     id: uuid,
     title: z.string().trim().min(1),
@@ -276,6 +288,7 @@ export const executiveWorkerJobSchema = z.object({
   store: z.boolean(),
   background: z.boolean(),
   installationId: uuid,
+  workspaceId: uuid,
   workId: uuid,
   workerId: uuid,
   recommendation: executiveRecommendationSchema.optional(),

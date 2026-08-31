@@ -25,6 +25,7 @@ describe("database authority context", () => {
     const database = new Database(pool, secret);
     const context = {
       installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
     };
 
@@ -48,9 +49,11 @@ describe("database authority context", () => {
       "set_config('vorton.installation_id', $2, true)",
     );
     expect(roleIndex).toBeGreaterThan(envelopeIndex);
-    expect(statements[envelopeIndex]?.values?.[4]).toBe(
+    expect(statements[envelopeIndex]?.values?.[5]).toBe(
       createHmac("sha256", secret)
-        .update(`4242|person|${context.installationId}|${context.authUserId}|`)
+        .update(
+          `4242|person|${context.installationId}|${context.workspaceId}|${context.authUserId}|`,
+        )
         .digest("hex"),
     );
     expect(client.release).toHaveBeenCalledOnce();

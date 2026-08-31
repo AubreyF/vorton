@@ -137,6 +137,7 @@ export interface CouncilWorkSnapshot {
 
 export function deriveCouncilState(input: {
   installationId: string;
+  workspaceId: string;
   work: CouncilWorkSnapshot;
   roles: InstalledCouncilRole[];
   records: ExecutiveCouncilRecord[];
@@ -194,6 +195,7 @@ export function deriveCouncilState(input: {
   return executiveCouncilStateSchema.parse({
     protocol: executiveCouncilProtocol,
     installationId: input.installationId,
+    workspaceId: input.workspaceId,
     work: input.work,
     authority: "none",
     phase,

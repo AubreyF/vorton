@@ -22,8 +22,10 @@ export class WorkerRunsService {
     const job = executiveWorkerJobSchema.parse(rawJob);
     if (
       request.installationId !== context.installationId ||
+      request.workspaceId !== context.workspaceId ||
       request.workerId !== context.workerId ||
       job.installationId !== request.installationId ||
+      job.workspaceId !== request.workspaceId ||
       job.workId !== request.workId ||
       job.workerId !== request.workerId
     ) {
@@ -34,12 +36,13 @@ export class WorkerRunsService {
     return this.database.asWorker(context, async (transaction) => {
       const result = await transaction.query<{ id: string }>(
         `insert into public.worker_runs
-          (installation_id, work_id, worker_id, role_id, provider, model,
+          (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
            provider_job_id, status, store, background, metadata, error)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
          returning id`,
         [
           request.installationId,
+          request.workspaceId,
           request.workId,
           request.workerId,
           request.role.roleId,
@@ -51,6 +54,7 @@ export class WorkerRunsService {
           job.background,
           JSON.stringify({
             installation_id: request.installationId,
+            workspace_id: request.workspaceId,
             work_id: request.workId,
             worker_id: request.workerId,
             role_sha256: request.role.contentSha256,
@@ -72,6 +76,7 @@ export class WorkerRunsService {
     const job = executiveWorkerJobSchema.parse(rawJob);
     if (
       job.installationId !== context.installationId ||
+      job.workspaceId !== context.workspaceId ||
       job.workerId !== context.workerId
     ) {
       throw new Error("Worker run status cannot cross its credential boundary");
@@ -79,10 +84,12 @@ export class WorkerRunsService {
     return this.database.asWorker(context, async (transaction) => {
       const result = await transaction.query(
         `update public.worker_runs
-            set status = $4, error = $5
-          where installation_id = $1 and worker_id = $2 and provider_job_id = $3`,
+            set status = $5, error = $6
+          where installation_id = $1 and workspace_id = $2
+            and worker_id = $3 and provider_job_id = $4`,
         [
           context.installationId,
+          context.workspaceId,
           context.workerId,
           job.jobId,
           job.status,

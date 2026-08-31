@@ -28,6 +28,7 @@ export type ExecutiveActor =
 export interface ExecutiveRecord {
   id: string;
   installationId: string;
+  workspaceId: string;
   workId: string | null;
   kind: RecordInput["kind"];
   summary: string;
@@ -44,6 +45,7 @@ export interface ExecutiveWork {
 
 export interface AppendExecutiveRecord {
   installationId: string;
+  workspaceId: string;
   workId: string | null;
   kind: RecordInput["kind"];
   summary: string;
@@ -111,6 +113,7 @@ export interface ExecutiveWorkflowDependencies {
 
 export interface ExecutiveAuthorityVerification {
   installationId: string;
+  workspaceId: string;
   authority: ExecutionAuthority;
   approval: ExecutiveRecord;
   decision: ExecutiveRecord;
@@ -122,6 +125,7 @@ export interface ExecutiveAuthorityVerification {
 export interface ExecutiveAuthorityVerifier {
   resolvePerson(input: {
     installationId: string;
+    workspaceId: string;
     authUserId: string;
     requiredAuthority: "member" | "owner";
     operation: "review" | "decision" | "approval";
@@ -157,6 +161,7 @@ function assertJobBoundary(
 ): void {
   if (
     job.installationId !== request.installationId ||
+    job.workspaceId !== request.workspaceId ||
     job.workId !== request.workId ||
     job.workerId !== request.workerId ||
     job.provider !== provider.provider ||
@@ -185,6 +190,7 @@ export class ExecutiveWorkflow {
 
   recordEvidence(input: {
     installationId: string;
+    workspaceId: string;
     summary: string;
     sourceUri: string | null;
     classification: DataClassification;
@@ -193,6 +199,7 @@ export class ExecutiveWorkflow {
   }): Promise<ExecutiveRecord> {
     return this.#ledger.append({
       installationId: input.installationId,
+      workspaceId: input.workspaceId,
       workId: null,
       kind: "evidence",
       summary: input.summary,
@@ -220,8 +227,11 @@ export class ExecutiveWorkflow {
         "evidence",
         requester,
       );
-      if (record.installationId !== parsedRequest.installationId) {
-        throw new Error("Evidence cannot cross installation boundaries");
+      if (
+        record.installationId !== parsedRequest.installationId ||
+        record.workspaceId !== parsedRequest.workspaceId
+      ) {
+        throw new Error("Evidence cannot cross workspace boundaries");
       }
     }
     const job = executiveWorkerJobSchema.parse(
@@ -252,6 +262,7 @@ export class ExecutiveWorkflow {
     if (
       current.jobId !== submitted.jobId ||
       current.installationId !== submitted.installationId ||
+      current.workspaceId !== submitted.workspaceId ||
       current.workId !== submitted.workId ||
       current.workerId !== submitted.workerId
     ) {
@@ -278,11 +289,15 @@ export class ExecutiveWorkflow {
       "proposal",
       input.reviewer,
     );
-    if (input.reviewer.installationId !== proposal.installationId) {
-      throw new Error("Reviewer context cannot cross installations");
+    if (
+      input.reviewer.installationId !== proposal.installationId ||
+      input.reviewer.workspaceId !== proposal.workspaceId
+    ) {
+      throw new Error("Reviewer context cannot cross workspaces");
     }
     const reviewerPersonId = await this.#authorityVerifier.resolvePerson({
       installationId: proposal.installationId,
+      workspaceId: proposal.workspaceId,
       authUserId: input.reviewer.authUserId,
       requiredAuthority: "member",
       operation: "review",
@@ -290,6 +305,7 @@ export class ExecutiveWorkflow {
     return this.#ledger.append(
       {
         installationId: proposal.installationId,
+        workspaceId: proposal.workspaceId,
         workId: proposal.workId,
         kind: "review",
         summary: input.summary,
@@ -318,11 +334,15 @@ export class ExecutiveWorkflow {
     const classification = decisionClassificationSchema.parse(
       input.classification,
     );
-    if (input.decisionMaker.installationId !== review.installationId) {
-      throw new Error("Decision maker context cannot cross installations");
+    if (
+      input.decisionMaker.installationId !== review.installationId ||
+      input.decisionMaker.workspaceId !== review.workspaceId
+    ) {
+      throw new Error("Decision maker context cannot cross workspaces");
     }
     const decisionMakerPersonId = await this.#authorityVerifier.resolvePerson({
       installationId: review.installationId,
+      workspaceId: review.workspaceId,
       authUserId: input.decisionMaker.authUserId,
       requiredAuthority: "owner",
       operation: "decision",
@@ -330,6 +350,7 @@ export class ExecutiveWorkflow {
     return this.#ledger.append(
       {
         installationId: review.installationId,
+        workspaceId: review.workspaceId,
         workId: review.workId,
         kind: "decision",
         summary: input.summary,
@@ -358,11 +379,15 @@ export class ExecutiveWorkflow {
     if (decision.payload.classification === "prohibited") {
       throw new Error("A prohibited decision cannot be approved");
     }
-    if (input.approver.installationId !== decision.installationId) {
-      throw new Error("Approver context cannot cross installations");
+    if (
+      input.approver.installationId !== decision.installationId ||
+      input.approver.workspaceId !== decision.workspaceId
+    ) {
+      throw new Error("Approver context cannot cross workspaces");
     }
     const approverPersonId = await this.#authorityVerifier.resolvePerson({
       installationId: decision.installationId,
+      workspaceId: decision.workspaceId,
       authUserId: input.approver.authUserId,
       requiredAuthority: "owner",
       operation: "approval",
@@ -370,6 +395,7 @@ export class ExecutiveWorkflow {
     return this.#ledger.append(
       {
         installationId: decision.installationId,
+        workspaceId: decision.workspaceId,
         workId: decision.workId,
         kind: "approval",
         summary: input.summary,
@@ -431,6 +457,7 @@ export class ExecutiveWorkflow {
     }
     await this.#authorityVerifier.assertApplicable({
       installationId: approval.installationId,
+      workspaceId: approval.workspaceId,
       authority,
       approval,
       decision,
@@ -440,6 +467,7 @@ export class ExecutiveWorkflow {
     return this.#ledger.createWork(
       {
         installationId: approval.installationId,
+        workspaceId: approval.workspaceId,
         title: input.title,
         requestedOutcome: input.requestedOutcome,
         acceptanceCriteria: input.acceptanceCriteria,
@@ -465,6 +493,7 @@ export class ExecutiveWorkflow {
     return this.#ledger.append(
       {
         installationId: input.work.input.installationId,
+        workspaceId: input.work.input.workspaceId,
         workId: input.work.id,
         kind: "receipt",
         summary: input.summary,
@@ -476,6 +505,7 @@ export class ExecutiveWorkflow {
       },
       {
         installationId: input.work.input.installationId,
+        workspaceId: input.work.input.workspaceId,
         workerId: input.workerId,
       },
     );
@@ -494,6 +524,7 @@ export class ExecutiveWorkflow {
     );
     return this.#ledger.append({
       installationId: receipt.installationId,
+      workspaceId: receipt.workspaceId,
       workId: receipt.workId,
       kind: "outcome",
       summary: input.summary,
@@ -518,6 +549,7 @@ export class ExecutiveWorkflow {
     );
     return this.#ledger.append({
       installationId: outcome.installationId,
+      workspaceId: outcome.workspaceId,
       workId: outcome.workId,
       kind: "learning",
       summary: input.summary,
@@ -537,11 +569,13 @@ export class ExecutiveWorkflow {
     }
     const workerContext: WorkerContext = {
       installationId: job.installationId,
+      workspaceId: job.workspaceId,
       workerId: job.workerId,
     };
     return this.#ledger.append(
       {
         installationId: job.installationId,
+        workspaceId: job.workspaceId,
         workId: job.workId,
         kind: "proposal",
         summary: job.recommendation.summary,

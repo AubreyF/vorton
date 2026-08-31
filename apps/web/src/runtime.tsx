@@ -31,41 +31,51 @@ interface BrowserRuntimeConfigSource {
   apiUrl?: unknown;
 }
 
-export interface RuntimeBootstrap {
-  installations: Array<{
+export interface RuntimeWorkspace {
+  id: string;
+  slug: string;
+  displayName: string;
+  realm: "personal" | "organizational";
+  personKind: "owner" | "member";
+  workItems: Array<{
     id: string;
-    slug: string;
-    displayName: string;
-    personKind: "owner" | "member";
-    workItems: Array<{
-      id: string;
-      title: string;
-      requestedOutcome: string;
-      acceptanceCriteria: string[];
-      state:
-        | "proposed"
-        | "ready"
-        | "leased"
-        | "blocked"
-        | "review"
-        | "completed"
-        | "cancelled";
-      priority: number;
-      parentWorkId: string | null;
-      custodianName: string | null;
-      custodianKind: "person" | "worker" | null;
-      updatedAt: string;
-    }>;
-    proposalBindings: Array<{
-      workId: string;
-      workTitle: string;
-      workerId: string;
-      workerName: string;
-      roleId: string;
-      roleName: string;
-      evidence: Array<{ id: string; summary: string; classification: string }>;
-    }>;
+    title: string;
+    requestedOutcome: string;
+    acceptanceCriteria: string[];
+    state:
+      | "proposed"
+      | "ready"
+      | "leased"
+      | "blocked"
+      | "review"
+      | "completed"
+      | "cancelled";
+    priority: number;
+    parentWorkId: string | null;
+    custodianName: string | null;
+    custodianKind: "person" | "worker" | null;
+    updatedAt: string;
   }>;
+  proposalBindings: Array<{
+    workId: string;
+    workTitle: string;
+    workerId: string;
+    workerName: string;
+    roleId: string;
+    roleName: string;
+    evidence: Array<{ id: string; summary: string; classification: string }>;
+  }>;
+}
+
+export interface RuntimeInstallation {
+  id: string;
+  slug: string;
+  displayName: string;
+  workspaces: RuntimeWorkspace[];
+}
+
+export interface RuntimeBootstrap {
+  installations: RuntimeInstallation[];
 }
 
 export type CouncilPhase = "proposal" | "review" | "synthesis" | "complete";
@@ -110,6 +120,7 @@ export interface CouncilRecord {
 export interface ExecutiveCouncilState {
   protocol: "vorton.executive-council.v1";
   installationId: string;
+  workspaceId: string;
   work: {
     id: string;
     title: string;
@@ -155,14 +166,17 @@ export interface RuntimeContextValue {
   getExecutiveCouncil(
     workId: string,
     installationId: string,
+    workspaceId: string,
   ): Promise<ExecutiveCouncilState>;
   installExecutiveCouncil(
     workId: string,
     installationId: string,
+    workspaceId: string,
   ): Promise<ExecutiveCouncilState>;
   advanceExecutiveCouncil(
     workId: string,
     installationId: string,
+    workspaceId: string,
   ): Promise<ExecutiveCouncilState>;
 }
 
@@ -418,6 +432,22 @@ export function BrowserRuntime({
         }
       />
     );
+  if (
+    !Array.isArray(installation.workspaces) ||
+    installation.workspaces.length === 0
+  )
+    return (
+      <RuntimeState
+        installationName={config.installationName}
+        title="Workspace unavailable"
+        detail="Your authenticated account has no current workspace membership in this installation."
+        actions={
+          <button type="button" onClick={() => void client.auth.signOut()}>
+            Sign out
+          </button>
+        }
+      />
+    );
   return (
     <RuntimeProvider
       value={{
@@ -434,26 +464,29 @@ export function BrowserRuntime({
             request,
           ),
         refreshBootstrap,
-        getExecutiveCouncil: (workId, installationId) =>
+        getExecutiveCouncil: (workId, installationId, workspaceId) =>
           getExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
+            workspaceId,
           ),
-        installExecutiveCouncil: (workId, installationId) =>
+        installExecutiveCouncil: (workId, installationId, workspaceId) =>
           installExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
+            workspaceId,
           ),
-        advanceExecutiveCouncil: (workId, installationId) =>
+        advanceExecutiveCouncil: (workId, installationId, workspaceId) =>
           advanceExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
+            workspaceId,
           ),
       }}
     >
@@ -467,13 +500,15 @@ export async function getExecutiveCouncil(
   accessToken: string,
   workId: string,
   installationId: string,
+  workspaceId: string,
   requestFetch: typeof fetch = fetch,
 ): Promise<ExecutiveCouncilState> {
-  const query = new URLSearchParams({ installationId });
+  const query = new URLSearchParams({ installationId, workspaceId });
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}?${query.toString()}`,
     accessToken,
-    undefined,
+    { installationId, workspaceId },
+    "GET",
     requestFetch,
   );
 }
@@ -483,12 +518,14 @@ export async function installExecutiveCouncil(
   accessToken: string,
   workId: string,
   installationId: string,
+  workspaceId: string,
   requestFetch: typeof fetch = fetch,
 ): Promise<ExecutiveCouncilState> {
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/install`,
     accessToken,
-    installationId,
+    { installationId, workspaceId },
+    "POST",
     requestFetch,
   );
 }
@@ -498,12 +535,14 @@ export async function advanceExecutiveCouncil(
   accessToken: string,
   workId: string,
   installationId: string,
+  workspaceId: string,
   requestFetch: typeof fetch = fetch,
 ): Promise<ExecutiveCouncilState> {
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/advance`,
     accessToken,
-    installationId,
+    { installationId, workspaceId },
+    "POST",
     requestFetch,
   );
 }
@@ -511,18 +550,19 @@ export async function advanceExecutiveCouncil(
 async function requestCouncilState(
   url: string,
   accessToken: string,
-  installationId: string | undefined,
+  scope: { installationId: string; workspaceId: string },
+  method: "GET" | "POST",
   requestFetch: typeof fetch,
 ): Promise<ExecutiveCouncilState> {
   const response = await requestFetch(url, {
-    ...(installationId
+    ...(method === "POST"
       ? {
           method: "POST",
           headers: {
             authorization: `Bearer ${accessToken}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ installationId }),
+          body: JSON.stringify(scope),
         }
       : { headers: { authorization: `Bearer ${accessToken}` } }),
   });
@@ -535,7 +575,16 @@ async function requestCouncilState(
         : `Executive council API rejected the request with HTTP ${String(response.status)}`;
     throw new Error(message);
   }
-  return payload as ExecutiveCouncilState;
+  const state = payload as ExecutiveCouncilState;
+  if (
+    state.installationId !== scope.installationId ||
+    state.workspaceId !== scope.workspaceId
+  ) {
+    throw new Error(
+      "Executive council API returned state for a different workspace",
+    );
+  }
+  return state;
 }
 
 export async function getRuntimeBootstrap(

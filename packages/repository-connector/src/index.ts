@@ -36,6 +36,7 @@ export type RepositoryTicket = {
 export interface ReadOnlyRepositoryConnector {
   readonly provider: string;
   readonly repository: string;
+  readonly githubAppInstallationId: string | null;
   readonly mode: "read-only";
   listOpenTickets(): Promise<readonly RepositoryTicket[]>;
   getPullRequest(number: number): Promise<RepositoryPullRequest | null>;
@@ -48,6 +49,8 @@ export type ClaimWitness = {
 };
 
 export type RepositoryExecutionObservation = {
+  vortonInstallationId: string;
+  workspaceId: string;
   ticketNumber: number;
   installationWorkId: string;
   revision: string;
@@ -135,6 +138,9 @@ export async function reconcileRepositoryTicket(input: {
 
   const receipt = factoryReconciliationReceiptSchema.parse({
     schemaVersion: 1,
+    vortonInstallationId: input.execution.vortonInstallationId,
+    workspaceId: input.execution.workspaceId,
+    githubAppInstallationId: input.connector.githubAppInstallationId,
     installationWorkId: input.execution.installationWorkId,
     repositoryTicketId: input.ticket.id,
     outcome:

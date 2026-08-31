@@ -26,6 +26,7 @@ export const sourceRevisionSchema = z
   .object({
     id: z.string().uuid(),
     installationId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
     installationRealm: installationRealmSchema,
     sourceType: z.string().min(1),
     sourceObjectId: z.string().min(1),
@@ -97,6 +98,7 @@ export function deriveDataClassification(
 export const retrievalReceiptSchema = z.object({
   id: z.string().uuid(),
   installationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   bankId: z.string().min(1),
   queryHash: z.string().regex(/^[a-f0-9]{64}$/),
   resultIds: z.array(z.string().min(1)),

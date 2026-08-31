@@ -5,9 +5,11 @@ import { FakeExecutiveWorkerAdapter } from "@vorton/workers";
 import { InMemoryExecutiveLedger } from "@vorton/executive";
 import type { Database } from "@vorton/database";
 
+import type { AuthenticatedIdentity } from "./auth.js";
 import { createApiServer } from "./server.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 const personId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
@@ -26,10 +28,17 @@ afterEach(async () => {
   );
 });
 
-async function runtime() {
+async function runtime(
+  identity: AuthenticatedIdentity = {
+    authUserId,
+    aal: "aal2",
+    authTime: Math.floor(Date.now() / 1000),
+  },
+) {
   const ledger = new InMemoryExecutiveLedger(() => crypto.randomUUID());
   await ledger.append({
     installationId,
+    workspaceId,
     workId: null,
     kind: "evidence",
     summary: "Synthetic runtime evidence",
@@ -55,11 +64,16 @@ async function runtime() {
   const councilCalls: Array<{
     operation: "get" | "install" | "advance";
     workId: string;
-    requester: { installationId: string; authUserId: string };
+    requester: {
+      installationId: string;
+      workspaceId: string;
+      authUserId: string;
+    };
   }> = [];
   const councilState = {
     protocol: "vorton.executive-council.v1",
     installationId,
+    workspaceId,
     work: {
       id: workId,
       title: "Assess fixture",
@@ -82,7 +96,7 @@ async function runtime() {
     database,
     ledger,
     authorityVerifier,
-    identityVerifier: { verify: async () => ({ authUserId }) },
+    identityVerifier: { verify: async () => identity },
     worker: new FakeExecutiveWorkerAdapter(),
     requestResolver: {
       resolveBootstrap: async (resolvedAuthUserId: string) => ({
@@ -93,34 +107,42 @@ async function runtime() {
                   id: installationId,
                   slug: "synthetic-installation",
                   displayName: "Synthetic installation",
-                  personKind: "owner" as const,
-                  workItems: [
+                  workspaces: [
                     {
-                      id: workId,
-                      title: "Assess fixture",
-                      requestedOutcome: "Reach a grounded recommendation",
-                      acceptanceCriteria: ["Cite the synthetic evidence"],
-                      state: "ready" as const,
-                      priority: 80,
-                      parentWorkId: null,
-                      custodianName: "Synthetic worker",
-                      custodianKind: "worker" as const,
-                      updatedAt: "2026-08-30T01:02:03.000Z",
-                    },
-                  ],
-                  proposalBindings: [
-                    {
-                      workId,
-                      workTitle: "Assess fixture",
-                      workerId,
-                      workerName: "Synthetic worker",
-                      roleId,
-                      roleName: "Synthetic reviewer",
-                      evidence: [
+                      id: workspaceId,
+                      slug: "synthetic-workspace",
+                      displayName: "Synthetic workspace",
+                      realm: "organizational" as const,
+                      personKind: "owner" as const,
+                      workItems: [
                         {
-                          id: evidence.id,
-                          summary: evidence.summary,
-                          classification: "synthetic",
+                          id: workId,
+                          title: "Assess fixture",
+                          requestedOutcome: "Reach a grounded recommendation",
+                          acceptanceCriteria: ["Cite the synthetic evidence"],
+                          state: "ready" as const,
+                          priority: 80,
+                          parentWorkId: null,
+                          custodianName: "Synthetic worker",
+                          custodianKind: "worker" as const,
+                          updatedAt: "2026-08-30T01:02:03.000Z",
+                        },
+                      ],
+                      proposalBindings: [
+                        {
+                          workId,
+                          workTitle: "Assess fixture",
+                          workerId,
+                          workerName: "Synthetic worker",
+                          roleId,
+                          roleName: "Synthetic reviewer",
+                          evidence: [
+                            {
+                              id: evidence.id,
+                              summary: evidence.summary,
+                              classification: "synthetic",
+                            },
+                          ],
                         },
                       ],
                     },
@@ -131,6 +153,7 @@ async function runtime() {
       }),
       resolveProposal: async (input: {
         installationId: string;
+        workspaceId: string;
         workId: string;
         workerId: string;
         roleId: string;
@@ -138,6 +161,7 @@ async function runtime() {
         background: boolean;
       }) => ({
         installationId: input.installationId,
+        workspaceId: input.workspaceId,
         workId: input.workId,
         workerId: input.workerId,
         role: {
@@ -174,7 +198,11 @@ async function runtime() {
     councilResolver: {
       get: async (
         resolvedWorkId: string,
-        requester: { installationId: string; authUserId: string },
+        requester: {
+          installationId: string;
+          workspaceId: string;
+          authUserId: string;
+        },
       ) => {
         councilCalls.push({
           operation: "get",
@@ -185,7 +213,11 @@ async function runtime() {
       },
       install: async (
         resolvedWorkId: string,
-        requester: { installationId: string; authUserId: string },
+        requester: {
+          installationId: string;
+          workspaceId: string;
+          authUserId: string;
+        },
       ) => {
         councilCalls.push({
           operation: "install",
@@ -196,7 +228,11 @@ async function runtime() {
       },
       advance: async (
         resolvedWorkId: string,
-        requester: { installationId: string; authUserId: string },
+        requester: {
+          installationId: string;
+          workspaceId: string;
+          authUserId: string;
+        },
       ) => {
         councilCalls.push({
           operation: "advance",
@@ -223,6 +259,7 @@ async function runtime() {
 function proposal(evidenceId: string) {
   return {
     installationId,
+    workspaceId,
     workId,
     workerId,
     roleId,
@@ -254,9 +291,14 @@ describe("control-plane API", () => {
         {
           id: installationId,
           slug: "synthetic-installation",
-          personKind: "owner",
-          workItems: [{ id: workId, state: "ready", priority: 80 }],
-          proposalBindings: [{ workId, workerId, roleId }],
+          workspaces: [
+            {
+              id: workspaceId,
+              personKind: "owner",
+              workItems: [{ id: workId, state: "ready", priority: 80 }],
+              proposalBindings: [{ workId, workerId, roleId }],
+            },
+          ],
         },
       ],
     });
@@ -323,6 +365,7 @@ describe("control-plane API", () => {
       headers,
       body: JSON.stringify({
         installationId,
+        workspaceId,
         proposalRecordId: proposalPayload.proposal.id,
         summary: "Human review supports the bounded diagnostic",
         disposition: "support",
@@ -333,6 +376,7 @@ describe("control-plane API", () => {
       headers,
       body: JSON.stringify({
         installationId,
+        workspaceId,
         reviewRecordId: review.id,
         summary: "Owner decision remains bounded",
         classification: "owner-required",
@@ -343,6 +387,7 @@ describe("control-plane API", () => {
       headers,
       body: JSON.stringify({
         installationId,
+        workspaceId,
         decisionRecordId: decision.id,
         summary: "Approved for synthetic diagnosis only",
       }),
@@ -354,6 +399,7 @@ describe("control-plane API", () => {
       headers,
       body: JSON.stringify({
         installationId,
+        workspaceId,
         approvalRecordId: approval.id,
         capabilityGrantId: "4156f0af-e62f-4b16-a7bc-97c8301c2e2f",
         title: "Run synthetic diagnostic",
@@ -399,7 +445,7 @@ describe("control-plane API", () => {
       "content-type": "application/json",
     };
     const read = await fetch(
-      `${baseUrl}/v1/executive/councils/${workId}?installationId=${installationId}`,
+      `${baseUrl}/v1/executive/councils/${workId}?installationId=${installationId}&workspaceId=${workspaceId}`,
       { headers },
     );
     expect(read.status).toBe(200);
@@ -413,7 +459,7 @@ describe("control-plane API", () => {
       {
         method: "POST",
         headers,
-        body: JSON.stringify({ installationId }),
+        body: JSON.stringify({ installationId, workspaceId }),
       },
     );
     expect(install.status).toBe(201);
@@ -422,7 +468,7 @@ describe("control-plane API", () => {
       {
         method: "POST",
         headers,
-        body: JSON.stringify({ installationId }),
+        body: JSON.stringify({ installationId, workspaceId }),
       },
     );
     expect(advance.status).toBe(200);
@@ -430,18 +476,70 @@ describe("control-plane API", () => {
       {
         operation: "get",
         workId,
-        requester: { installationId, authUserId },
+        requester: { installationId, workspaceId, authUserId },
       },
       {
         operation: "install",
         workId,
-        requester: { installationId, authUserId },
+        requester: {
+          installationId,
+          workspaceId,
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
       },
       {
         operation: "advance",
         workId,
-        requester: { installationId, authUserId },
+        requester: { installationId, workspaceId, authUserId },
       },
+    ]);
+  });
+
+  it("requires recent AAL2 for Council installation, approval, and Work promotion", async () => {
+    const { baseUrl, councilCalls } = await runtime({
+      authUserId,
+      aal: "aal1",
+      authTime: Math.floor(Date.now() / 1000),
+    });
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      "content-type": "application/json",
+    };
+    const read = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}?installationId=${installationId}&workspaceId=${workspaceId}`,
+      { headers },
+    );
+    expect(read.status).toBe(200);
+    const advance = await fetch(
+      `${baseUrl}/v1/executive/councils/${workId}/advance`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ installationId, workspaceId }),
+      },
+    );
+    expect(advance.status).toBe(200);
+    const sensitivePaths = [
+      `/v1/executive/councils/${workId}/install`,
+      "/v1/executive/approvals",
+      "/v1/executive/work",
+    ];
+    for (const path of sensitivePaths) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ installationId, workspaceId }),
+      });
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "aal2_required" },
+      });
+    }
+    expect(councilCalls.map((call) => call.operation)).toEqual([
+      "get",
+      "advance",
     ]);
   });
 

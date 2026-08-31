@@ -11,6 +11,7 @@ import {
 
 const installation = {
   id: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   realm: "organizational" as const,
 };
 const connectionId = "0dd9b2cc-b44c-4039-a1fc-5226b5d9bb06";

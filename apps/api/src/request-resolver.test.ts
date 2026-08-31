@@ -12,6 +12,7 @@ import {
 
 const input = {
   installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   workId: "fbc4ac66-4a32-4a34-b810-88f4330205aa",
   workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
   roleId: "d37f356b-6297-4cd1-902d-c2755423a612",
@@ -21,6 +22,7 @@ const input = {
 };
 const requester = {
   installationId: input.installationId,
+  workspaceId: input.workspaceId,
   authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
 };
 const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
@@ -61,15 +63,20 @@ describe("database executive request resolver", () => {
     database.results = [
       [
         {
-          id: input.installationId,
-          slug: "synthetic-installation",
-          display_name: "Synthetic installation",
+          installation_id: input.installationId,
+          installation_slug: "synthetic-installation",
+          installation_display_name: "Synthetic installation",
+          workspace_id: input.workspaceId,
+          workspace_slug: "synthetic-workspace",
+          workspace_display_name: "Synthetic workspace",
+          workspace_realm: "organizational",
           person_kind: "owner",
         },
       ],
       [
         {
           installation_id: input.installationId,
+          workspace_id: input.workspaceId,
           id: input.workId,
           title: "Assess fixture",
           requested_outcome: "Reach a grounded recommendation",
@@ -85,6 +92,7 @@ describe("database executive request resolver", () => {
       [
         {
           installation_id: input.installationId,
+          workspace_id: input.workspaceId,
           work_id: input.workId,
           work_title: "Assess fixture",
           worker_id: input.workerId,
@@ -96,6 +104,7 @@ describe("database executive request resolver", () => {
       [
         {
           installation_id: input.installationId,
+          workspace_id: input.workspaceId,
           work_id: input.workId,
           id: input.evidenceRecordIds[0],
           summary: "Synthetic evidence",
@@ -117,22 +126,27 @@ describe("database executive request resolver", () => {
         {
           id: input.installationId,
           slug: "synthetic-installation",
-          personKind: "owner",
-          workItems: [
+          workspaces: [
             {
-              id: input.workId,
-              state: "ready",
-              priority: 80,
-              custodianName: "Synthetic worker",
-              acceptanceCriteria: ["Cite the synthetic evidence"],
-            },
-          ],
-          proposalBindings: [
-            {
-              workId: input.workId,
-              workerId: input.workerId,
-              roleId: input.roleId,
-              evidence: [{ id: input.evidenceRecordIds[0] }],
+              id: input.workspaceId,
+              personKind: "owner",
+              workItems: [
+                {
+                  id: input.workId,
+                  state: "ready",
+                  priority: 80,
+                  custodianName: "Synthetic worker",
+                  acceptanceCriteria: ["Cite the synthetic evidence"],
+                },
+              ],
+              proposalBindings: [
+                {
+                  workId: input.workId,
+                  workerId: input.workerId,
+                  roleId: input.roleId,
+                  evidence: [{ id: input.evidenceRecordIds[0] }],
+                },
+              ],
             },
           ],
         },
@@ -166,7 +180,7 @@ describe("database executive request resolver", () => {
       expect(database.statements[0]).toContain("worker_role_assignments");
       expect(database.statements[0]).toContain("executive.propose");
       expect(database.statements[0]).toContain(
-        "policy.definition ->> 'protocol' is distinct from $7",
+        "policy.definition ->> 'protocol' is distinct from $8",
       );
       expect(database.statements[0]).toContain("work.installation_id = $1");
     });
@@ -203,8 +217,8 @@ describe("database executive request resolver", () => {
     const database = new FakeDatabase();
     const memory = new InMemoryHindsightAdapter();
     const bank = {
-      id: `organizational:${input.installationId}:default`,
-      installationId: input.installationId,
+      id: `organizational:${input.installationId}:${input.workspaceId}:default`,
+      installationId: `${input.installationId}:${input.workspaceId}`,
       realm: "organizational" as const,
     };
     await memory.retain(bank, {

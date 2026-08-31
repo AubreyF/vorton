@@ -2,6 +2,8 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export interface AuthenticatedIdentity {
   authUserId: string;
+  aal: "aal1" | "aal2";
+  authTime: number;
 }
 
 export interface IdentityVerifier {
@@ -18,6 +20,25 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class AuthenticationError extends Error {}
+export class StepUpAuthenticationError extends Error {}
+
+export const recentAal2MaxAgeSeconds = 10 * 60;
+
+export function requireRecentAal2(
+  identity: AuthenticatedIdentity,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): void {
+  if (
+    identity.aal !== "aal2" ||
+    !Number.isInteger(identity.authTime) ||
+    identity.authTime > nowSeconds + 60 ||
+    nowSeconds - identity.authTime > recentAal2MaxAgeSeconds
+  ) {
+    throw new StepUpAuthenticationError(
+      "Recent AAL2 step-up authentication is required for this action",
+    );
+  }
+}
 
 export function createSupabaseIdentityVerifier(
   config: SupabaseJwtConfig,
@@ -39,7 +60,20 @@ export function createSupabaseIdentityVerifier(
             "The verified token subject must be a UUID",
           );
         }
-        return { authUserId: payload.sub };
+        if (
+          (payload.aal !== "aal1" && payload.aal !== "aal2") ||
+          typeof payload.auth_time !== "number" ||
+          !Number.isInteger(payload.auth_time)
+        ) {
+          throw new AuthenticationError(
+            "The verified token must include AAL and authentication time claims",
+          );
+        }
+        return {
+          authUserId: payload.sub,
+          aal: payload.aal,
+          authTime: payload.auth_time,
+        };
       } catch (error) {
         if (error instanceof AuthenticationError) throw error;
         throw new AuthenticationError("The bearer token is invalid");

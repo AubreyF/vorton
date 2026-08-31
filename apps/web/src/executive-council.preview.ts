@@ -152,6 +152,7 @@ function stateAt(
   return {
     protocol: "vorton.executive-council.v1",
     installationId: "00000000-0000-4000-8000-000000000002",
+    workspaceId: "00000000-0000-4000-8000-000000000010",
     work: {
       id: "00000000-0000-4000-8000-000000000003",
       title: "Choose the next product decision",

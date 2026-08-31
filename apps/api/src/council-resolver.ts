@@ -25,6 +25,8 @@ import {
 } from "@vorton/executive";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 
+import { requireRecentAal2, type AuthenticatedIdentity } from "./auth.js";
+
 export class ExecutiveCouncilInputError extends Error {}
 export class ExecutiveCouncilResolutionError extends Error {}
 export class ExecutiveCouncilConflictError extends Error {}
@@ -69,6 +71,8 @@ interface EvidenceRow {
 
 interface RecordRow {
   id: string;
+  installation_id: string;
+  workspace_id: string;
   kind: "proposal" | "review";
   summary: string;
   payload: Record<string, unknown>;
@@ -121,6 +125,7 @@ function requireUuid(value: string, label: string): string {
 
 export function parseCouncilInstallationInput(value: unknown): {
   installationId: string;
+  workspaceId: string;
 } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ExecutiveCouncilInputError(
@@ -129,15 +134,25 @@ export function parseCouncilInstallationInput(value: unknown): {
   }
   const body = value as Record<string, unknown>;
   const keys = Object.keys(body);
-  if (keys.length !== 1 || keys[0] !== "installationId") {
+  if (
+    keys.length !== 2 ||
+    !keys.includes("installationId") ||
+    !keys.includes("workspaceId")
+  ) {
     throw new ExecutiveCouncilInputError(
-      "Only installationId may be supplied; roles, workers, evidence, peer context, and authority are server-resolved",
+      "Only installationId and workspaceId may be supplied; roles, workers, evidence, peer context, and authority are server-resolved",
     );
   }
   if (typeof body.installationId !== "string") {
     throw new ExecutiveCouncilInputError("installationId must be a UUID");
   }
-  return { installationId: requireUuid(body.installationId, "installationId") };
+  if (typeof body.workspaceId !== "string") {
+    throw new ExecutiveCouncilInputError("workspaceId must be a UUID");
+  }
+  return {
+    installationId: requireUuid(body.installationId, "installationId"),
+    workspaceId: requireUuid(body.workspaceId, "workspaceId"),
+  };
 }
 
 function deterministicUuid(scope: string, kind: string): string {
@@ -184,11 +199,16 @@ async function rowValue(
   transaction: SqlExecutor,
   table: string,
   id: string,
+  installationId: string,
+  workspaceId: string,
   columns: string,
 ): Promise<Record<string, unknown> | undefined> {
   const result = await transaction.query<JsonRow>(
-    `select to_jsonb(selected) as value from (select ${columns} from public.${table} where id = $1) selected`,
-    [id],
+    `select to_jsonb(selected) as value from (
+       select ${columns} from public.${table}
+        where id = $1 and installation_id = $2 and workspace_id = $3
+     ) selected`,
+    [id, installationId, workspaceId],
   );
   return result.rows[0]?.value;
 }
@@ -233,9 +253,13 @@ function councilRecord(row: RecordRow): CouncilContribution {
   );
   const workUpdatedAt = row.payload.workUpdatedAt;
   const workInputSha256 = row.payload.workInputSha256;
+  const installationId = row.payload.installationId;
+  const workspaceId = row.payload.workspaceId;
   if (
     row.payload.councilProtocol !== executiveCouncilProtocol ||
     row.payload.authority !== "none" ||
+    installationId !== row.installation_id ||
+    workspaceId !== row.workspace_id ||
     typeof roleId !== "string" ||
     !uuid.test(roleId) ||
     typeof workUpdatedAt !== "string" ||
@@ -253,6 +277,8 @@ function councilRecord(row: RecordRow): CouncilContribution {
   }
   const parsed = executiveCouncilRecordSchema.parse({
     id: row.id,
+    installationId,
+    workspaceId,
     kind: row.kind,
     summary: row.summary,
     actorWorkerId: row.actor_worker_id,
@@ -291,6 +317,8 @@ function contributionPeer(
   }
   return {
     recordId: contribution.id,
+    installationId: contribution.installationId,
+    workspaceId: contribution.workspaceId,
     kind: contribution.kind,
     phase: contribution.phase as "proposal" | "review",
     roleId: contribution.roleId,
@@ -310,27 +338,37 @@ export class DatabaseExecutiveCouncilResolver {
 
   async install(
     workIdValue: string,
-    requester: PersonContext,
+    requester: PersonContext & AuthenticatedIdentity,
   ): Promise<ExecutiveCouncilState> {
+    requireRecentAal2(requester);
     const workId = requireUuid(workIdValue, "workId");
     await this.database.asPerson(requester, async (transaction) => {
       await transaction.query(
         "select pg_advisory_xact_lock(hashtextextended($1, 0))",
-        [`${executiveCouncilProtocol}:${requester.installationId}:${workId}`],
+        [
+          `${executiveCouncilProtocol}:${requester.installationId}:${requester.workspaceId}:${workId}`,
+        ],
       );
       const person = await this.#person(transaction, requester, true);
       const resolvedWork = await this.#work(
         transaction,
         requester.installationId,
+        requester.workspaceId,
         workId,
       );
       this.#assertWorkCanAdvance(resolvedWork.work);
       const workers = await transaction.query<WorkerRow>(
         `select id, name, provider, model
            from public.workers
-          where installation_id = $1 and provider = $2 and model = $3
+          where installation_id = $1 and workspace_id = $2
+            and provider = $3 and model = $4
           order by id`,
-        [requester.installationId, this.worker.provider, this.worker.model],
+        [
+          requester.installationId,
+          requester.workspaceId,
+          this.worker.provider,
+          this.worker.model,
+        ],
       );
       if (workers.rows.length !== 1 || !workers.rows[0]) {
         throw new ExecutiveCouncilConflictError(
@@ -342,6 +380,7 @@ export class DatabaseExecutiveCouncilResolver {
         await this.#installRole(
           transaction,
           requester.installationId,
+          requester.workspaceId,
           person.id,
           worker.id,
           role,
@@ -350,6 +389,7 @@ export class DatabaseExecutiveCouncilResolver {
       await this.#installPolicyAndGrants(
         transaction,
         requester.installationId,
+        requester.workspaceId,
         workId,
         person.id,
         worker.id,
@@ -366,6 +406,7 @@ export class DatabaseExecutiveCouncilResolver {
     const snapshot = await this.#snapshot(workId, requester, false, false);
     return deriveCouncilState({
       installationId: requester.installationId,
+      workspaceId: requester.workspaceId,
       work: snapshot.work,
       roles: snapshot.roles,
       records: snapshot.records,
@@ -380,6 +421,7 @@ export class DatabaseExecutiveCouncilResolver {
     const snapshot = await this.#snapshot(workId, requester, true, true);
     const state = deriveCouncilState({
       installationId: requester.installationId,
+      workspaceId: requester.workspaceId,
       work: snapshot.work,
       roles: snapshot.roles,
       records: snapshot.records,
@@ -423,6 +465,7 @@ export class DatabaseExecutiveCouncilResolver {
     ];
     const request = executiveWorkerJobRequestSchema.parse({
       installationId: requester.installationId,
+      workspaceId: requester.workspaceId,
       workId,
       workerId: role.workerId,
       role: {
@@ -441,6 +484,8 @@ export class DatabaseExecutiveCouncilResolver {
       derivedContext: [],
       council: {
         protocol: executiveCouncilProtocol,
+        installationId: requester.installationId,
+        workspaceId: requester.workspaceId,
         phase: state.nextStep.phase,
         roleId: role.roleId,
         workUpdatedAt: snapshot.workUpdatedAt,
@@ -520,6 +565,7 @@ export class DatabaseExecutiveCouncilResolver {
       const resolvedWork = await this.#work(
         transaction,
         requester.installationId,
+        requester.workspaceId,
         workId,
       );
       const rolesResult = await transaction.query<RoleRow>(
@@ -528,16 +574,20 @@ export class DatabaseExecutiveCouncilResolver {
            from public.roles role
            join public.worker_role_assignments assignment
              on assignment.installation_id = role.installation_id
+            and assignment.workspace_id = role.workspace_id
             and assignment.role_id = role.id
            join public.workers worker
              on worker.installation_id = assignment.installation_id
+            and worker.workspace_id = assignment.workspace_id
             and worker.id = assignment.worker_id
           where role.installation_id = $1
-            and role.name = any($2::text[])
-            and worker.provider = $3 and worker.model = $4
-          order by array_position($2::text[], role.name), role.id, worker.id`,
+            and role.workspace_id = $2
+            and role.name = any($3::text[])
+            and worker.provider = $4 and worker.model = $5
+          order by array_position($3::text[], role.name), role.id, worker.id`,
         [
           requester.installationId,
+          requester.workspaceId,
           canonicalCouncilRoles.map((role) => role.name),
           this.worker.provider,
           this.worker.model,
@@ -548,17 +598,24 @@ export class DatabaseExecutiveCouncilResolver {
         await this.#assertGrants(
           transaction,
           requester.installationId,
+          requester.workspaceId,
           workId,
           roles[0]!.workerId,
         );
       }
       const recordRows = await transaction.query<RecordRow>(
-        `select id, kind, summary, payload, actor_worker_id
+        `select id, installation_id, workspace_id, kind, summary, payload,
+                actor_worker_id
            from public.records
-          where installation_id = $1 and work_id = $2
-            and payload ->> 'councilProtocol' = $3
+          where installation_id = $1 and workspace_id = $2 and work_id = $3
+            and payload ->> 'councilProtocol' = $4
           order by created_at, id`,
-        [requester.installationId, workId, executiveCouncilProtocol],
+        [
+          requester.installationId,
+          requester.workspaceId,
+          workId,
+          executiveCouncilProtocol,
+        ],
       );
       const records = recordRows.rows.map(councilRecord);
       this.#validateContributionSet(roles, records, resolvedWork.inputSha256);
@@ -567,18 +624,19 @@ export class DatabaseExecutiveCouncilResolver {
         frozenEvidence
           ? `select id, summary, source_uri, classification
                from public.records
-              where installation_id = $1 and kind = 'evidence'
-                and id = any($2::uuid[])
+              where installation_id = $1 and workspace_id = $2
+                and kind = 'evidence' and id = any($3::uuid[])
               order by id`
           : `select id, summary, source_uri, classification
                from public.records
-              where installation_id = $1 and kind = 'evidence'
-                and (work_id is null or work_id = $2)
+              where installation_id = $1 and workspace_id = $2
+                and kind = 'evidence'
+                and (work_id is null or work_id = $3)
               order by created_at desc, id desc
               limit 20`,
         frozenEvidence
-          ? [requester.installationId, frozenEvidence]
-          : [requester.installationId, workId],
+          ? [requester.installationId, requester.workspaceId, frozenEvidence]
+          : [requester.installationId, requester.workspaceId, workId],
       );
       if (
         evidenceResult.rows.length === 0 ||
@@ -589,7 +647,7 @@ export class DatabaseExecutiveCouncilResolver {
           ))
       ) {
         throw new ExecutiveCouncilConflictError(
-          "Council authoritative evidence is missing or crossed its installation boundary",
+          "Council authoritative evidence is missing or crossed its installation or workspace boundary",
         );
       }
       return {
@@ -616,18 +674,28 @@ export class DatabaseExecutiveCouncilResolver {
     ownerRequired: boolean,
   ): Promise<PersonRow> {
     const result = await transaction.query<PersonRow>(
-      `select id, kind
-         from public.people
-        where installation_id = $1 and auth_user_id = $2
-          and ($3::boolean = false or kind = 'owner')`,
-      [requester.installationId, requester.authUserId, ownerRequired],
+      `select person.id, membership.kind
+         from public.people person
+         join public.workspace_memberships membership
+           on membership.installation_id = person.installation_id
+          and membership.person_id = person.id
+        where person.installation_id = $1
+          and membership.workspace_id = $2
+          and person.auth_user_id = $3
+          and ($4::boolean = false or membership.kind = 'owner')`,
+      [
+        requester.installationId,
+        requester.workspaceId,
+        requester.authUserId,
+        ownerRequired,
+      ],
     );
     const person = result.rows[0];
     if (!person) {
       throw new ExecutiveCouncilResolutionError(
         ownerRequired
-          ? "Installation owner authority is required to advance the executive council"
-          : "Installation membership is required to read the executive council",
+          ? "Workspace owner authority is required to change or advance the executive council"
+          : "Live workspace membership is required to read the executive council",
       );
     }
     return person;
@@ -636,6 +704,7 @@ export class DatabaseExecutiveCouncilResolver {
   async #work(
     transaction: SqlExecutor,
     installationId: string,
+    workspaceId: string,
     workId: string,
   ): Promise<ResolvedCouncilWork> {
     const result = await transaction.query<WorkRow>(
@@ -650,13 +719,13 @@ export class DatabaseExecutiveCouncilResolver {
                 'state', state::text
               )::text, 'UTF8'), 'sha256'), 'hex') as input_sha256
          from public.work
-        where installation_id = $1 and id = $2`,
-      [installationId, workId],
+        where installation_id = $1 and workspace_id = $2 and id = $3`,
+      [installationId, workspaceId, workId],
     );
     const work = result.rows[0];
     if (!work) {
       throw new ExecutiveCouncilResolutionError(
-        "Council Work is missing or belongs to another installation",
+        "Council Work is missing or belongs to another installation or workspace",
       );
     }
     const snapshot: CouncilWorkSnapshot = {
@@ -806,6 +875,7 @@ export class DatabaseExecutiveCouncilResolver {
   async #assertGrants(
     transaction: SqlExecutor,
     installationId: string,
+    workspaceId: string,
     workId: string,
     workerId: string,
   ): Promise<void> {
@@ -814,23 +884,27 @@ export class DatabaseExecutiveCouncilResolver {
          from public.capability_grants grant_row
          join public.policies policy
            on policy.installation_id = grant_row.installation_id
+          and policy.workspace_id = grant_row.workspace_id
           and policy.id = grant_row.policy_id
         where grant_row.installation_id = $1
-          and grant_row.work_id = $2
+          and grant_row.workspace_id = $2
+          and grant_row.work_id = $3
           and grant_row.principal_kind = 'worker'
-          and grant_row.worker_id = $3
+          and grant_row.worker_id = $4
           and grant_row.mode = 'recommend'
-          and grant_row.capability = any($4::text[])
-          and policy.definition ->> 'protocol' = $5
+          and grant_row.capability = any($5::text[])
+          and policy.definition ->> 'protocol' = $6
           and (grant_row.expires_at is null or grant_row.expires_at > now())
           and not exists (
             select 1 from public.capability_grant_revocations revocation
              where revocation.installation_id = grant_row.installation_id
+               and revocation.workspace_id = grant_row.workspace_id
                and revocation.grant_id = grant_row.id
           )
         order by grant_row.capability`,
       [
         installationId,
+        workspaceId,
         workId,
         workerId,
         ["executive.propose", "executive.review"],
@@ -852,20 +926,25 @@ export class DatabaseExecutiveCouncilResolver {
   async #installRole(
     transaction: SqlExecutor,
     installationId: string,
+    workspaceId: string,
     personId: string,
     workerId: string,
     role: CanonicalCouncilRole,
   ): Promise<void> {
-    const roleId = deterministicUuid(installationId, `role:${role.slug}:v1`);
+    const roleId = deterministicUuid(
+      `${installationId}:${workspaceId}`,
+      `role:${role.slug}:v1`,
+    );
     await transaction.query(
       `insert into public.roles
-         (id, installation_id, name, version, skill_markdown, content_sha256,
-          created_by_person_id)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (id, installation_id, workspace_id, name, version, skill_markdown,
+          content_sha256, created_by_person_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict do nothing`,
       [
         roleId,
         installationId,
+        workspaceId,
         role.name,
         role.version,
         role.skillMarkdown,
@@ -879,11 +958,14 @@ export class DatabaseExecutiveCouncilResolver {
         transaction,
         "roles",
         roleId,
-        "id, installation_id, name, version, skill_markdown, content_sha256, created_by_person_id",
+        installationId,
+        workspaceId,
+        "id, installation_id, workspace_id, name, version, skill_markdown, content_sha256, created_by_person_id",
       ),
       {
         id: roleId,
         installation_id: installationId,
+        workspace_id: workspaceId,
         name: role.name,
         version: role.version,
         skill_markdown: role.skillMarkdown,
@@ -892,15 +974,16 @@ export class DatabaseExecutiveCouncilResolver {
       },
     );
     const assignmentId = deterministicUuid(
-      installationId,
+      `${installationId}:${workspaceId}`,
       `assignment:${workerId}:${roleId}`,
     );
     await transaction.query(
       `insert into public.worker_role_assignments
-         (id, installation_id, worker_id, role_id, assigned_by_person_id)
-       values ($1, $2, $3, $4, $5)
+         (id, installation_id, workspace_id, worker_id, role_id,
+          assigned_by_person_id)
+       values ($1, $2, $3, $4, $5, $6)
        on conflict do nothing`,
-      [assignmentId, installationId, workerId, roleId, personId],
+      [assignmentId, installationId, workspaceId, workerId, roleId, personId],
     );
     assertExact(
       `${role.name} assignment`,
@@ -908,11 +991,14 @@ export class DatabaseExecutiveCouncilResolver {
         transaction,
         "worker_role_assignments",
         assignmentId,
-        "id, installation_id, worker_id, role_id, assigned_by_person_id",
+        installationId,
+        workspaceId,
+        "id, installation_id, workspace_id, worker_id, role_id, assigned_by_person_id",
       ),
       {
         id: assignmentId,
         installation_id: installationId,
+        workspace_id: workspaceId,
         worker_id: workerId,
         role_id: roleId,
         assigned_by_person_id: personId,
@@ -923,11 +1009,15 @@ export class DatabaseExecutiveCouncilResolver {
   async #installPolicyAndGrants(
     transaction: SqlExecutor,
     installationId: string,
+    workspaceId: string,
     workId: string,
     personId: string,
     workerId: string,
   ): Promise<void> {
-    const policyId = deterministicUuid(installationId, "policy:v1");
+    const policyId = deterministicUuid(
+      `${installationId}:${workspaceId}`,
+      "policy:v1",
+    );
     const definition = {
       protocol: executiveCouncilProtocol,
       authority: "none",
@@ -946,11 +1036,12 @@ export class DatabaseExecutiveCouncilResolver {
     const contentSha256 = createHash("sha256").update(encoded).digest("hex");
     await transaction.query(
       `insert into public.policies
-         (id, installation_id, name, version, definition, content_sha256,
-          created_by_person_id)
-       values ($1, $2, 'Executive council recommendation only', 1, $3::jsonb, $4, $5)
+         (id, installation_id, workspace_id, name, version, definition,
+          content_sha256, created_by_person_id)
+       values ($1, $2, $3, 'Executive council recommendation only', 1,
+               $4::jsonb, $5, $6)
        on conflict do nothing`,
-      [policyId, installationId, encoded, contentSha256, personId],
+      [policyId, installationId, workspaceId, encoded, contentSha256, personId],
     );
     assertExact(
       "Executive council policy",
@@ -958,11 +1049,14 @@ export class DatabaseExecutiveCouncilResolver {
         transaction,
         "policies",
         policyId,
-        "id, installation_id, name, version, definition, content_sha256, created_by_person_id",
+        installationId,
+        workspaceId,
+        "id, installation_id, workspace_id, name, version, definition, content_sha256, created_by_person_id",
       ),
       {
         id: policyId,
         installation_id: installationId,
+        workspace_id: workspaceId,
         name: "Executive council recommendation only",
         version: 1,
         definition,
@@ -972,18 +1066,19 @@ export class DatabaseExecutiveCouncilResolver {
     );
     for (const capability of ["executive.propose", "executive.review"]) {
       const grantId = deterministicUuid(
-        `${installationId}:${workId}`,
+        `${installationId}:${workspaceId}:${workId}`,
         `grant:${capability}`,
       );
       await transaction.query(
         `insert into public.capability_grants
-           (id, installation_id, policy_id, principal_kind, worker_id,
-            capability, mode, work_id, granted_by_person_id)
-         values ($1, $2, $3, 'worker', $4, $5, 'recommend', $6, $7)
+           (id, installation_id, workspace_id, policy_id, principal_kind,
+            worker_id, capability, mode, work_id, granted_by_person_id)
+         values ($1, $2, $3, $4, 'worker', $5, $6, 'recommend', $7, $8)
          on conflict do nothing`,
         [
           grantId,
           installationId,
+          workspaceId,
           policyId,
           workerId,
           capability,
@@ -997,12 +1092,15 @@ export class DatabaseExecutiveCouncilResolver {
           transaction,
           "capability_grants",
           grantId,
-          `id, installation_id, policy_id, principal_kind, person_id, worker_id,
+          installationId,
+          workspaceId,
+          `id, installation_id, workspace_id, policy_id, principal_kind, person_id, worker_id,
            capability, mode, work_id, expires_at, granted_by_person_id`,
         ),
         {
           id: grantId,
           installation_id: installationId,
+          workspace_id: workspaceId,
           policy_id: policyId,
           principal_kind: "worker",
           person_id: null,
@@ -1017,9 +1115,9 @@ export class DatabaseExecutiveCouncilResolver {
       const revocation = await transaction.query<{ revoked: boolean }>(
         `select exists(
            select 1 from public.capability_grant_revocations
-            where installation_id = $1 and grant_id = $2
+            where installation_id = $1 and workspace_id = $2 and grant_id = $3
          ) as revoked`,
-        [installationId, grantId],
+        [installationId, workspaceId, grantId],
       );
       if (revocation.rows[0]?.revoked) {
         throw new ExecutiveCouncilConflictError(
@@ -1050,6 +1148,7 @@ export class DatabaseExecutiveCouncilResolver {
   ): void {
     if (
       job.installationId !== request.installationId ||
+      job.workspaceId !== request.workspaceId ||
       job.workId !== request.workId ||
       job.workerId !== request.workerId ||
       job.provider !== this.worker.provider ||
@@ -1069,9 +1168,13 @@ export class DatabaseExecutiveCouncilResolver {
     reservation: CouncilAttemptReservation,
   ): Promise<void> {
     await this.database.asWorker(
-      { installationId: request.installationId, workerId: request.workerId },
+      {
+        installationId: request.installationId,
+        workspaceId: request.workspaceId,
+        workerId: request.workerId,
+      },
       async (transaction) => {
-        await this.#finalizeRun(transaction, reservation, job);
+        await this.#finalizeRun(transaction, request, reservation, job);
       },
     );
   }
@@ -1093,20 +1196,27 @@ export class DatabaseExecutiveCouncilResolver {
     const peerRecordIds = council.peerContext.map((peer) => peer.recordId);
     const kind = council.phase === "review" ? "review" : "proposal";
     await this.database.asWorker(
-      { installationId: request.installationId, workerId: request.workerId },
+      {
+        installationId: request.installationId,
+        workspaceId: request.workspaceId,
+        workerId: request.workerId,
+      },
       async (transaction) => {
-        await this.#finalizeRun(transaction, reservation, job);
+        await this.#finalizeRun(transaction, request, reservation, job);
         await transaction.query(
           `insert into public.records
-             (installation_id, work_id, kind, summary, payload, classification,
-              actor_worker_id)
-           values ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+             (installation_id, workspace_id, work_id, kind, summary, payload,
+              classification, actor_worker_id)
+           values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
           [
             request.installationId,
+            request.workspaceId,
             request.workId,
             kind,
             job.recommendation!.summary,
             JSON.stringify({
+              installationId: request.installationId,
+              workspaceId: request.workspaceId,
               councilProtocol: council.protocol,
               councilPhase: council.phase,
               councilRoleId: council.roleId,
@@ -1141,6 +1251,7 @@ export class DatabaseExecutiveCouncilResolver {
       return await this.database.asWorker(
         {
           installationId: request.installationId,
+          workspaceId: request.workspaceId,
           workerId: request.workerId,
         },
         async (transaction) => {
@@ -1148,14 +1259,16 @@ export class DatabaseExecutiveCouncilResolver {
             `update public.worker_runs
                 set status = 'failed',
                     error = 'Council attempt lease expired before completion'
-              where installation_id = $1 and work_id = $2 and worker_id = $3
-                and metadata ->> 'council_protocol' = $4
-                and metadata ->> 'council_phase' = $5
-                and metadata ->> 'council_role_id' = $6
+              where installation_id = $1 and workspace_id = $2
+                and work_id = $3 and worker_id = $4
+                and metadata ->> 'council_protocol' = $5
+                and metadata ->> 'council_phase' = $6
+                and metadata ->> 'council_role_id' = $7
                 and status in ('queued', 'in_progress')
                 and updated_at < now() - interval '35 minutes'`,
             [
               request.installationId,
+              request.workspaceId,
               request.workId,
               request.workerId,
               request.council!.protocol,
@@ -1165,13 +1278,15 @@ export class DatabaseExecutiveCouncilResolver {
           );
           const result = await transaction.query<{ id: string }>(
             `insert into public.worker_runs
-               (installation_id, work_id, worker_id, role_id, provider, model,
-                provider_job_id, status, store, background, metadata, error)
-             values ($1, $2, $3, $4, $5, $6, $7, 'in_progress', false, false,
-                     $8::jsonb, null)
+               (installation_id, workspace_id, work_id, worker_id, role_id,
+                provider, model, provider_job_id, status, store, background,
+                metadata, error)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', false,
+                     false, $9::jsonb, null)
              returning id`,
             [
               request.installationId,
+              request.workspaceId,
               request.workId,
               request.workerId,
               request.role.roleId,
@@ -1202,14 +1317,19 @@ export class DatabaseExecutiveCouncilResolver {
     error: string,
   ): Promise<void> {
     await this.database.asWorker(
-      { installationId: request.installationId, workerId: request.workerId },
+      {
+        installationId: request.installationId,
+        workspaceId: request.workspaceId,
+        workerId: request.workerId,
+      },
       async (transaction) => {
         const result = await transaction.query(
           `update public.worker_runs
               set status = 'failed', error = $2
-            where id = $1 and status in ('queued', 'in_progress')
+            where id = $1 and installation_id = $3 and workspace_id = $4
+              and status in ('queued', 'in_progress')
             returning id`,
-          [reservation.id, error],
+          [reservation.id, error, request.installationId, request.workspaceId],
         );
         if (result.rowCount !== 1) {
           throw new ExecutiveCouncilConflictError(
@@ -1222,15 +1342,24 @@ export class DatabaseExecutiveCouncilResolver {
 
   async #finalizeRun(
     transaction: SqlExecutor,
+    request: ExecutiveWorkerJobRequest,
     reservation: CouncilAttemptReservation,
     job: ExecutiveWorkerJob,
   ): Promise<void> {
     const result = await transaction.query(
       `update public.worker_runs
           set provider_job_id = $2, status = $3, error = $4
-        where id = $1 and status in ('queued', 'in_progress')
+        where id = $1 and installation_id = $5 and workspace_id = $6
+          and status in ('queued', 'in_progress')
         returning id`,
-      [reservation.id, job.jobId, job.status, job.error ?? null],
+      [
+        reservation.id,
+        job.jobId,
+        job.status,
+        job.error ?? null,
+        request.installationId,
+        request.workspaceId,
+      ],
     );
     if (result.rowCount !== 1) {
       throw new ExecutiveCouncilConflictError(
@@ -1242,6 +1371,7 @@ export class DatabaseExecutiveCouncilResolver {
   #runMetadata(request: ExecutiveWorkerJobRequest): Record<string, unknown> {
     return {
       installation_id: request.installationId,
+      workspace_id: request.workspaceId,
       work_id: request.workId,
       worker_id: request.workerId,
       role_sha256: request.role.contentSha256,

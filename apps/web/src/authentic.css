@@ -210,6 +210,7 @@ summary {
   backdrop-filter: var(--vorton-header-backdrop);
 }
 .brand-block {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -230,6 +231,167 @@ summary {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.015em;
+}
+.workspace-switcher {
+  position: relative;
+  min-width: 0;
+}
+.workspace-switcher-trigger {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+  max-width: clamp(112px, 22vw, 248px);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    filter var(--vorton-ui-duration) var(--vorton-ui-easing),
+    box-shadow var(--vorton-ui-duration) var(--vorton-ui-easing);
+}
+.workspace-switcher-trigger:hover,
+.workspace-switcher-trigger:focus-visible,
+.workspace-switcher-trigger[aria-expanded="true"] {
+  filter: brightness(1.05);
+  box-shadow:
+    inset 0 -3px 0 var(--blue),
+    0 0 0 1px color-mix(in srgb, var(--blue) 24%, transparent);
+}
+.workspace-switcher-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-switcher-chevron {
+  flex: 0 0 auto;
+  transition: transform var(--vorton-ui-duration) var(--vorton-ui-easing);
+}
+.workspace-switcher-trigger[aria-expanded="true"] .workspace-switcher-chevron {
+  transform: rotate(180deg);
+}
+.workspace-switcher-panel {
+  position: absolute;
+  z-index: 31;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: 320px;
+  max-width: calc(100vw - (var(--topbar-inset) * 2));
+  max-height: calc(100dvh - var(--topbar-height) - var(--topbar-inset));
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--vorton-card-radius);
+  background: var(--vorton-card-solid);
+  box-shadow: var(--shadow);
+  scrollbar-width: thin;
+}
+.workspace-switcher-panel[hidden] {
+  display: none;
+}
+.workspace-switcher-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 8px 9px;
+  border-bottom: 1px solid var(--line);
+}
+.workspace-switcher-heading p,
+.workspace-switcher-heading span {
+  margin: 0;
+  font-family: var(--vorton-font-utility);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.workspace-switcher-heading p {
+  color: var(--ink);
+}
+.workspace-switcher-heading span {
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.workspace-switcher-options {
+  display: grid;
+  gap: 3px;
+  padding-top: 6px;
+}
+.workspace-switcher-option {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--vorton-control-radius);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--vorton-ui-duration) var(--vorton-ui-easing),
+    border-color var(--vorton-ui-duration) var(--vorton-ui-easing),
+    color var(--vorton-ui-duration) var(--vorton-ui-easing);
+}
+.workspace-switcher-option:hover,
+.workspace-switcher-option:focus-visible {
+  border-color: var(--line);
+  background: var(--vorton-control-hover);
+  color: var(--ink);
+}
+.workspace-switcher-option[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--blue) 42%, var(--line));
+  background: color-mix(in srgb, var(--blue) 10%, var(--vorton-card-solid));
+  color: var(--ink);
+}
+.workspace-realm-mark {
+  width: 8px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+}
+.workspace-realm-personal {
+  background: var(--orange);
+}
+.workspace-realm-organizational {
+  background: var(--green);
+}
+.workspace-switcher-option-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.workspace-switcher-option-copy strong,
+.workspace-switcher-option-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-switcher-option-copy strong {
+  color: var(--ink);
+  font-family: var(--vorton-font-display);
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+.workspace-switcher-option-copy span {
+  color: var(--ink-soft);
+  font-family: var(--vorton-font-utility);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.workspace-switcher-current {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--blue);
 }
 .topbar-actions {
   position: relative;
@@ -2172,6 +2334,12 @@ details > summary {
 }
 
 @media (max-width: 720px) {
+  .workspace-switcher-trigger {
+    max-width: min(42vw, 176px);
+  }
+  .workspace-switcher-panel {
+    width: min(320px, calc(100vw - (var(--topbar-inset) * 2)));
+  }
   .account-menu-trigger {
     width: 42px;
     height: 42px;
@@ -2290,6 +2458,8 @@ details > summary {
     color: CanvasText;
   }
   .account-menu-trigger,
+  .workspace-switcher-trigger,
+  .workspace-switcher-option,
   .appearance-option[aria-checked="true"],
   .interface-zoom-control,
   .export-option,
@@ -2304,6 +2474,12 @@ details > summary {
   .nav-scroll-control {
     border: 1px solid CanvasText;
     background: Canvas;
+    color: CanvasText;
+  }
+  .workspace-switcher-panel {
+    border-color: CanvasText;
+    background: Canvas;
+    box-shadow: none;
     color: CanvasText;
   }
 }

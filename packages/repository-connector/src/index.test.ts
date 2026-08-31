@@ -7,6 +7,7 @@ import {
 const connector: ReadOnlyRepositoryConnector = {
   provider: "fixture",
   repository: "example/repository",
+  githubAppInstallationId: null,
   mode: "read-only",
   async listOpenTickets() {
     return [];
@@ -32,6 +33,8 @@ describe("repository reconciliation", () => {
       ticket,
       observedAt: "2026-08-29T00:33:00.000Z",
       execution: {
+        vortonInstallationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         ticketNumber: 9,
         installationWorkId: "WORK-9",
         revision: "execution-9-revision-1",
@@ -58,6 +61,8 @@ describe("repository reconciliation", () => {
       ticket,
       observedAt: "2026-08-29T00:33:00.000Z",
       execution: {
+        vortonInstallationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         ticketNumber: 9,
         installationWorkId: "WORK-9",
         revision: "execution-9-revision-2",

@@ -14,6 +14,7 @@ import {
 const evidenceRecordId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const request = {
   installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   workId: "7fb46f09-3894-4c24-933c-77c7a403341c",
   workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
   role: {

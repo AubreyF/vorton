@@ -5,6 +5,7 @@ import { FakeExecutiveWorkerAdapter } from "@vorton/workers";
 import { ExecutiveWorkflow, InMemoryExecutiveLedger } from "./workflow.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ownerId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const ownerAuthUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
@@ -60,6 +61,7 @@ describe("governed executive workflow", () => {
     });
     const evidence = await workflow.recordEvidence({
       installationId,
+      workspaceId,
       summary: "Synthetic coolant pressure stayed within the fixture range.",
       sourceUri: null,
       classification: "synthetic",
@@ -67,6 +69,7 @@ describe("governed executive workflow", () => {
     });
     const { job, proposal } = await workflow.startProposal({
       installationId,
+      workspaceId,
       workId: analysisWorkId,
       workerId,
       role: {
@@ -92,23 +95,27 @@ describe("governed executive workflow", () => {
 
     const review = await workflow.review({
       proposalRecordId: proposal!.id,
-      reviewer: { installationId, authUserId: ownerAuthUserId },
+      reviewer: { installationId, workspaceId, authUserId: ownerAuthUserId },
       summary: "The bounded check is proportionate.",
       disposition: "support",
     });
     const decision = await workflow.decide({
       reviewRecordId: review.id,
-      decisionMaker: { installationId, authUserId: ownerAuthUserId },
+      decisionMaker: {
+        installationId,
+        workspaceId,
+        authUserId: ownerAuthUserId,
+      },
       summary: "Authorize only the synthetic diagnostic.",
       classification: "owner-required",
     });
     const approval = await workflow.approve({
       decisionRecordId: decision.id,
-      approver: { installationId, authUserId: ownerAuthUserId },
+      approver: { installationId, workspaceId, authUserId: ownerAuthUserId },
       summary: "Approved for the synthetic fixture only.",
     });
     const work = await workflow.createExecutionWork({
-      requester: { installationId, authUserId: ownerAuthUserId },
+      requester: { installationId, workspaceId, authUserId: ownerAuthUserId },
       approvalRecordId: approval.id,
       authority: {
         policyId,
@@ -167,6 +174,7 @@ describe("governed executive workflow", () => {
     });
     const evidence = await workflow.recordEvidence({
       installationId,
+      workspaceId,
       summary: "Synthetic evidence",
       sourceUri: null,
       classification: "synthetic",
@@ -174,6 +182,7 @@ describe("governed executive workflow", () => {
     });
     const { proposal } = await workflow.startProposal({
       installationId,
+      workspaceId,
       workId: analysisWorkId,
       workerId,
       role: {
@@ -196,25 +205,29 @@ describe("governed executive workflow", () => {
     });
     const review = await workflow.review({
       proposalRecordId: proposal!.id,
-      reviewer: { installationId, authUserId: ownerAuthUserId },
+      reviewer: { installationId, workspaceId, authUserId: ownerAuthUserId },
       summary: "Supported",
       disposition: "support",
     });
     const decision = await workflow.decide({
       reviewRecordId: review.id,
-      decisionMaker: { installationId, authUserId: ownerAuthUserId },
+      decisionMaker: {
+        installationId,
+        workspaceId,
+        authUserId: ownerAuthUserId,
+      },
       summary: "Proceed",
       classification: "policy-authorized",
     });
     const approval = await workflow.approve({
       decisionRecordId: decision.id,
-      approver: { installationId, authUserId: ownerAuthUserId },
+      approver: { installationId, workspaceId, authUserId: ownerAuthUserId },
       summary: "Approved",
     });
 
     await expect(
       workflow.createExecutionWork({
-        requester: { installationId, authUserId: ownerAuthUserId },
+        requester: { installationId, workspaceId, authUserId: ownerAuthUserId },
         approvalRecordId: approval.id,
         authority: {
           policyId,

@@ -5,6 +5,7 @@ import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 
 const request = {
   installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   workId: "fbc4ac66-4a32-4a34-b810-88f4330205aa",
   workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
   role: {
@@ -53,6 +54,7 @@ describe("database worker run recorder", () => {
         store: false,
         background: false,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         recommendation: {
@@ -93,6 +95,7 @@ describe("database worker run recorder", () => {
         store: false,
         background: false,
         installationId: "a037f814-3572-4dcb-8a56-f2968c22bdcf",
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         error: "forged boundary",

@@ -45,6 +45,7 @@ export interface TranscriptPollingTransport {
 export interface TranscriptRevisionSink {
   latest(
     installationId: string,
+    workspaceId: string,
     provider: TranscriptProvider,
     objectId: string,
   ): Promise<TranscriptRevision | null>;
@@ -79,7 +80,11 @@ export type PollResult = {
 };
 
 export class ScheduledTranscriptPoller {
-  readonly #installation: { id: string; realm: InstallationRealm };
+  readonly #installation: {
+    id: string;
+    workspaceId: string;
+    realm: InstallationRealm;
+  };
   readonly #connectionId: string;
   readonly #transport: TranscriptPollingTransport;
   readonly #sink: TranscriptRevisionSink;
@@ -87,7 +92,11 @@ export class ScheduledTranscriptPoller {
   #state: PollingState;
 
   constructor(
-    installation: { id: string; realm: InstallationRealm },
+    installation: {
+      id: string;
+      workspaceId: string;
+      realm: InstallationRealm;
+    },
     connectionId: string,
     transport: TranscriptPollingTransport,
     sink: TranscriptRevisionSink,
@@ -194,12 +203,13 @@ export class ScheduledTranscriptPoller {
     const revisionHash = sha256(stableJson(providerRevisionContent(item)));
     const prior = await this.#sink.latest(
       this.#installation.id,
+      this.#installation.workspaceId,
       this.#transport.provider,
       item.objectId,
     );
     if (prior?.revisionHash === revisionHash) return "existing";
     const id = deterministicUuid(
-      `${this.#installation.id}:${this.#transport.provider}:${item.objectId}:${revisionHash}`,
+      `${this.#installation.id}:${this.#installation.workspaceId}:${this.#transport.provider}:${item.objectId}:${revisionHash}`,
     );
     const sourceUri = `${this.#transport.provider}://${item.objectId}?revision=${revisionHash}`;
     const boundaryMatches =
@@ -214,6 +224,7 @@ export class ScheduledTranscriptPoller {
     return this.#sink.append({
       id,
       installationId: this.#installation.id,
+      workspaceId: this.#installation.workspaceId,
       installationRealm: this.#installation.realm,
       connectionId: this.#connectionId,
       provider: this.#transport.provider,
@@ -251,6 +262,7 @@ export class InMemoryTranscriptRevisionSink implements TranscriptRevisionSink {
 
   async latest(
     installationId: string,
+    workspaceId: string,
     provider: TranscriptProvider,
     objectId: string,
   ): Promise<TranscriptRevision | null> {
@@ -260,6 +272,7 @@ export class InMemoryTranscriptRevisionSink implements TranscriptRevisionSink {
         .find(
           (revision) =>
             revision.installationId === installationId &&
+            revision.workspaceId === workspaceId &&
             revision.provider === provider &&
             revision.providerObjectId === objectId,
         ) ?? null
@@ -324,7 +337,11 @@ export class FakeTranscriptPollingTransport implements TranscriptPollingTranspor
 }
 
 export type PollingAdapterInput = {
-  installation: { id: string; realm: InstallationRealm };
+  installation: {
+    id: string;
+    workspaceId: string;
+    realm: InstallationRealm;
+  };
   connectionId: string;
   transport: TranscriptPollingTransport;
   sink: TranscriptRevisionSink;

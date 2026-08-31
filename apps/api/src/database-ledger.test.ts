@@ -6,10 +6,12 @@ import { DatabaseExecutiveLedger } from "./database-ledger.js";
 
 const person = {
   installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
 };
 const worker = {
   installationId: person.installationId,
+  workspaceId: person.workspaceId,
   workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
 };
 
@@ -23,6 +25,7 @@ function fixture() {
         {
           id: "4b3f8274-5fb5-4e7e-bbc5-603a54cc4ad8",
           installation_id: person.installationId,
+          workspace_id: person.workspaceId,
           work_id: null,
           kind: "evidence",
           summary: "Synthetic evidence",

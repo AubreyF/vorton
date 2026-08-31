@@ -9,6 +9,7 @@ Vorton is intended to become a modular operating system for a person or organiza
 The mature system should provide:
 
 - one governed kernel for identity, policy, work, decisions, approvals, and evidence;
+- multiple logically isolated workspaces within one installation, allowing environments such as AubOS and FreedOS to share physical infrastructure while retaining separate authority, memory, secrets, storage, workers, events, and audit trails;
 - a control plane for personal and organizational operations;
 - portable roles expressed as skill files that workers can inherit;
 - workers distributed across cloud services, local machines, and isolated environments;
@@ -16,6 +17,8 @@ The mature system should provide:
 - Factory as the software-production module of the same operating system;
 - installation-owned modules, tools, integrations, and workflows; and
 - deterministic installation, upgrades, rollback, and recovery.
+
+Vorton should eventually adopt an OpenClaude- and Paperclip-inspired plugin architecture. Typed manifests, immutable distribution, quarantined imports, isolated workers, and explicit capability gates should let integrations and optional modules extend Vorton without weakening kernel authority or requiring permanent source forks. Plugins install into an installation, but activation and every runtime resource remain workspace scoped. Any plugin contract that cannot carry both `vortonInstallationId` and `workspaceId` fails closed. External provider identifiers such as `githubAppInstallationId` remain separately typed and grant no Vorton authority.
 
 ## Work in progress
 
@@ -71,7 +74,8 @@ These capabilities exist but remain subject to integration testing and change:
 
 - Enforced role and classification boundaries throughout memory and model execution.
 - Delegated administration, richer organizational access controls, and policy simulation.
-- Personal and organizational profiles with isolated credentials, databases, memory banks, and storage.
+- Phone-friendly workspace selection inside one authenticated environment.
+- Optional dedicated physical resources for workspaces whose risk or compliance requirements exceed logical isolation.
 
 ### Workers, modules, and distribution
 
@@ -80,7 +84,8 @@ These capabilities exist but remain subject to integration testing and change:
 - Complete Admin, including Conversations, plus Tasks, Goals, Opportunities, Command Bridge, Tools, and Factory.
 - Support installation-owned optional modules, including a separately governed Finance module when an installation actually needs one.
 - Rich transcript backfills, raw media workflows, and additional conversation providers.
-- A signed module and tool registry, followed by a managed deployment model once isolated installations prove the security contract.
+- A signed module and tool registry with immutable versions, permission review, workspace-specific activation, and revocation, followed by a managed deployment model once isolated installations prove the security contract.
+- Brokered plugin effects, short-lived secret handles, recent AAL2 step-up for dangerous actions, and receipts that bind plugin version, installation, workspace, Work, and capability authority.
 
 ## Rules that do not move
 
@@ -88,5 +93,7 @@ These capabilities exist but remain subject to integration testing and change:
 - Roles describe how to work. Policy and explicit Work determine what a worker may do.
 - Factory uses kernel Work and Records rather than creating a separate organizational ledger.
 - External systems retain authority wherever a connector contract says they do.
-- Personal data, organization data, credentials, and deployment resources remain isolated by installation.
+- Provider identity proves identity only. PostgreSQL membership and Policy determine workspace and plugin authority.
+- Plugins never infer a workspace or cross workspace boundaries through caches, jobs, credentials, filesystem paths, event subscriptions, logs, receipts, or exports.
+- Workspace data, credentials, memory, storage, workers, events, and audit records remain logically isolated inside an installation. Dedicated physical isolation remains available where Policy requires it.
 - Checkboxes record verified evidence, not aspiration.

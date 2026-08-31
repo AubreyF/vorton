@@ -10,6 +10,7 @@ import {
 } from "./council.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const workId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const evidenceId = "4b3f8274-5fb5-4e7e-bbc5-603a54cc4ad8";
@@ -45,6 +46,8 @@ function record(
   const id = `${String(sequence).padStart(8, "0")}-0000-4000-8000-${String(sequence).padStart(12, "0")}`;
   return {
     id,
+    installationId,
+    workspaceId,
     kind: phase === "review" ? "review" : "proposal",
     summary: `${phase} from ${roles[roleIndex]!.name}`,
     actorWorkerId: workerId,
@@ -126,7 +129,13 @@ describe("executive council protocol", () => {
     );
 
     expect(
-      deriveCouncilState({ installationId, work, roles, records: [] }),
+      deriveCouncilState({
+        installationId,
+        workspaceId,
+        work,
+        roles,
+        records: [],
+      }),
     ).toMatchObject({
       phase: "proposal",
       nextStep: { phase: "proposal", roleName: "Chief Executive Officer" },
@@ -140,7 +149,13 @@ describe("executive council protocol", () => {
       authority: "none",
     });
     expect(
-      deriveCouncilState({ installationId, work, roles, records: proposals }),
+      deriveCouncilState({
+        installationId,
+        workspaceId,
+        work,
+        roles,
+        records: proposals,
+      }),
     ).toMatchObject({
       phase: "review",
       nextStep: { phase: "review", roleName: "Chief Executive Officer" },
@@ -149,6 +164,7 @@ describe("executive council protocol", () => {
     expect(
       deriveCouncilState({
         installationId,
+        workspaceId,
         work,
         roles,
         records: [...proposals, ...reviews],
@@ -161,6 +177,7 @@ describe("executive council protocol", () => {
     expect(
       deriveCouncilState({
         installationId,
+        workspaceId,
         work,
         roles,
         records: [...proposals, ...reviews, synthesis],

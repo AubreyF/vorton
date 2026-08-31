@@ -15,6 +15,7 @@ import type { ExecutionAuthority, WorkInput } from "@vorton/contracts";
 interface RecordRow {
   id: string;
   installation_id: string;
+  workspace_id: string;
   work_id: string | null;
   kind: ExecutiveRecord["kind"];
   summary: string;
@@ -34,6 +35,7 @@ function recordFromRow(row: RecordRow): ExecutiveRecord {
   return {
     id: row.id,
     installationId: row.installation_id,
+    workspaceId: row.workspace_id,
     workId: row.work_id,
     kind: row.kind,
     summary: row.summary,
@@ -43,7 +45,7 @@ function recordFromRow(row: RecordRow): ExecutiveRecord {
   };
 }
 
-const recordColumns = `id, installation_id, work_id, kind, summary, payload,
+const recordColumns = `id, installation_id, workspace_id, work_id, kind, summary, payload,
   actor_person_id, actor_worker_id, supersedes_record_id`;
 
 /** Stores the executive chain in authoritative Postgres tables. */
@@ -65,14 +67,15 @@ export class DatabaseExecutiveLedger implements ExecutiveLedger {
           : "internal";
       const result = await transaction.query<RecordRow>(
         `insert into public.records
-          (installation_id, work_id, kind, summary, payload, source_uri,
+          (installation_id, workspace_id, work_id, kind, summary, payload, source_uri,
            classification, actor_person_id, actor_worker_id, supersedes_record_id)
-         values ($1, $2, $3, $4, $5::jsonb, $6, $7,
-                 case when $8 = 'person' then $9::uuid else null end,
-                 case when $8 = 'worker' then $9::uuid else null end, $10)
+         values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8,
+                 case when $9 = 'person' then $10::uuid else null end,
+                 case when $9 = 'worker' then $10::uuid else null end, $11)
          returning ${recordColumns}`,
         [
           record.installationId,
+          record.workspaceId,
           record.workId,
           record.kind,
           record.summary,
@@ -140,12 +143,14 @@ async function insertWork(
 ): Promise<string> {
   const result = await transaction.query<{ id: string }>(
     `insert into public.work
-      (installation_id, title, requested_outcome, acceptance_criteria,
+      (installation_id, workspace_id, title, requested_outcome, acceptance_criteria,
        parent_work_id, priority, requested_by_person_id)
-     values ($1, $2, $3, $4::jsonb, $5, $6, public.current_person_id($1))
+     values ($1, $2, $3, $4, $5::jsonb, $6, $7,
+             public.current_workspace_person_id($1, $2))
      returning id`,
     [
       input.installationId,
+      input.workspaceId,
       input.title,
       input.requestedOutcome,
       JSON.stringify(input.acceptanceCriteria),

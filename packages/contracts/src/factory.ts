@@ -27,6 +27,9 @@ export const factoryReconciliationCursorSchema = z.object({
 
 export const factoryReconciliationReceiptSchema = z.object({
   schemaVersion: z.literal(1),
+  vortonInstallationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  githubAppInstallationId: z.string().trim().min(1).nullable(),
   installationWorkId: z.string().min(1),
   repositoryTicketId: z.string().min(1),
   outcome: z.enum(["observed", "blocked", "authority-conflict"]),

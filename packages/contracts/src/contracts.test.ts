@@ -252,6 +252,7 @@ describe("installation contracts", () => {
     const result = workerAdvertisementSchema.safeParse({
       workerId: "7fb46f09-3894-4c24-933c-77c7a403341c",
       installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       provider: "synthetic",
       billingRealm: "test-only",
       host: "moon-1",
@@ -286,6 +287,7 @@ describe("installation contracts", () => {
     expect(
       recordInputSchema.safeParse({
         installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         kind: "evidence",
         summary: "Synthetic worker completed an offline check.",
         payload: { fixture: true },
@@ -330,6 +332,8 @@ describe("installation contracts", () => {
     );
     const peers = Array.from({ length: 10 }, (_, index) => ({
       recordId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       kind: index < 5 ? ("proposal" as const) : ("review" as const),
       phase: index < 5 ? ("proposal" as const) : ("review" as const),
       roleId: roleIds[index % 5]!,
@@ -361,6 +365,7 @@ describe("installation contracts", () => {
     }));
     const result = executiveWorkerJobRequestSchema.safeParse({
       installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       workId: "7fb46f09-3894-4c24-933c-77c7a403341c",
       workerId: "b5611dc4-07e4-4388-a7d0-ddf7bb452499",
       role: {
@@ -381,6 +386,8 @@ describe("installation contracts", () => {
       ],
       council: {
         protocol: "vorton.executive-council.v1",
+        installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         phase: "synthesis",
         roleId: roleIds[0],
         workUpdatedAt: "2026-08-30T12:00:00.000Z",
@@ -449,6 +456,7 @@ describe("installation contracts", () => {
       transcriptRevisionSchema.safeParse({
         id: "11111111-1111-4111-a111-111111111111",
         installationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         installationRealm: "organizational",
         connectionId: "0dd9b2cc-b44c-4039-a1fc-5226b5d9bb06",
         provider: "google-meet",
@@ -485,6 +493,9 @@ describe("installation contracts", () => {
     expect(
       factoryReconciliationReceiptSchema.safeParse({
         schemaVersion: 1,
+        vortonInstallationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        githubAppInstallationId: "12345678",
         installationWorkId: "WORK-MOONBASE-42",
         repositoryTicketId: "github:moonbase-lab/launch-control#42",
         outcome: "blocked",
@@ -509,5 +520,12 @@ describe("installation contracts", () => {
         blockers: ["authority_generation_conflict"],
       }).success,
     ).toBe(true);
+    expect(
+      factoryReconciliationReceiptSchema.safeParse({
+        schemaVersion: 1,
+        githubAppInstallationId: "12345678",
+        installationWorkId: "WORK-MOONBASE-42",
+      }).success,
+    ).toBe(false);
   });
 });

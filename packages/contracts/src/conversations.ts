@@ -22,6 +22,7 @@ export const transcriptRevisionSchema = z
   .object({
     id: z.string().uuid(),
     installationId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
     installationRealm: installationRealmSchema,
     connectionId: z.string().uuid(),
     provider: transcriptProviderSchema,

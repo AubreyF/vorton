@@ -142,17 +142,22 @@ describe("browser runtime boundary", () => {
 
   it("routes council reads with the exact bearer token and installation query", async () => {
     const requestFetch = vi.fn(async () =>
-      Response.json({ protocol: "vorton.executive-council.v1" }),
+      Response.json({
+        protocol: "vorton.executive-council.v1",
+        installationId: "installation-1",
+        workspaceId: "workspace-1",
+      }),
     );
     await getExecutiveCouncil(
       "https://api.vorton.example",
       "verified-session-token",
       "work/with spaces",
       "installation-1",
+      "workspace-1",
       requestFetch as typeof fetch,
     );
     expect(requestFetch).toHaveBeenCalledWith(
-      "https://api.vorton.example/v1/executive/councils/work%2Fwith%20spaces?installationId=installation-1",
+      "https://api.vorton.example/v1/executive/councils/work%2Fwith%20spaces?installationId=installation-1&workspaceId=workspace-1",
       { headers: { authorization: "Bearer verified-session-token" } },
     );
   });
@@ -164,13 +169,18 @@ describe("browser runtime boundary", () => {
     "routes council %s with the exact bearer token and installation body",
     async (action, request) => {
       const requestFetch = vi.fn(async () =>
-        Response.json({ protocol: "vorton.executive-council.v1" }),
+        Response.json({
+          protocol: "vorton.executive-council.v1",
+          installationId: "installation-1",
+          workspaceId: "workspace-1",
+        }),
       );
       await request(
         "https://api.vorton.example",
         "verified-session-token",
         "work-1",
         "installation-1",
+        "workspace-1",
         requestFetch as typeof fetch,
       );
       expect(requestFetch).toHaveBeenCalledWith(
@@ -181,9 +191,33 @@ describe("browser runtime boundary", () => {
             authorization: "Bearer verified-session-token",
             "content-type": "application/json",
           },
-          body: JSON.stringify({ installationId: "installation-1" }),
+          body: JSON.stringify({
+            installationId: "installation-1",
+            workspaceId: "workspace-1",
+          }),
         },
       );
     },
   );
+
+  it("rejects a council response bound to another workspace", async () => {
+    const requestFetch = vi.fn(async () =>
+      Response.json({
+        protocol: "vorton.executive-council.v1",
+        installationId: "installation-1",
+        workspaceId: "workspace-other",
+      }),
+    );
+
+    await expect(
+      getExecutiveCouncil(
+        "https://api.vorton.example",
+        "verified-session-token",
+        "work-1",
+        "installation-1",
+        "workspace-1",
+        requestFetch as typeof fetch,
+      ),
+    ).rejects.toThrow("different workspace");
+  });
 });

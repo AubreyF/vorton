@@ -7,6 +7,7 @@ import {
 import { ContextGateway } from "./index.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const firstId = "11111111-1111-4111-a111-111111111111";
 const secondId = "22222222-2222-4222-a222-222222222222";
 const revisionHash = "a".repeat(64);
@@ -19,6 +20,7 @@ function source(
   return {
     id,
     installationId,
+    workspaceId,
     installationRealm: "personal" as const,
     sourceType: "synthetic-transcript",
     sourceObjectId: "conversation-1",
@@ -50,6 +52,7 @@ describe("Context Gateway", () => {
     await expect(
       gateway.retrieve({
         installationId,
+        workspaceId,
         installationRealm: "personal",
         query: "Lunar",
       }),
@@ -61,6 +64,7 @@ describe("Context Gateway", () => {
     await gateway.admit(source());
     const result = await gateway.retrieve({
       installationId,
+      workspaceId,
       installationRealm: "personal",
       query: "Lunar",
     });
@@ -73,6 +77,7 @@ describe("Context Gateway", () => {
     });
     expect(result.receipt).toMatchObject({
       installationId,
+      workspaceId,
       resultIds: [`source:${firstId}`],
       sourceRevisionIds: [firstId],
     });
@@ -94,6 +99,7 @@ describe("Context Gateway", () => {
     });
     await gateway.consolidate({
       installationId,
+      workspaceId,
       installationRealm: "personal",
       derivedMemoryId: "classified-reflection",
       text: "Combined lunar classification",
@@ -103,6 +109,7 @@ describe("Context Gateway", () => {
     await expect(
       gateway.retrieve({
         installationId,
+        workspaceId,
         installationRealm: "personal",
         query: "Combined",
       }),
@@ -135,6 +142,7 @@ describe("Context Gateway", () => {
     await expect(
       gateway.retrieve({
         installationId,
+        workspaceId,
         installationRealm: "personal",
         query: "Lunar",
       }),
@@ -146,6 +154,7 @@ describe("Context Gateway", () => {
     await gateway.admit(source());
     await gateway.consolidate({
       installationId,
+      workspaceId,
       installationRealm: "personal",
       derivedMemoryId: "reflection-1",
       text: "Synthetic fruit reflection",
@@ -157,16 +166,19 @@ describe("Context Gateway", () => {
     });
     expect(revised.supersedesRevisionId).toBe(firstId);
     expect(
-      gateway.getLineage(installationId, "reflection-1")?.invalidatedAt,
+      gateway.getLineage(installationId, workspaceId, "reflection-1")
+        ?.invalidatedAt,
     ).toBe(clock.now());
     await gateway.deleteSource({
       installationId,
+      workspaceId,
       installationRealm: "personal",
       sourceRevisionId: secondId,
     });
     await expect(
       gateway.retrieve({
         installationId,
+        workspaceId,
         installationRealm: "personal",
         query: "Lunar",
       }),
@@ -179,6 +191,7 @@ describe("Context Gateway", () => {
     await expect(
       gateway.retrieve({
         installationId,
+        workspaceId,
         installationRealm: "organizational",
         query: "Lunar",
       }),

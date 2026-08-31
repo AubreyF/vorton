@@ -31,6 +31,7 @@ export type GitHubPullRequestFixture = {
 };
 
 export type GitHubReadFixture = {
+  githubAppInstallationId?: string | null;
   repository: string;
   issues: readonly GitHubIssueFixture[];
   pullRequests: readonly GitHubPullRequestFixture[];
@@ -59,6 +60,7 @@ export function createGitHubReadOnlyConnector(
   return {
     provider: "github",
     repository: fixture.repository,
+    githubAppInstallationId: fixture.githubAppInstallationId ?? null,
     mode: "read-only",
     async listOpenTickets(): Promise<readonly RepositoryTicket[]> {
       return fixture.issues

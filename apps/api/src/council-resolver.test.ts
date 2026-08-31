@@ -16,12 +16,19 @@ import {
 } from "./council-resolver.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
+const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const authUserId = "00000000-0000-4000-8000-000000000001";
 const personId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const workId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const evidenceId = "4b3f8274-5fb5-4e7e-bbc5-603a54cc4ad8";
-const requester = { installationId, authUserId };
+const requester = {
+  installationId,
+  workspaceId,
+  authUserId,
+  aal: "aal2" as const,
+  authTime: Math.floor(Date.now() / 1000),
+};
 
 interface StoredRow {
   [key: string]: unknown;
@@ -59,10 +66,12 @@ class CouncilDatabaseFixture {
         normalized.includes("auth_user_id")
       ) {
         const requestedInstallation = values[0];
-        const requestedAuth = values[1];
-        const ownerRequired = values[2];
+        const requestedWorkspace = values[1];
+        const requestedAuth = values[2];
+        const ownerRequired = values[3];
         rows =
           requestedInstallation === installationId &&
+          requestedWorkspace === workspaceId &&
           requestedAuth === authUserId &&
           (!ownerRequired || this.owner)
             ? [{ id: personId, kind: this.owner ? "owner" : "member" }]
@@ -72,7 +81,9 @@ class CouncilDatabaseFixture {
         normalized.includes("requested_outcome")
       ) {
         rows =
-          values[0] === installationId && values[1] === workId
+          values[0] === installationId &&
+          values[1] === workspaceId &&
+          values[2] === workId
             ? [
                 {
                   id: workId,
@@ -92,15 +103,16 @@ class CouncilDatabaseFixture {
       ) {
         rows =
           values[0] === installationId &&
-          values[1] === this.worker.provider &&
-          values[2] === this.worker.model
+          values[1] === workspaceId &&
+          values[2] === this.worker.provider &&
+          values[3] === this.worker.model
             ? [this.worker]
             : [];
       } else if (
         normalized.includes("from public.roles role") &&
         normalized.includes("worker_role_assignments assignment")
       ) {
-        const names = values[1] as string[];
+        const names = values[2] as string[];
         rows = names.flatMap((name) => {
           const role = [...this.roles.values()].find(
             (candidate) => candidate.name === name,
@@ -128,8 +140,9 @@ class CouncilDatabaseFixture {
               .filter(
                 (grant) =>
                   grant.installation_id === values[0] &&
-                  grant.work_id === values[1] &&
-                  grant.worker_id === values[2] &&
+                  grant.workspace_id === values[1] &&
+                  grant.work_id === values[2] &&
+                  grant.worker_id === values[3] &&
                   !this.revokedGrantIds.has(grant.id),
               )
               .map((grant) => ({ capability: grant.capability }))
@@ -141,19 +154,21 @@ class CouncilDatabaseFixture {
         rows = this.records.filter(
           (record) =>
             record.installation_id === values[0] &&
-            record.work_id === values[1] &&
+            record.workspace_id === values[1] &&
+            record.work_id === values[2] &&
             (record.payload as Record<string, unknown>).councilProtocol ===
-              values[2],
+              values[3],
         );
       } else if (
         normalized.includes("from public.records") &&
         normalized.includes("kind = 'evidence'")
       ) {
-        const requestedIds = normalized.includes("id = any($2::uuid[])")
-          ? (values[1] as string[] | undefined)
+        const requestedIds = normalized.includes("id = any($3::uuid[])")
+          ? (values[2] as string[] | undefined)
           : undefined;
         rows =
           values[0] === installationId &&
+          values[1] === workspaceId &&
           (!requestedIds || requestedIds.includes(evidenceId))
             ? [
                 {
@@ -169,11 +184,12 @@ class CouncilDatabaseFixture {
         const row = {
           id: values[0] as string,
           installation_id: values[1],
-          name: values[2],
-          version: values[3],
-          skill_markdown: values[4],
-          content_sha256: values[5],
-          created_by_person_id: values[6],
+          workspace_id: values[2],
+          name: values[3],
+          version: values[4],
+          skill_markdown: values[5],
+          content_sha256: values[6],
+          created_by_person_id: values[7],
         };
         if (![...this.roles.values()].some((item) => item.name === row.name)) {
           this.roles.set(row.id, row);
@@ -184,20 +200,22 @@ class CouncilDatabaseFixture {
         const row = {
           id: values[0] as string,
           installation_id: values[1],
-          worker_id: values[2],
-          role_id: values[3],
-          assigned_by_person_id: values[4],
+          workspace_id: values[2],
+          worker_id: values[3],
+          role_id: values[4],
+          assigned_by_person_id: values[5],
         };
         if (!this.assignments.has(row.id)) this.assignments.set(row.id, row);
       } else if (normalized.startsWith("insert into public.policies")) {
         const row = {
           id: values[0] as string,
           installation_id: values[1],
+          workspace_id: values[2],
           name: "Executive council recommendation only",
           version: 1,
-          definition: JSON.parse(values[2] as string),
-          content_sha256: values[3],
-          created_by_person_id: values[4],
+          definition: JSON.parse(values[3] as string),
+          content_sha256: values[4],
+          created_by_person_id: values[5],
         };
         if (!this.policies.has(row.id)) this.policies.set(row.id, row);
       } else if (
@@ -206,15 +224,16 @@ class CouncilDatabaseFixture {
         const row = {
           id: values[0] as string,
           installation_id: values[1],
-          policy_id: values[2],
+          workspace_id: values[2],
+          policy_id: values[3],
           principal_kind: "worker",
           person_id: null,
-          worker_id: values[3],
-          capability: values[4],
+          worker_id: values[4],
+          capability: values[5],
           mode: "recommend",
-          work_id: values[5],
+          work_id: values[6],
           expires_at: null,
-          granted_by_person_id: values[6],
+          granted_by_person_id: values[7],
         };
         if (!this.grants.has(row.id)) this.grants.set(row.id, row);
       } else if (normalized.startsWith("select to_jsonb(selected)")) {
@@ -230,15 +249,20 @@ class CouncilDatabaseFixture {
                 : table === "capability_grants"
                   ? this.grants
                   : undefined;
-        const value = map?.get(id);
+        const candidate = map?.get(id);
+        const value =
+          candidate?.installation_id === values[1] &&
+          candidate?.workspace_id === values[2]
+            ? candidate
+            : undefined;
         rows = value ? [{ value }] : [];
       } else if (
         normalized.startsWith("select exists(") &&
         normalized.includes("capability_grant_revocations")
       ) {
-        rows = [{ revoked: this.revokedGrantIds.has(values[1] as string) }];
+        rows = [{ revoked: this.revokedGrantIds.has(values[2] as string) }];
       } else if (normalized.startsWith("insert into public.worker_runs")) {
-        const metadata = JSON.parse(values[7] as string) as Record<
+        const metadata = JSON.parse(values[8] as string) as Record<
           string,
           unknown
         >;
@@ -260,12 +284,13 @@ class CouncilDatabaseFixture {
         const row = {
           id: `90000000-0000-4000-8000-${String(this.workerRuns.length + 1).padStart(12, "0")}`,
           installation_id: values[0],
-          work_id: values[1],
-          worker_id: values[2],
-          role_id: values[3],
-          provider: values[4],
-          model: values[5],
-          provider_job_id: values[6],
+          workspace_id: values[1],
+          work_id: values[2],
+          worker_id: values[3],
+          role_id: values[4],
+          provider: values[5],
+          model: values[6],
+          provider_job_id: values[7],
           status: "in_progress",
           store: false,
           background: false,
@@ -296,7 +321,7 @@ class CouncilDatabaseFixture {
           rows = [{ id: row.id }];
         }
       } else if (normalized.startsWith("insert into public.records")) {
-        const payload = JSON.parse(values[4] as string) as Record<
+        const payload = JSON.parse(values[5] as string) as Record<
           string,
           unknown
         >;
@@ -306,11 +331,12 @@ class CouncilDatabaseFixture {
         this.records.push({
           id: `80000000-0000-4000-8000-${String(this.records.length + 1).padStart(12, "0")}`,
           installation_id: values[0],
-          work_id: values[1],
-          kind: values[2],
-          summary: values[3],
+          workspace_id: values[1],
+          work_id: values[2],
+          kind: values[3],
+          summary: values[4],
           payload,
-          actor_worker_id: values[6],
+          actor_worker_id: values[7],
         });
       }
       return { rows: rows as Row[], rowCount: rows.length };
@@ -371,6 +397,7 @@ class CouncilProviderFixture implements ExecutiveWorkerProvider {
         store: false,
         background: false,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         error: "Provider output failed the structured recommendation boundary",
@@ -388,6 +415,7 @@ class CouncilProviderFixture implements ExecutiveWorkerProvider {
       store: false,
       background: false,
       installationId: request.installationId,
+      workspaceId: request.workspaceId,
       workId: request.workId,
       workerId: request.workerId,
       recommendation: {
@@ -526,6 +554,14 @@ describe("database executive council resolver", () => {
     await expect(
       fixture.resolver.get(workId, {
         installationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        workspaceId,
+        authUserId,
+      }),
+    ).rejects.toThrow("membership is required");
+    await expect(
+      fixture.resolver.get(workId, {
+        installationId,
+        workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         authUserId,
       }),
     ).rejects.toThrow("membership is required");
@@ -667,7 +703,7 @@ describe("database executive council resolver", () => {
     );
   });
 
-  it("deliberately freezes the existing installation-global plus Work-scoped evidence contract", async () => {
+  it("freezes evidence inside one installation and workspace", async () => {
     const fixture = await installedFixture();
     await fixture.resolver.advance(workId, requester);
     const evidenceQuery = fixture.database.statements.find(
@@ -675,14 +711,15 @@ describe("database executive council resolver", () => {
         statement.includes("kind = 'evidence'") &&
         statement.includes("work_id is null"),
     );
-    expect(evidenceQuery).toContain("work_id is null or work_id = $2");
+    expect(evidenceQuery).toContain("workspace_id = $2");
+    expect(evidenceQuery).toContain("work_id is null or work_id = $3");
     const frozenEvidenceQuery = fixture.database.statements.find(
       (statement) =>
         statement.includes("kind = 'evidence'") &&
         statement.includes("id = any("),
     );
-    expect(frozenEvidenceQuery).toContain("id = any($2::uuid[])");
-    expect(frozenEvidenceQuery).not.toContain("$3");
+    expect(frozenEvidenceQuery).toContain("workspace_id = $2");
+    expect(frozenEvidenceQuery).toContain("id = any($3::uuid[])");
     expect(fixture.provider.requests[0]?.evidence).toEqual([
       expect.objectContaining({ recordId: evidenceId }),
     ]);

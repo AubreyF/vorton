@@ -448,6 +448,7 @@ export class CodexSubscriptionAdapter implements ExecutiveWorkerProvider {
                 store: false,
                 background: false,
                 installationId: request.installationId,
+                workspaceId: request.workspaceId,
                 workId: request.workId,
                 workerId: request.workerId,
                 error: "Codex CLI returned an invalid executive recommendation",
@@ -469,6 +470,7 @@ export class CodexSubscriptionAdapter implements ExecutiveWorkerProvider {
                 store: false,
                 background: false,
                 installationId: request.installationId,
+                workspaceId: request.workspaceId,
                 workId: request.workId,
                 workerId: request.workerId,
                 error:
@@ -483,6 +485,7 @@ export class CodexSubscriptionAdapter implements ExecutiveWorkerProvider {
               store: false,
               background: false,
               installationId: request.installationId,
+              workspaceId: request.workspaceId,
               workId: request.workId,
               workerId: request.workerId,
               recommendation,

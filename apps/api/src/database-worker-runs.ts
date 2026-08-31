@@ -18,6 +18,7 @@ export class DatabaseWorkerRunRecorder {
     const job = executiveWorkerJobSchema.parse(rawJob);
     if (
       job.installationId !== request.installationId ||
+      job.workspaceId !== request.workspaceId ||
       job.workId !== request.workId ||
       job.workerId !== request.workerId
     ) {
@@ -28,17 +29,19 @@ export class DatabaseWorkerRunRecorder {
     return this.database.asWorker(
       {
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workerId: request.workerId,
       },
       async (transaction) => {
         const result = await transaction.query<{ id: string }>(
           `insert into public.worker_runs
-          (installation_id, work_id, worker_id, role_id, provider, model,
+          (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
            provider_job_id, status, store, background, metadata, error)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
          returning id`,
           [
             request.installationId,
+            request.workspaceId,
             request.workId,
             request.workerId,
             request.role.roleId,
@@ -50,6 +53,7 @@ export class DatabaseWorkerRunRecorder {
             job.background,
             JSON.stringify({
               installation_id: request.installationId,
+              workspace_id: request.workspaceId,
               work_id: request.workId,
               worker_id: request.workerId,
               role_sha256: request.role.contentSha256,

@@ -52,8 +52,8 @@ function renderCouncil(
 ) {
   return renderToStaticMarkup(
     <CouncilSurface
-      installationName="FreedOS"
-      installationKind="owner"
+      workspaceName="FreedOS"
+      membershipKind="owner"
       workItems={workItems}
       selectedWorkId={workItems[0]!.id}
       evidence={evidence}
@@ -157,8 +157,8 @@ describe("executive council route and surface", () => {
   it("does not fabricate an empty council when the authoritative read fails", () => {
     const html = renderToStaticMarkup(
       <CouncilSurface
-        installationName="FreedOS"
-        installationKind="owner"
+        workspaceName="FreedOS"
+        membershipKind="owner"
         workItems={workItems}
         selectedWorkId={workItems[0]!.id}
         evidence={evidence}

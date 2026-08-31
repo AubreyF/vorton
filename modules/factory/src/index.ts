@@ -95,6 +95,8 @@ const fixture = {
 };
 
 const execution: RepositoryExecutionObservation = {
+  vortonInstallationId: "7fae0c60-6682-41ec-b231-26bbaf7fde8e",
+  workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   ticketNumber: 42,
   installationWorkId: "WORK-MOONBASE-42",
   revision: "synthetic-execution@revision-7:authority_generation_conflict",

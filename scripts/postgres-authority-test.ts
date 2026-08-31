@@ -33,11 +33,18 @@ const replayPassword = "synthetic-runtime-password-replay-000002";
 const contextSecret = "synthetic-context-signing-secret-000001";
 const ownerAuthUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 const otherInstallationId = "36bb264a-668f-45a6-8da0-6e5cad3fc026";
+const otherWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const otherWorkId = "02fb4603-57f1-4a04-a6f6-2d473af03f7b";
+const otherWorkerId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const otherRoleId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const otherPolicyId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const organizationalBankId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const personalBankId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
 interface BootstrapResult {
   status: string;
   installationId: string;
+  workspaceId: string;
   workId: string;
   workerId: string;
   roleId: string;
@@ -267,6 +274,7 @@ async function setSignedContext(
   client: Client,
   kind: "person" | "worker",
   installationId: string,
+  workspaceId: string,
   subjectId: string,
   credentialId = "",
 ): Promise<void> {
@@ -276,15 +284,18 @@ async function setSignedContext(
   const txid = transaction.rows[0]?.txid;
   requireCondition(txid, "PostgreSQL did not return a transaction ID");
   const signature = createHmac("sha256", contextSecret)
-    .update(`${txid}|${kind}|${installationId}|${subjectId}|${credentialId}`)
+    .update(
+      `${txid}|${kind}|${installationId}|${workspaceId}|${subjectId}|${credentialId}`,
+    )
     .digest("hex");
   await client.query(
     `select set_config('aubos.context_kind', $1, true),
             set_config('aubos.installation_id', $2, true),
-            set_config('aubos.subject_id', $3, true),
-            set_config('aubos.credential_id', $4, true),
-            set_config('aubos.context_signature', $5, true)`,
-    [kind, installationId, subjectId, credentialId, signature],
+            set_config('vorton.workspace_id', $3, true),
+            set_config('aubos.subject_id', $4, true),
+            set_config('aubos.credential_id', $5, true),
+            set_config('aubos.context_signature', $6, true)`,
+    [kind, installationId, workspaceId, subjectId, credentialId, signature],
   );
 }
 
@@ -368,24 +379,180 @@ async function seedAuthorityFixtures(
   const ownerPersonId = owner.rows[0]?.id;
   requireCondition(ownerPersonId, "Bootstrap owner was not persisted");
   await admin.query(
-    `insert into public.installations (id, slug, display_name, realm)
-     values ($1, 'other-authority-lab', 'Other Authority Lab', 'organizational')`,
-    [otherInstallationId],
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, 'personal-hostile-fixture', 'Personal hostile fixture',
+             'personal', $3)`,
+    [otherWorkspaceId, bootstrap.installationId, ownerPersonId],
   );
   await admin.query(
-    `insert into public.work (id, installation_id, title, requested_outcome, state)
-     values ($1, $2, 'Other installation work', 'Remain inaccessible.', 'ready')`,
-    [otherWorkId, otherInstallationId],
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner')`,
+    [bootstrap.installationId, otherWorkspaceId, ownerPersonId],
+  );
+  await admin.query(
+    `insert into public.work
+       (id, installation_id, workspace_id, title, requested_outcome, state)
+     values ($1, $2, $3, 'Other workspace work', 'Remain inaccessible.', 'ready')`,
+    [otherWorkId, bootstrap.installationId, otherWorkspaceId],
   );
   await admin.query(
     `insert into public.records
-       (installation_id, work_id, kind, summary, payload, classification, actor_person_id)
+       (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_person_id)
      values
-       ($1, $2, 'decision', 'Synthetic owner decision.', '{}', 'synthetic', $3),
-       ($1, $2, 'approval', 'Synthetic owner approval.', '{}', 'synthetic', $3)`,
-    [bootstrap.installationId, bootstrap.workId, ownerPersonId],
+       ($1, $2, $3, 'decision', 'Synthetic owner decision.', '{}', 'synthetic', $4),
+       ($1, $2, $3, 'approval', 'Synthetic owner approval.', '{}', 'synthetic', $4)`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workId,
+      ownerPersonId,
+    ],
   );
   return ownerPersonId;
+}
+
+async function proveWorkspaceResourceCoexistence(
+  admin: Client,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  await admin.query(
+    `insert into public.workers
+       (id, installation_id, workspace_id, name, provider, billing_realm, host,
+        runtime, model, advertised_capabilities, data_classification_ceiling,
+        isolation, network_policy, health)
+     select $1, installation_id, $2, name, provider, billing_realm, host,
+            runtime, model, advertised_capabilities, data_classification_ceiling,
+            isolation, network_policy, health
+       from public.workers
+      where installation_id = $3 and workspace_id = $4 and id = $5`,
+    [
+      otherWorkerId,
+      otherWorkspaceId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workerId,
+    ],
+  );
+  await admin.query(
+    `insert into public.roles
+       (id, installation_id, workspace_id, name, version, skill_markdown,
+        content_sha256, created_by_person_id)
+     select $1, installation_id, $2, name, version, skill_markdown,
+            content_sha256, $3
+       from public.roles
+      where installation_id = $4 and workspace_id = $5 and id = $6`,
+    [
+      otherRoleId,
+      otherWorkspaceId,
+      ownerPersonId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.roleId,
+    ],
+  );
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     select $1, installation_id, $2, name, version, definition,
+            content_sha256, $3
+       from public.policies
+      where installation_id = $4 and workspace_id = $5
+      order by created_at
+      limit 1`,
+    [
+      otherPolicyId,
+      otherWorkspaceId,
+      ownerPersonId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+    ],
+  );
+  await admin.query(
+    `insert into public.source_connections
+       (installation_id, workspace_id, installation_realm, provider,
+        external_account_id, credential_reference, poll_overlap_seconds,
+        requests_per_minute, page_size, max_pages_per_poll,
+        backoff_base_seconds, backoff_max_seconds, watermark)
+     values
+       ($1, $2, 'organizational', 'google-meet', 'organizational-source',
+        'secret://organizational-source', 60, 30, 100, 5, 1, 60, now()),
+       ($1, $3, 'personal', 'google-meet', 'personal-source',
+        'secret://personal-source', 60, 30, 100, 5, 1, 60, now())`,
+    [bootstrap.installationId, bootstrap.workspaceId, otherWorkspaceId],
+  );
+  await admin.query(
+    `insert into public.memory_banks
+       (id, installation_id, workspace_id, installation_realm, adapter,
+        external_bank_id, database_locator, object_bucket_locator)
+     values
+       ($1, $2, $3, 'organizational', 'hindsight',
+        'hostile-organizational-bank', 'postgres://organizational-bank',
+        'object://organizational-bank'),
+       ($4, $2, $5, 'personal', 'hindsight',
+        'hostile-personal-bank', 'postgres://personal-bank',
+        'object://personal-bank')`,
+    [
+      organizationalBankId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      personalBankId,
+      otherWorkspaceId,
+    ],
+  );
+
+  const proof = await admin.query<{
+    banks: string;
+    duplicate_policies: string;
+    duplicate_roles: string;
+    duplicate_workers: string;
+    realms: string[];
+  }>(
+    `select
+       (select count(*)::text from public.memory_banks
+         where installation_id = $1) as banks,
+       (select count(*)::text from public.workers worker
+         where worker.installation_id = $1
+           and worker.name = (select name from public.workers where id = $2))
+         as duplicate_workers,
+       (select count(*)::text from public.roles role
+         where role.installation_id = $1
+           and (role.name, role.version) =
+             (select name, version from public.roles where id = $3))
+         as duplicate_roles,
+       (select count(*)::text from public.policies policy
+         where policy.installation_id = $1
+           and (policy.name, policy.version) =
+             (select name, version from public.policies where id = $4))
+         as duplicate_policies,
+       (select array_agg(installation_realm::text order by installation_realm::text)
+          from public.memory_banks where installation_id = $1) as realms`,
+    [
+      bootstrap.installationId,
+      bootstrap.workerId,
+      bootstrap.roleId,
+      otherPolicyId,
+    ],
+  );
+  const row = proof.rows[0];
+  requireCondition(
+    row?.banks === "2",
+    "One installation did not retain two memory banks",
+  );
+  requireCondition(
+    row.duplicate_workers === "2" &&
+      row.duplicate_roles === "2" &&
+      row.duplicate_policies === "2",
+    "Same named workspace resources did not coexist",
+  );
+  requireCondition(
+    JSON.stringify(row.realms) ===
+      JSON.stringify(["organizational", "personal"]),
+    "Personal and organizational banks did not remain realm separated",
+  );
 }
 
 async function proveRoleShape(admin: Client): Promise<void> {
@@ -446,10 +613,11 @@ async function provePersonBoundary(
     await client.query(
       `select set_config('aubos.context_kind', 'person', true),
               set_config('aubos.installation_id', $1, true),
-              set_config('aubos.subject_id', $2, true),
+              set_config('vorton.workspace_id', $2, true),
+              set_config('aubos.subject_id', $3, true),
               set_config('aubos.credential_id', '', true),
               set_config('aubos.context_signature', '', true)`,
-      [bootstrap.installationId, ownerAuthUserId],
+      [bootstrap.installationId, bootstrap.workspaceId, ownerAuthUserId],
     );
   };
   const forgedSetup = async (client: Client): Promise<void> => {
@@ -483,9 +651,15 @@ async function provePersonBoundary(
         "authenticated",
         setup,
         `insert into public.records
-           (installation_id, work_id, kind, summary, payload, classification, actor_person_id)
-         values ($1, $2, $3, 'Forged authority.', '{}', 'synthetic', $4)`,
-        [bootstrap.installationId, bootstrap.workId, kind, ownerPersonId],
+           (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_person_id)
+         values ($1, $2, $3, $4, 'Forged authority.', '{}', 'synthetic', $5)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workId,
+          kind,
+          ownerPersonId,
+        ],
         `${label} person ${kind}`,
       );
     }
@@ -499,17 +673,17 @@ async function provePersonBoundary(
         client,
         "person",
         bootstrap.installationId,
+        bootstrap.workspaceId,
         ownerAuthUserId,
       ),
     async (client) =>
       await client.query<{ id: string }>(
-        "select id from public.installations order by id",
+        "select id from public.workspaces order by id",
       ),
   );
   requireCondition(
-    visible.rows.length === 1 &&
-      visible.rows[0]?.id === bootstrap.installationId,
-    "Signed person context crossed its installation boundary",
+    visible.rows.length === 1 && visible.rows[0]?.id === bootstrap.workspaceId,
+    "Signed person context crossed its workspace boundary",
   );
 }
 
@@ -524,6 +698,7 @@ async function proveWorkerBoundary(
       client,
       "worker",
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workerId,
       credentialId,
     );
@@ -531,10 +706,16 @@ async function proveWorkerBoundary(
     await client.query(
       `select set_config('aubos.context_kind', 'worker', true),
               set_config('aubos.installation_id', $1, true),
-              set_config('aubos.subject_id', $2, true),
-              set_config('aubos.credential_id', $3, true),
+              set_config('vorton.workspace_id', $2, true),
+              set_config('aubos.subject_id', $3, true),
+              set_config('aubos.credential_id', $4, true),
               set_config('aubos.context_signature', '', true)`,
-      [bootstrap.installationId, bootstrap.workerId, credentialId],
+      [
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        bootstrap.workerId,
+        credentialId,
+      ],
     );
   };
   const forgedWorker = async (client: Client): Promise<void> => {
@@ -568,9 +749,15 @@ async function proveWorkerBoundary(
         "aubos_worker",
         setup,
         `insert into public.records
-           (installation_id, work_id, kind, summary, payload, classification, actor_worker_id)
-         values ($1, $2, $3, 'Forged worker authority.', '{}', 'synthetic', $4)`,
-        [bootstrap.installationId, bootstrap.workId, kind, bootstrap.workerId],
+           (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_worker_id)
+         values ($1, $2, $3, $4, 'Forged worker authority.', '{}', 'synthetic', $5)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workId,
+          kind,
+          bootstrap.workerId,
+        ],
         `${label} worker ${kind}`,
       );
     }
@@ -583,18 +770,24 @@ async function proveWorkerBoundary(
     async (client) => {
       await client.query(
         `insert into public.records
-           (installation_id, work_id, kind, summary, payload, classification, actor_worker_id)
-         values ($1, $2, 'proposal', 'Synthetic scoped proposal.', '{}', 'synthetic', $3)`,
-        [bootstrap.installationId, bootstrap.workId, bootstrap.workerId],
+           (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_worker_id)
+         values ($1, $2, $3, 'proposal', 'Synthetic scoped proposal.', '{}', 'synthetic', $4)`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workId,
+          bootstrap.workerId,
+        ],
       );
       await client.query(
         `insert into public.worker_runs
-           (installation_id, work_id, worker_id, role_id, provider, model,
+           (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
             provider_job_id, status, store, background)
-         values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
+         values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
                  'synthetic-provider-job', 'queued', false, false)`,
         [
           bootstrap.installationId,
+          bootstrap.workspaceId,
           bootstrap.workId,
           bootstrap.workerId,
           bootstrap.roleId,
@@ -623,22 +816,33 @@ async function proveWorkerBoundary(
     "aubos_worker",
     signedWorker,
     `insert into public.records
-       (installation_id, work_id, kind, summary, payload, classification, actor_worker_id)
-     values ($1, $2, 'proposal', 'Cross-installation proposal.', '{}', 'synthetic', $3)`,
-    [otherInstallationId, otherWorkId, bootstrap.workerId],
-    "Worker cross-installation proposal",
+       (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_worker_id)
+     values ($1, $2, $3, 'proposal', 'Cross-workspace proposal.', '{}', 'synthetic', $4)`,
+    [
+      bootstrap.installationId,
+      otherWorkspaceId,
+      otherWorkId,
+      bootstrap.workerId,
+    ],
+    "Worker cross-workspace proposal",
   );
   await expectRuntimeDenied(
     runtimeDatabaseUrl,
     "aubos_worker",
     signedWorker,
     `insert into public.worker_runs
-       (installation_id, work_id, worker_id, role_id, provider, model,
+       (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
         provider_job_id, status, store, background)
-     values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
-             'cross-installation-job', 'queued', false, false)`,
-    [otherInstallationId, otherWorkId, bootstrap.workerId, bootstrap.roleId],
-    "Worker cross-installation run",
+     values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
+             'cross-workspace-job', 'queued', false, false)`,
+    [
+      bootstrap.installationId,
+      otherWorkspaceId,
+      otherWorkId,
+      bootstrap.workerId,
+      bootstrap.roleId,
+    ],
+    "Worker cross-workspace run",
   );
 
   for (const kind of ["decision", "approval"] as const) {
@@ -647,9 +851,15 @@ async function proveWorkerBoundary(
       "aubos_worker",
       signedWorker,
       `insert into public.records
-         (installation_id, work_id, kind, summary, payload, classification, actor_person_id)
-       values ($1, $2, $3, 'Worker-forged human authority.', '{}', 'synthetic', $4)`,
-      [bootstrap.installationId, bootstrap.workId, kind, ownerPersonId],
+         (installation_id, workspace_id, work_id, kind, summary, payload, classification, actor_person_id)
+       values ($1, $2, $3, $4, 'Worker-forged human authority.', '{}', 'synthetic', $5)`,
+      [
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        bootstrap.workId,
+        kind,
+        ownerPersonId,
+      ],
       `Worker human ${kind}`,
     );
   }
@@ -666,6 +876,7 @@ async function proveCouncilBoundary(
       client,
       "worker",
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workerId,
       credentialId,
     );
@@ -684,8 +895,9 @@ async function proveCouncilBoundary(
               'acceptanceCriteria', acceptance_criteria,
               'state', state::text
             )::text, 'UTF8'), 'sha256'), 'hex') as input_sha256
-       from public.work where installation_id = $1 and id = $2`,
-    [bootstrap.installationId, bootstrap.workId],
+       from public.work
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workId],
   );
   const updatedAt = work.rows[0]?.updated_at;
   requireCondition(updatedAt, "Council proof Work revision is missing");
@@ -694,6 +906,8 @@ async function proveCouncilBoundary(
   requireCondition(inputSha256, "Council proof Work input hash is missing");
   const inputRecordIds = [bootstrap.workId];
   const runMetadata = {
+    installation_id: bootstrap.installationId,
+    workspace_id: bootstrap.workspaceId,
     council_protocol: "vorton.executive-council.v1",
     council_phase: "proposal",
     council_role_id: bootstrap.roleId,
@@ -703,6 +917,8 @@ async function proveCouncilBoundary(
     authority: "none",
   };
   const recordPayload = {
+    installationId: bootstrap.installationId,
+    workspaceId: bootstrap.workspaceId,
     councilProtocol: "vorton.executive-council.v1",
     councilPhase: "proposal",
     councilRoleId: bootstrap.roleId,
@@ -741,12 +957,13 @@ async function proveCouncilBoundary(
       );
       await client.query(
         `insert into public.worker_runs
-           (installation_id, work_id, worker_id, role_id, provider, model,
+           (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
             provider_job_id, status, store, background, metadata)
-         values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
-                 'synthetic-council-job', 'completed', false, false, $5::jsonb)`,
+         values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
+                 'synthetic-council-job', 'completed', false, false, $6::jsonb)`,
         [
           bootstrap.installationId,
+          bootstrap.workspaceId,
           bootstrap.workId,
           bootstrap.workerId,
           bootstrap.roleId,
@@ -755,12 +972,13 @@ async function proveCouncilBoundary(
       );
       await client.query(
         `insert into public.worker_runs
-           (installation_id, work_id, worker_id, role_id, provider, model,
+           (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
             provider_job_id, status, store, background, metadata)
-         values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
-                 'synthetic-synthesis-job', 'completed', false, false, $5::jsonb)`,
+         values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
+                 'synthetic-synthesis-job', 'completed', false, false, $6::jsonb)`,
         [
           bootstrap.installationId,
+          bootstrap.workspaceId,
           bootstrap.workId,
           bootstrap.workerId,
           bootstrap.roleId,
@@ -769,12 +987,13 @@ async function proveCouncilBoundary(
       );
       await client.query(
         `insert into public.records
-           (installation_id, work_id, kind, summary, payload, classification,
+           (installation_id, workspace_id, work_id, kind, summary, payload, classification,
             actor_worker_id)
-         values ($1, $2, 'proposal', 'Synthetic council proposal.', $3::jsonb,
-                 'synthetic', $4)`,
+         values ($1, $2, $3, 'proposal', 'Synthetic council proposal.', $4::jsonb,
+                 'synthetic', $5)`,
         [
           bootstrap.installationId,
+          bootstrap.workspaceId,
           bootstrap.workId,
           JSON.stringify(recordPayload),
           bootstrap.workerId,
@@ -788,12 +1007,13 @@ async function proveCouncilBoundary(
     "aubos_worker",
     signedWorker,
     `insert into public.worker_runs
-       (installation_id, work_id, worker_id, role_id, provider, model,
+       (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
         provider_job_id, status, store, background, metadata)
-     values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
-             'duplicate-council-job', 'queued', false, false, $5::jsonb)`,
+     values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
+             'duplicate-council-job', 'queued', false, false, $6::jsonb)`,
     [
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workId,
       bootstrap.workerId,
       bootstrap.roleId,
@@ -808,12 +1028,13 @@ async function proveCouncilBoundary(
     "aubos_worker",
     signedWorker,
     `insert into public.worker_runs
-       (installation_id, work_id, worker_id, role_id, provider, model,
+       (installation_id, workspace_id, work_id, worker_id, role_id, provider, model,
         provider_job_id, status, store, background, metadata)
-     values ($1, $2, $3, $4, 'synthetic', 'synthetic-model',
-             'stored-council-job', 'failed', true, false, $5::jsonb)`,
+     values ($1, $2, $3, $4, $5, 'synthetic', 'synthetic-model',
+             'stored-council-job', 'failed', true, false, $6::jsonb)`,
     [
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workId,
       bootstrap.workerId,
       bootstrap.roleId,
@@ -836,12 +1057,13 @@ async function proveCouncilBoundary(
     "aubos_worker",
     signedWorker,
     `insert into public.records
-       (installation_id, work_id, kind, summary, payload, classification,
+       (installation_id, workspace_id, work_id, kind, summary, payload, classification,
         actor_worker_id)
-     values ($1, $2, 'proposal', 'Forged council inputs.', $3::jsonb,
-             'synthetic', $4)`,
+     values ($1, $2, $3, 'proposal', 'Forged council inputs.', $4::jsonb,
+             'synthetic', $5)`,
     [
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workId,
       JSON.stringify({
         ...synthesisPayload,
@@ -872,12 +1094,13 @@ async function proveCouncilBoundary(
     "aubos_worker",
     signedWorker,
     `insert into public.records
-       (installation_id, work_id, kind, summary, payload, classification,
+       (installation_id, workspace_id, work_id, kind, summary, payload, classification,
         actor_worker_id)
-     values ($1, $2, 'proposal', 'Stale council synthesis.', $3::jsonb,
-             'synthetic', $4)`,
+     values ($1, $2, $3, 'proposal', 'Stale council synthesis.', $4::jsonb,
+             'synthetic', $5)`,
     [
       bootstrap.installationId,
+      bootstrap.workspaceId,
       bootstrap.workId,
       JSON.stringify(synthesisPayload),
       bootstrap.workerId,
@@ -906,6 +1129,7 @@ async function proveCouncilResolverFrozenEvidenceRead(
         store: false,
         background: false,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         recommendation: {
@@ -942,7 +1166,10 @@ async function proveCouncilResolverFrozenEvidenceRead(
   const resolver = new DatabaseExecutiveCouncilResolver(database, provider);
   const requester = {
     installationId: bootstrap.installationId,
+    workspaceId: bootstrap.workspaceId,
     authUserId: ownerAuthUserId,
+    aal: "aal2" as const,
+    authTime: Math.floor(Date.now() / 1000),
   };
   try {
     await resolver.install(bootstrap.workId, requester);
@@ -1025,6 +1252,7 @@ async function main(): Promise<void> {
 
     await proveRoleShape(admin);
     const ownerPersonId = await seedAuthorityFixtures(admin, bootstrap);
+    await proveWorkspaceResourceCoexistence(admin, bootstrap, ownerPersonId);
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveCouncilResolverFrozenEvidenceRead(runtimeDatabaseUrl, bootstrap);
@@ -1049,6 +1277,8 @@ async function main(): Promise<void> {
             unsignedAndForgedContextsDenied: true,
             signedPersonInstallationScoped: true,
             signedWorkerProposalAndRunScoped: true,
+            sameNamedWorkspaceResourcesCoexist: true,
+            personalAndOrganizationalMemoryBanksSeparated: true,
             workerHumanAuthorityDenied: true,
             councilAttemptFenced: true,
             councilStorageDenied: true,

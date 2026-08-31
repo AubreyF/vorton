@@ -156,6 +156,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
         store: this.storesResponses,
         metadata: {
           installation_id: request.installationId,
+          workspace_id: request.workspaceId,
           work_id: request.workId,
           worker_id: request.workerId,
           role_sha256: request.role.contentSha256,
@@ -230,6 +231,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
         store: this.storesResponses,
         background: request.background,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         error: "OpenAI returned an invalid executive recommendation",
@@ -251,6 +253,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
         store: this.storesResponses,
         background: request.background,
         installationId: request.installationId,
+        workspaceId: request.workspaceId,
         workId: request.workId,
         workerId: request.workerId,
         error:
@@ -265,6 +268,7 @@ export class OpenAIResponsesAdapter implements ExecutiveWorkerProvider {
       store: this.storesResponses,
       background: request.background,
       installationId: request.installationId,
+      workspaceId: request.workspaceId,
       workId: request.workId,
       workerId: request.workerId,
       recommendation,
