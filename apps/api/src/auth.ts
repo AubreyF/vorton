@@ -3,7 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 export interface AuthenticatedIdentity {
   authUserId: string;
   aal: "aal1" | "aal2";
-  authTime: number;
+  authTime: number | undefined;
 }
 
 export interface IdentityVerifier {
@@ -23,16 +23,44 @@ export class AuthenticationError extends Error {}
 export class StepUpAuthenticationError extends Error {}
 
 export const recentAal2MaxAgeSeconds = 10 * 60;
+const explicitSecondFactorMethods = new Set([
+  "totp",
+  "mfa/totp",
+  "mfa/phone",
+  "mfa/webauthn",
+]);
+
+function explicitSecondFactorTime(amr: unknown): number | undefined {
+  if (!Array.isArray(amr)) return undefined;
+  let latest: number | undefined;
+  for (const entry of amr) {
+    if (!entry || typeof entry !== "object") continue;
+    const method = Reflect.get(entry, "method");
+    const timestamp = Reflect.get(entry, "timestamp");
+    if (
+      typeof method === "string" &&
+      explicitSecondFactorMethods.has(method) &&
+      typeof timestamp === "number" &&
+      Number.isInteger(timestamp) &&
+      (latest === undefined || timestamp > latest)
+    ) {
+      latest = timestamp;
+    }
+  }
+  return latest;
+}
 
 export function requireRecentAal2(
   identity: AuthenticatedIdentity,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): void {
+  const authTime = identity.authTime;
   if (
     identity.aal !== "aal2" ||
-    !Number.isInteger(identity.authTime) ||
-    identity.authTime > nowSeconds + 60 ||
-    nowSeconds - identity.authTime > recentAal2MaxAgeSeconds
+    authTime === undefined ||
+    !Number.isInteger(authTime) ||
+    authTime > nowSeconds + 60 ||
+    nowSeconds - authTime > recentAal2MaxAgeSeconds
   ) {
     throw new StepUpAuthenticationError(
       "Recent AAL2 step-up authentication is required for this action",
@@ -62,17 +90,19 @@ export function createSupabaseIdentityVerifier(
         }
         if (
           (payload.aal !== "aal1" && payload.aal !== "aal2") ||
-          typeof payload.auth_time !== "number" ||
-          !Number.isInteger(payload.auth_time)
+          payload.role !== "authenticated" ||
+          payload.is_anonymous !== false ||
+          typeof payload.session_id !== "string" ||
+          !uuidPattern.test(payload.session_id)
         ) {
           throw new AuthenticationError(
-            "The verified token must include AAL and authentication time claims",
+            "The verified token must identify an authenticated Supabase session",
           );
         }
         return {
           authUserId: payload.sub,
           aal: payload.aal,
-          authTime: payload.auth_time,
+          authTime: explicitSecondFactorTime(payload.amr),
         };
       } catch (error) {
         if (error instanceof AuthenticationError) throw error;

@@ -1,4 +1,5 @@
 export * from "./installation.js";
+export * from "./installation-authority.js";
 export * from "./factory.js";
 export * from "./kernel.js";
 export * from "./executive.js";

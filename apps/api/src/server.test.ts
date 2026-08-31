@@ -6,6 +6,7 @@ import { InMemoryExecutiveLedger } from "@vorton/executive";
 import type { Database } from "@vorton/database";
 
 import type { AuthenticatedIdentity } from "./auth.js";
+import { InstallationAuthorityIntegrityError } from "./installation-authority.js";
 import { createApiServer } from "./server.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
@@ -69,6 +70,12 @@ async function runtime(
       workspaceId: string;
       authUserId: string;
     };
+  }> = [];
+  const installationAuthorityCalls: Array<{
+    operation: "release" | "workspace";
+    installationId: string;
+    request: unknown;
+    identity: AuthenticatedIdentity;
   }> = [];
   const councilState = {
     protocol: "vorton.executive-council.v1",
@@ -242,6 +249,29 @@ async function runtime(
         return councilState;
       },
     } as never,
+    installationAuthority: {
+      approveRelease: async (
+        resolvedInstallationId: string,
+        request: { planHash?: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        if (request.planHash === `sha256:${"9".repeat(64)}`) {
+          throw new InstallationAuthorityIntegrityError(
+            "sensitive malformed database output detail",
+          );
+        }
+        installationAuthorityCalls.push({
+          operation: "release",
+          installationId: resolvedInstallationId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return { contract: "vorton.release-adoption-approval.v1" };
+      },
+      approveWorkspace: async () => {
+        throw new Error("not configured in this fixture");
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
@@ -253,6 +283,7 @@ async function runtime(
     ledger,
     evidence,
     councilCalls,
+    installationAuthorityCalls,
   };
 }
 
@@ -302,6 +333,180 @@ describe("control-plane API", () => {
         },
       ],
     });
+  });
+
+  it("routes a strict recent-AAL2 release approval without caching it", async () => {
+    const { baseUrl, installationAuthorityCalls } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          origin: "https://control.vorton.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          approvalId: "22222222-2222-4222-8222-222222222222",
+          planHash: `sha256:${"6".repeat(64)}`,
+          release: {
+            version: "1.0.0",
+            sourceCommit: "a".repeat(40),
+            manifestSha256: `sha256:${"1".repeat(64)}`,
+            archiveSha256: `sha256:${"2".repeat(64)}`,
+            coreMigrationHead: "20260830000300_installation_authority_api",
+            workspaceIsolationProofSha256: `sha256:${"3".repeat(64)}`,
+            workspaceIsolationProofHash: `sha256:${"4".repeat(64)}`,
+            imageDigests: { api: `sha256:${"5".repeat(64)}` },
+          },
+          expiresAt: "2026-08-31T12:00:00.000Z",
+        }),
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(installationAuthorityCalls).toHaveLength(1);
+    expect(installationAuthorityCalls[0]).toMatchObject({
+      operation: "release",
+      installationId,
+      identity: { authUserId, aal: "aal2" },
+    });
+  });
+
+  it("does not expose an installation authority apply route", async () => {
+    const { baseUrl } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-apply`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects a noncanonical uppercase installation identifier", async () => {
+    const { baseUrl, installationAuthorityCalls } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId.toUpperCase()}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer verified-by-fixture" },
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(installationAuthorityCalls).toEqual([]);
+  });
+
+  it("rejects an uppercase approval UUID before the authority adapter", async () => {
+    const { baseUrl, installationAuthorityCalls } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          approvalId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+          planHash: `sha256:${"6".repeat(64)}`,
+          release: {
+            version: "1.0.0",
+            sourceCommit: "a".repeat(40),
+            manifestSha256: `sha256:${"1".repeat(64)}`,
+            archiveSha256: `sha256:${"2".repeat(64)}`,
+            coreMigrationHead: "20260830000300_installation_authority_api",
+            workspaceIsolationProofSha256: `sha256:${"3".repeat(64)}`,
+            workspaceIsolationProofHash: `sha256:${"4".repeat(64)}`,
+            imageDigests: { api: `sha256:${"5".repeat(64)}` },
+          },
+          expiresAt: "2026-08-31T12:00:00.000Z",
+        }),
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(installationAuthorityCalls).toEqual([]);
+  });
+
+  it("rejects release approval without a recent explicit second factor", async () => {
+    const { baseUrl, installationAuthorityCalls } = await runtime({
+      authUserId,
+      aal: "aal2",
+      authTime: undefined,
+    });
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(installationAuthorityCalls).toEqual([]);
+  });
+
+  it("returns readable installation-authority failures to the allowed browser origin", async () => {
+    const { baseUrl } = await runtime({
+      authUserId,
+      aal: "aal2",
+      authTime: undefined,
+    });
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          origin: "https://control.vorton.example",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "https://control.vorton.example",
+    );
+  });
+
+  it("returns a generic 500 when database approval output violates integrity", async () => {
+    const { baseUrl } = await runtime();
+    const response = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/release-adoption-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          origin: "https://control.vorton.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          approvalId: "22222222-2222-4222-8222-222222222222",
+          planHash: `sha256:${"9".repeat(64)}`,
+          release: {
+            version: "1.0.0",
+            sourceCommit: "a".repeat(40),
+            manifestSha256: `sha256:${"1".repeat(64)}`,
+            archiveSha256: `sha256:${"2".repeat(64)}`,
+            coreMigrationHead: "20260830000300_installation_authority_api",
+            workspaceIsolationProofSha256: `sha256:${"3".repeat(64)}`,
+            workspaceIsolationProofHash: `sha256:${"4".repeat(64)}`,
+            imageDigests: { api: `sha256:${"5".repeat(64)}` },
+          },
+          expiresAt: "2026-08-31T12:00:00.000Z",
+        }),
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "https://control.vorton.example",
+    );
+    const payload = JSON.stringify(await response.json());
+    expect(payload).toContain("internal_error");
+    expect(payload).not.toContain("sensitive malformed");
   });
 
   it("persists model output only as a recommendation proposal", async () => {

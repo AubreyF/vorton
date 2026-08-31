@@ -34,6 +34,10 @@ const workspaceCreationAuthorityMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000200_workspace_creation_authority.sql",
   import.meta.url,
 );
+const installationAuthorityApiMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000300_installation_authority_api.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -300,5 +304,31 @@ describe("workspace creation authority migration contract", () => {
     expect(sql).not.toContain(
       "grant select on public.workspace_creation_approvals",
     );
+  });
+});
+
+describe("installation authority API migration contract", () => {
+  it("exposes retry-safe approval only and keeps apply private", async () => {
+    const sql = await readFile(installationAuthorityApiMigrationUrl, "utf8");
+    expect(sql.trimStart()).toMatch(
+      /^-- Retry-safe authenticated approval entrypoints[^\n]*\n\nbegin;/,
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+    expect(sql).toContain("target_approval_id uuid");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toContain("approval retry conflicts with immutable authority");
+    expect(sql).toContain("'release', value.release");
+    expect(sql).toContain("workspace_creation_approval_document");
+    expect(sql).toContain("workspace_creation_receipts_distinct_ids");
+    expect(sql).toContain("release_adoption_receipts_release_check");
+    expect(sql).toContain(
+      "aal2_verified_at <= approved_at + interval '1 minute'",
+    );
+    expect(sql).toContain("[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*");
+    expect(sql).toContain(
+      "revoke execute on function public.create_release_adoption_approval",
+    );
+    expect(sql).not.toContain("grant execute on function public.apply_");
+    expect(sql).not.toContain("workspace_memberships");
   });
 });

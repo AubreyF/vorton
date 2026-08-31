@@ -12,6 +12,10 @@ import {
   type ExecutiveLedger,
 } from "@vorton/executive";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
+import {
+  releaseAdoptionApprovalRequestSchema,
+  workspaceCreationApprovalRequestSchema,
+} from "@vorton/contracts";
 
 import {
   AuthenticationError,
@@ -28,6 +32,13 @@ import {
 } from "./council-resolver.js";
 import type { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import {
+  InstallationAuthorityConflictError,
+  InstallationAuthorityForbiddenError,
+  InstallationAuthorityInputError,
+  InstallationAuthorityIntegrityError,
+  type DatabaseInstallationAuthority,
+} from "./installation-authority.js";
+import {
   ExecutiveRequestInputError,
   ExecutiveRequestResolutionError,
   parseProposalInput,
@@ -43,6 +54,7 @@ export interface ApiServerDependencies {
   requestResolver: DatabaseExecutiveRequestResolver;
   workerRuns: DatabaseWorkerRunRecorder;
   councilResolver: DatabaseExecutiveCouncilResolver;
+  installationAuthority: DatabaseInstallationAuthority;
   release: string;
   allowedOrigin: string;
 }
@@ -50,6 +62,9 @@ export interface ApiServerDependencies {
 interface ErrorPayload {
   error: { code: string; message: string };
 }
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function json(
   response: ServerResponse,
@@ -210,6 +225,38 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
             identity.authUserId,
           ),
         );
+        return;
+      }
+      const installationAuthorityRoute = url.pathname.match(
+        /^\/v1\/installations\/([0-9a-f-]+)\/(release-adoption-approvals|workspace-creation-approvals)$/i,
+      );
+      if (request.method === "POST" && installationAuthorityRoute?.[1]) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireRecentAal2(identity);
+        const installationId = installationAuthorityRoute[1];
+        if (!uuidPattern.test(installationId)) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "installationId must be a UUID",
+          );
+        }
+        const body = objectBody(await readJson(request));
+        const result =
+          installationAuthorityRoute[2] === "release-adoption-approvals"
+            ? await dependencies.installationAuthority.approveRelease(
+                installationId,
+                releaseAdoptionApprovalRequestSchema.parse(body),
+                identity,
+              )
+            : await dependencies.installationAuthority.approveWorkspace(
+                installationId,
+                workspaceCreationApprovalRequestSchema.parse(body),
+                identity,
+              );
+        send(201, result);
         return;
       }
       const councilRoute = url.pathname.match(
@@ -455,6 +502,60 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         );
         return;
       }
+      if (error instanceof InstallationAuthorityInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof InstallationAuthorityForbiddenError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof InstallationAuthorityConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "installation_authority_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof InstallationAuthorityIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
       if (error instanceof ExecutiveRequestInputError) {
         json(
           response,
@@ -522,7 +623,7 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           {
             error: {
               code: "invalid_request",
-              message: "Request does not match the executive contract",
+              message: "Request does not match the Vorton contract",
             },
           },
           request.headers.origin === dependencies.allowedOrigin

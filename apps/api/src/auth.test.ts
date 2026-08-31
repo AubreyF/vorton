@@ -13,6 +13,7 @@ import {
 const issuer = "https://abcdefghijklmnopqrst.supabase.co/auth/v1";
 const audience = "authenticated";
 const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
+const sessionId = "9ad0c516-419f-4415-88ad-0910797a1d01";
 const servers: Array<ReturnType<typeof createServer>> = [];
 
 afterEach(async () => {
@@ -47,11 +48,21 @@ async function fixture() {
     audience,
     jwksUrl: `http://127.0.0.1:${String(address.port)}`,
   });
-  const sign = (subject: string, key = privateKey) =>
+  const sign = (
+    subject: string,
+    key = privateKey,
+    claims: Record<string, unknown> = {},
+  ) =>
     new SignJWT({
       role: "authenticated",
       aal: "aal2",
-      auth_time: Math.floor(Date.now() / 1000),
+      session_id: sessionId,
+      is_anonymous: false,
+      amr: [
+        { method: "password", timestamp: Math.floor(Date.now() / 1000) - 30 },
+        { method: "totp", timestamp: Math.floor(Date.now() / 1000) },
+      ],
+      ...claims,
     })
       .setProtectedHeader({ alg: "ES256", kid: "fixture-key" })
       .setIssuer(issuer)
@@ -88,10 +99,42 @@ describe("Supabase JWT identity boundary", () => {
     const { verifier, sign } = await fixture();
     await expect(
       verifier.verify(`Bearer ${await sign(authUserId)}`),
-    ).resolves.toMatchObject({ authUserId, aal: "aal2" });
+    ).resolves.toMatchObject({
+      authUserId,
+      aal: "aal2",
+      authTime: expect.any(Number),
+    });
     await expect(
       verifier.verify("Bearer definitely-not-a-jwt"),
     ).rejects.toThrow("invalid");
+  });
+
+  it("does not accept token issue time or generic OTP as recent MFA", async () => {
+    const { verifier, sign } = await fixture();
+    const identity = await verifier.verify(
+      `Bearer ${await sign(authUserId, undefined, {
+        auth_time: Math.floor(Date.now() / 1000),
+        amr: [{ method: "otp", timestamp: Math.floor(Date.now() / 1000) }],
+      })}`,
+    );
+    expect(identity.authTime).toBeUndefined();
+    expect(() => requireRecentAal2(identity)).toThrow(
+      StepUpAuthenticationError,
+    );
+  });
+
+  it("rejects anonymous, non-authenticated, and sessionless tokens", async () => {
+    const { verifier, sign } = await fixture();
+    for (const claims of [
+      { is_anonymous: true },
+      { is_anonymous: undefined },
+      { role: "service_role" },
+      { session_id: undefined },
+    ]) {
+      await expect(
+        verifier.verify(`Bearer ${await sign(authUserId, undefined, claims)}`),
+      ).rejects.toBeInstanceOf(AuthenticationError);
+    }
   });
 
   it("rejects a forged token signed by an untrusted key", async () => {

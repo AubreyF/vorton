@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import {
   mkdtemp,
@@ -484,9 +484,10 @@ async function seedAuthorityFixtures(
       async (client) => {
         const result = await client.query<{ id: string }>(
           `select public.create_release_adoption_approval(
-            $1, $2, $3::jsonb, clock_timestamp() + $4::interval
+            $1, $2, $3, $4::jsonb, clock_timestamp() + $5::interval
           )->>'approvalId' as id`,
           [
+            randomUUID(),
             bootstrap.installationId,
             releasePlanHash,
             JSON.stringify(release),
@@ -516,9 +517,14 @@ async function seedAuthorityFixtures(
         (client) =>
           client.query(
             `select public.create_release_adoption_approval(
-              $1, $2, $3::jsonb, clock_timestamp() + interval '1 hour'
+              $1, $2, $3, $4::jsonb, clock_timestamp() + interval '1 hour'
             )`,
-            [bootstrap.installationId, releasePlanHash, exactReleaseJson],
+            [
+              randomUUID(),
+              bootstrap.installationId,
+              releasePlanHash,
+              exactReleaseJson,
+            ],
           ),
       );
     } catch (error) {
@@ -539,11 +545,73 @@ async function seedAuthorityFixtures(
     "Boolean release version approval",
   );
   await expectInvalidReleaseApproval(
+    JSON.stringify({ ...release, version: "0.04.0" }),
+    "Leading-zero release version approval",
+  );
+  await expectInvalidReleaseApproval(
+    JSON.stringify({ ...release, version: "1.2.3-01" }),
+    "Leading-zero numeric prerelease approval",
+  );
+  await expectInvalidReleaseApproval(
     JSON.stringify(release).replace(
       `"sourceCommit":"${release.sourceCommit}"`,
       `"sourceCommit":${"1".repeat(40)}`,
     ),
     "Numeric release source commit approval",
+  );
+  const skewAcceptedRelease = {
+    ...release,
+    version: "1.2.3-1a+build.1",
+  };
+  await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    (client) =>
+      setSignedInstallationStepUpContext(
+        client,
+        bootstrap.installationId,
+        ownerAuthUserId,
+        Math.floor(Date.now() / 1000) + 30,
+      ),
+    async (client) => {
+      const result = await client.query<{ contract: string }>(
+        `select public.create_release_adoption_approval(
+          $1, $2, $3, $4::jsonb, clock_timestamp() + interval '1 hour'
+        )->>'contract' as contract`,
+        [
+          randomUUID(),
+          bootstrap.installationId,
+          releasePlanHash,
+          JSON.stringify(skewAcceptedRelease),
+        ],
+      );
+      requireCondition(
+        result.rows[0]?.contract === "vorton.release-adoption-approval.v1",
+        "Canonical prerelease/build release with +30 second AAL2 skew was rejected",
+      );
+    },
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    (client) =>
+      setSignedInstallationStepUpContext(
+        client,
+        bootstrap.installationId,
+        ownerAuthUserId,
+        Math.ceil(Date.now() / 1000) + 61,
+      ),
+    `select public.create_release_adoption_approval(
+      $1, $2, $3, $4::jsonb, clock_timestamp() + interval '1 hour'
+    )`,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      releasePlanHash,
+      JSON.stringify(release),
+    ],
+    "P0001",
+    "+61 second AAL2 skew release approval",
   );
   const releaseApprovalId = await createReleaseApproval("1 hour");
   const substitutionReceiptId = "77777777-7777-4777-8777-777777777777";
@@ -850,10 +918,12 @@ async function seedAuthorityFixtures(
       [String(authTime)],
     );
   };
-  const approvalSql = `select id::text as id from public.create_workspace_creation_approval(
-    $1, $2, 'aubos', 'AubOS cloud', 'personal', $3, $4, $5
-  )`;
+  const workspaceApprovalId = randomUUID();
+  const approvalSql = `select public.create_workspace_creation_approval(
+    $1, $2, $3, 'aubos', 'AubOS cloud', 'personal', $4, $5, $6
+  )->>'approvalId' as id`;
   const approvalValues = [
+    workspaceApprovalId,
     bootstrap.installationId,
     otherWorkspaceId,
     releaseAdoptionReceiptId,
