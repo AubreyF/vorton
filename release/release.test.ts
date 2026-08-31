@@ -35,7 +35,10 @@ function commit(repository: string, message: string): string {
   return command(repository, ["rev-parse", "HEAD"]);
 }
 
-function fixture(): { repository: string; sourceCommit: string } {
+function fixture(cliVersion = "0.1.0"): {
+  repository: string;
+  sourceCommit: string;
+} {
   const repository = mkdtempSync(join(tmpdir(), "vorton-release-test-"));
   repositories.push(repository);
   command(repository, ["init", "-q"]);
@@ -44,7 +47,7 @@ function fixture(): { repository: string; sourceCommit: string } {
   write(
     repository,
     "packages/cli/package.json",
-    `${JSON.stringify({ version: "0.1.0" })}\n`,
+    `${JSON.stringify({ version: cliVersion })}\n`,
   );
   write(
     repository,
@@ -60,23 +63,28 @@ function fixture(): { repository: string; sourceCommit: string } {
   return { repository, sourceCommit: commit(repository, "source") };
 }
 
-function manifest(sourceCommit: string, digest = `sha256:${"a".repeat(64)}`) {
+function manifest(
+  sourceCommit: string,
+  digest = `sha256:${"a".repeat(64)}`,
+  version = "0.1.0",
+  imageNamespace: "aubos" | "vorton" = "aubos",
+) {
   return {
     schemaVersion: 1,
     status: "released",
-    version: "0.1.0",
+    version,
     sourceCommit,
     createdAt: "2026-08-28T12:00:00.000Z",
-    cliVersion: "0.1.0",
+    cliVersion: version,
     contracts: { host: 1, module: 1, worker: 1 },
     coreMigrationHead: "20260828000300_executive",
     images: {
       "control-plane": {
-        reference: `ghcr.io/moonbase-labs/vorton-control-plane@${digest}`,
+        reference: `ghcr.io/moonbase-labs/${imageNamespace}-control-plane@${digest}`,
         digest,
       },
       worker: {
-        reference: `ghcr.io/moonbase-labs/vorton-worker@${digest}`,
+        reference: `ghcr.io/moonbase-labs/${imageNamespace}-worker@${digest}`,
         digest,
       },
     },
@@ -93,14 +101,16 @@ function manifest(sourceCommit: string, digest = `sha256:${"a".repeat(64)}`) {
 function schemaV2Manifest(
   sourceCommit: string,
   digest = `sha256:${"a".repeat(64)}`,
+  version = "0.1.0",
+  imageNamespace: "aubos" | "vorton" = "aubos",
 ) {
   return {
-    ...manifest(sourceCommit, digest),
+    ...manifest(sourceCommit, digest, version, imageNamespace),
     schemaVersion: 2,
     images: {
-      ...manifest(sourceCommit, digest).images,
+      ...manifest(sourceCommit, digest, version, imageNamespace).images,
       web: {
-        reference: `ghcr.io/moonbase-labs/vorton-web@${digest}`,
+        reference: `ghcr.io/moonbase-labs/${imageNamespace}-web@${digest}`,
         digest,
       },
     },
@@ -580,6 +590,83 @@ describe("immutable release contracts", () => {
     ).toThrow(/control-plane, web, worker/);
   });
 
+  it("preserves the exact AubOS repositories for historical releases", () => {
+    const { repository, sourceCommit } = fixture("0.3.2");
+    const manifestPath = join(repository, "release/manifests/0.3.2.json");
+    const historical = schemaV2Manifest(
+      sourceCommit,
+      `sha256:${"a".repeat(64)}`,
+      "0.3.2",
+      "aubos",
+    );
+    write(
+      repository,
+      "release/manifests/0.3.2.json",
+      `${JSON.stringify(historical, null, 2)}\n`,
+    );
+
+    expect(
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "moonbase-labs",
+      }).version,
+    ).toBe("0.3.2");
+
+    historical.images["control-plane"].reference =
+      `ghcr.io/moonbase-labs/vorton-control-plane@${historical.images["control-plane"].digest}`;
+    write(
+      repository,
+      "release/manifests/0.3.2.json",
+      `${JSON.stringify(historical, null, 2)}\n`,
+    );
+    expect(() =>
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "moonbase-labs",
+      }),
+    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
+  });
+
+  it("requires the Vorton repositories for 0.4.0 and later releases", () => {
+    const { repository, sourceCommit } = fixture("0.4.0");
+    const manifestPath = join(repository, "release/manifests/0.4.0.json");
+    const current = schemaV2Manifest(
+      sourceCommit,
+      `sha256:${"a".repeat(64)}`,
+      "0.4.0",
+      "vorton",
+    );
+    write(
+      repository,
+      "release/manifests/0.4.0.json",
+      `${JSON.stringify(current, null, 2)}\n`,
+    );
+
+    expect(
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "moonbase-labs",
+      }).version,
+    ).toBe("0.4.0");
+
+    current.images.worker.reference = `ghcr.io/moonbase-labs/aubos-worker@${current.images.worker.digest}`;
+    write(
+      repository,
+      "release/manifests/0.4.0.json",
+      `${JSON.stringify(current, null, 2)}\n`,
+    );
+    expect(() =>
+      validateReleaseManifest({
+        repositoryRoot: repository,
+        manifestPath,
+        expectedRepositoryOwner: "moonbase-labs",
+      }),
+    ).toThrow(/ghcr\.io\/moonbase-labs\/vorton-worker/);
+  });
+
   it("fails closed on migration, managed-file, and release-commit drift", () => {
     const { repository, sourceCommit } = fixture();
     const invalid = manifest(sourceCommit);
@@ -658,6 +745,6 @@ describe("immutable release contracts", () => {
         manifestPath,
         expectedRepositoryOwner: "moonbase-labs",
       }),
-    ).toThrow(/ghcr\.io\/moonbase-labs\/vorton-control-plane/);
+    ).toThrow(/ghcr\.io\/moonbase-labs\/aubos-control-plane/);
   });
 });

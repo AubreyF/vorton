@@ -8,17 +8,30 @@ import { releaseManifestSchema, type ReleaseManifest } from "@vorton/contracts";
 const imageReferencePattern =
   /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/;
 
+const legacyAubosImageReleaseVersions = new Set([
+  "0.1.0",
+  "0.1.1",
+  "0.2.0",
+  "0.2.1",
+  "0.3.0",
+  "0.3.1",
+  "0.3.2",
+]);
+
+type FirstPartyImageNamespace = "aubos" | "vorton";
+
 function releaseImageRepositories(
   repositoryOwner: string,
+  namespace: FirstPartyImageNamespace,
 ): Record<string, string> {
   const owner = repositoryOwner.toLowerCase();
   if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(owner)) {
     throw new Error(`Invalid GitHub repository owner: ${repositoryOwner}`);
   }
   return {
-    "control-plane": `ghcr.io/${owner}/vorton-control-plane`,
-    web: `ghcr.io/${owner}/vorton-web`,
-    worker: `ghcr.io/${owner}/vorton-worker`,
+    "control-plane": `ghcr.io/${owner}/${namespace}-control-plane`,
+    web: `ghcr.io/${owner}/${namespace}-web`,
+    worker: `ghcr.io/${owner}/${namespace}-worker`,
   };
 }
 
@@ -26,8 +39,9 @@ function requireReleaseImageRepositories(
   images: Record<string, { reference: string; digest: string }>,
   repositoryOwner: string,
   schemaVersion: 1 | 2,
+  namespace: FirstPartyImageNamespace,
 ): void {
-  const repositories = releaseImageRepositories(repositoryOwner);
+  const repositories = releaseImageRepositories(repositoryOwner, namespace);
   const requiredNames =
     schemaVersion === 1
       ? (["control-plane", "worker"] as const)
@@ -172,7 +186,7 @@ export function parseImageReceipt(
       return [name, { reference: image.reference, digest: image.digest }];
     }),
   );
-  requireReleaseImageRepositories(images, repositoryOwner, 2);
+  requireReleaseImageRepositories(images, repositoryOwner, 2, "vorton");
   return images;
 }
 
@@ -253,6 +267,9 @@ export function validateReleaseManifest(options: {
         manifest.images,
         options.expectedRepositoryOwner,
         manifest.schemaVersion,
+        legacyAubosImageReleaseVersions.has(manifest.version)
+          ? "aubos"
+          : "vorton",
       );
     }
   }
