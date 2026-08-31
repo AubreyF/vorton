@@ -1816,6 +1816,12 @@ async function proveModuleLifecycleApprovalBoundary(
   const recoveryApprovalId = randomUUID();
   await createApproval(recoveryApprovalId, recoveryBinding, expiration());
   successfulApprovalIds.push(recoveryApprovalId);
+  await denyApproval(
+    "Lifecycle approval ID reused as prerequisite receipt identity",
+    backupReceipt.receiptId,
+    recoveryBinding,
+    expiration(),
+  );
 
   const recoveryReceipt = receiptReference("action-recovery-receipt");
   const deletionBinding = lifecycleBinding(

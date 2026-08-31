@@ -800,9 +800,6 @@ begin
   ) then
     raise exception 'Signed workspace-person AAL2 context is required to approve module lifecycle action';
   end if;
-  subject_auth_time := to_timestamp(
-    current_setting('vorton.workspace_step_up_auth_time', true)::bigint
-  );
 
   select person.id, workspace.realm
     into owner_id, workspace_realm
@@ -824,6 +821,22 @@ begin
   if exact_binding->>'realm' <> workspace_realm::text then
     raise exception 'Module lifecycle binding does not match workspace authority';
   end if;
+
+  -- A competing membership mutation may have held the row lock long enough
+  -- for an otherwise valid step-up to become stale. Rebind the authoritative
+  -- approval time and recheck AAL2 only after the live owner rows are locked.
+  approved_at_value := date_trunc('milliseconds', clock_timestamp());
+  if not public.vorton_workspace_step_up_context_valid(
+    target_installation_id::text,
+    target_workspace_id::text,
+    subject_text,
+    approved_at_value
+  ) then
+    raise exception 'Signed workspace-person AAL2 context is required to approve module lifecycle action';
+  end if;
+  subject_auth_time := to_timestamp(
+    current_setting('vorton.workspace_step_up_auth_time', true)::bigint
+  );
 
   select * into approval
     from public.module_lifecycle_action_approvals existing

@@ -365,7 +365,14 @@ describe("module lifecycle authority migration contract", () => {
     expect(sql).toContain("+ interval '10 minutes'");
     expect(sql).toContain("membership.kind = 'owner'");
     expect(sql).toContain("for share of membership, workspace, person");
+    expect(sql).toContain(
+      "approval time and recheck AAL2 only after the live owner rows are locked",
+    );
     expect(sql).toContain("gen_random_uuid()");
+    expect(sql).toContain("for identifier_generation_attempt in 1..16 loop");
+    expect(sql).toContain(
+      "target_approval_id::text =\n      exact_binding#>>'{target,backupReceipt,receiptId}'",
+    );
     expect(sql).toContain("module_lifecycle_approvals_distinct_ids");
     expect(sql).toContain("module_lifecycle_approvals_record_fk");
     expect(sql).toContain("deferrable initially deferred");
