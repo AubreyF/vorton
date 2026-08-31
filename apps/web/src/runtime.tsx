@@ -4,6 +4,11 @@ import {
   type SupabaseClient,
 } from "@supabase/supabase-js";
 import {
+  executiveCouncilStateSchema,
+  type ExecutiveCouncilRecord,
+  type ExecutiveCouncilState as ContractExecutiveCouncilState,
+} from "@vorton/contracts";
+import {
   createContext,
   type FormEvent,
   type ReactNode,
@@ -78,81 +83,9 @@ export interface RuntimeBootstrap {
   installations: RuntimeInstallation[];
 }
 
-export type CouncilPhase = "proposal" | "review" | "synthesis" | "complete";
-
-export interface CouncilRecord {
-  id: string;
-  kind: "proposal" | "review";
-  summary: string;
-  actorWorkerId: string;
-  recommendation: {
-    summary: string;
-    evidenceRecordIds: string[];
-    alternatives: Array<{
-      title: string;
-      description: string;
-      expectedOutcome: string;
-      risks: string[];
-    }>;
-    recommendedAction: {
-      title: string;
-      description: string;
-      capability: string;
-      mode: string;
-      externalEffect: boolean;
-    };
-    confidence: number;
-    uncertainties: string[];
-  };
-  phase: Exclude<CouncilPhase, "complete">;
-  roleId: string;
-  inputRecordIds: string[];
-  peerRecordIds: string[];
-  providerJob: {
-    id: string;
-    provider: string;
-    model: string;
-    store: boolean;
-    background: boolean;
-  };
-}
-
-export interface ExecutiveCouncilState {
-  protocol: "vorton.executive-council.v1";
-  installationId: string;
-  workspaceId: string;
-  work: {
-    id: string;
-    title: string;
-    requestedOutcome: string;
-    acceptanceCriteria: string[];
-    state: string;
-  };
-  authority: "none";
-  phase: CouncilPhase;
-  nextStep: null | {
-    phase: Exclude<CouncilPhase, "complete">;
-    roleId: string;
-    roleName: string;
-  };
-  counts: {
-    proposals: number;
-    reviews: number;
-    syntheses: number;
-    total: number;
-    required: number;
-  };
-  roles: Array<{
-    roleId: string;
-    workerId: string;
-    name: string;
-    version: number;
-    status: "awaiting_proposal" | "awaiting_review" | "complete";
-    proposal: CouncilRecord | null;
-    review: CouncilRecord | null;
-  }>;
-  synthesis: CouncilRecord | null;
-}
+export type ExecutiveCouncilState = ContractExecutiveCouncilState;
+export type CouncilRecord = ExecutiveCouncilRecord;
+export type CouncilPhase = ExecutiveCouncilState["phase"];
 
 export interface RuntimeContextValue {
   session: Session;
@@ -160,23 +93,28 @@ export interface RuntimeContextValue {
   signOut(): Promise<void>;
   submitExecutive(
     stage: "proposals" | "reviews" | "decisions" | "approvals" | "work",
-    request: unknown,
+    installationId: string,
+    workspaceId: string,
+    request: Record<string, unknown>,
   ): Promise<unknown>;
   refreshBootstrap(): Promise<void>;
   getExecutiveCouncil(
     workId: string,
     installationId: string,
     workspaceId: string,
+    signal?: AbortSignal,
   ): Promise<ExecutiveCouncilState>;
   installExecutiveCouncil(
     workId: string,
     installationId: string,
     workspaceId: string,
+    signal?: AbortSignal,
   ): Promise<ExecutiveCouncilState>;
   advanceExecutiveCouncil(
     workId: string,
     installationId: string,
     workspaceId: string,
+    signal?: AbortSignal,
   ): Promise<ExecutiveCouncilState>;
 }
 
@@ -456,37 +394,52 @@ export function BrowserRuntime({
         signOut: async () => {
           await client.auth.signOut();
         },
-        submitExecutive: (stage, request) =>
+        submitExecutive: (stage, installationId, workspaceId, request) =>
           postExecutiveRequest(
             config.apiUrl,
             session.access_token,
             stage,
+            installationId,
+            workspaceId,
             request,
           ),
         refreshBootstrap,
-        getExecutiveCouncil: (workId, installationId, workspaceId) =>
+        getExecutiveCouncil: (workId, installationId, workspaceId, signal) =>
           getExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
             workspaceId,
+            { signal },
           ),
-        installExecutiveCouncil: (workId, installationId, workspaceId) =>
+        installExecutiveCouncil: (
+          workId,
+          installationId,
+          workspaceId,
+          signal,
+        ) =>
           installExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
             workspaceId,
+            { signal },
           ),
-        advanceExecutiveCouncil: (workId, installationId, workspaceId) =>
+        advanceExecutiveCouncil: (
+          workId,
+          installationId,
+          workspaceId,
+          signal,
+        ) =>
           advanceExecutiveCouncil(
             config.apiUrl,
             session.access_token,
             workId,
             installationId,
             workspaceId,
+            { signal },
           ),
       }}
     >
@@ -501,15 +454,15 @@ export async function getExecutiveCouncil(
   workId: string,
   installationId: string,
   workspaceId: string,
-  requestFetch: typeof fetch = fetch,
+  options: { requestFetch?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<ExecutiveCouncilState> {
   const query = new URLSearchParams({ installationId, workspaceId });
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}?${query.toString()}`,
     accessToken,
-    { installationId, workspaceId },
+    { installationId, workspaceId, workId },
     "GET",
-    requestFetch,
+    options,
   );
 }
 
@@ -519,14 +472,14 @@ export async function installExecutiveCouncil(
   workId: string,
   installationId: string,
   workspaceId: string,
-  requestFetch: typeof fetch = fetch,
+  options: { requestFetch?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<ExecutiveCouncilState> {
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/install`,
     accessToken,
-    { installationId, workspaceId },
+    { installationId, workspaceId, workId },
     "POST",
-    requestFetch,
+    options,
   );
 }
 
@@ -536,25 +489,27 @@ export async function advanceExecutiveCouncil(
   workId: string,
   installationId: string,
   workspaceId: string,
-  requestFetch: typeof fetch = fetch,
+  options: { requestFetch?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<ExecutiveCouncilState> {
   return requestCouncilState(
     `${apiUrl}/v1/executive/councils/${encodeURIComponent(workId)}/advance`,
     accessToken,
-    { installationId, workspaceId },
+    { installationId, workspaceId, workId },
     "POST",
-    requestFetch,
+    options,
   );
 }
 
 async function requestCouncilState(
   url: string,
   accessToken: string,
-  scope: { installationId: string; workspaceId: string },
+  scope: { installationId: string; workspaceId: string; workId: string },
   method: "GET" | "POST",
-  requestFetch: typeof fetch,
+  options: { requestFetch?: typeof fetch; signal?: AbortSignal },
 ): Promise<ExecutiveCouncilState> {
+  const requestFetch = options.requestFetch ?? fetch;
   const response = await requestFetch(url, {
+    ...(options.signal ? { signal: options.signal } : {}),
     ...(method === "POST"
       ? {
           method: "POST",
@@ -562,7 +517,10 @@ async function requestCouncilState(
             authorization: `Bearer ${accessToken}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(scope),
+          body: JSON.stringify({
+            installationId: scope.installationId,
+            workspaceId: scope.workspaceId,
+          }),
         }
       : { headers: { authorization: `Bearer ${accessToken}` } }),
   });
@@ -575,13 +533,33 @@ async function requestCouncilState(
         : `Executive council API rejected the request with HTTP ${String(response.status)}`;
     throw new Error(message);
   }
-  const state = payload as ExecutiveCouncilState;
+  const parsed = executiveCouncilStateSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Executive council API returned invalid state");
+  }
+  const state = parsed.data;
   if (
     state.installationId !== scope.installationId ||
-    state.workspaceId !== scope.workspaceId
+    state.workspaceId !== scope.workspaceId ||
+    state.work.id !== scope.workId
   ) {
     throw new Error(
-      "Executive council API returned state for a different workspace",
+      "Executive council API returned state for a different workspace or Work item",
+    );
+  }
+  const records = [
+    ...state.roles.flatMap((role) => [role.proposal, role.review]),
+    state.synthesis,
+  ].filter((record): record is ExecutiveCouncilRecord => record !== null);
+  if (
+    records.some(
+      (record) =>
+        record.installationId !== scope.installationId ||
+        record.workspaceId !== scope.workspaceId,
+    )
+  ) {
+    throw new Error(
+      "Executive council API returned a nested record for a different workspace",
     );
   }
   return state;
@@ -607,7 +585,9 @@ export async function postExecutiveRequest(
   apiUrl: string,
   accessToken: string,
   stage: "proposals" | "reviews" | "decisions" | "approvals" | "work",
-  request: unknown,
+  installationId: string,
+  workspaceId: string,
+  request: Record<string, unknown>,
   requestFetch: typeof fetch = fetch,
 ): Promise<unknown> {
   const response = await requestFetch(`${apiUrl}/v1/executive/${stage}`, {
@@ -616,7 +596,7 @@ export async function postExecutiveRequest(
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(request),
+    body: JSON.stringify({ ...request, installationId, workspaceId }),
   });
   const payload = (await response.json()) as unknown;
   if (!response.ok) {

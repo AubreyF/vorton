@@ -4,13 +4,32 @@ import type {
   ExecutiveCouncilState,
 } from "./runtime.js";
 
+function previewUuid(value: number): string {
+  return `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
+}
+
+export const previewCouncilScope = {
+  installationId: previewUuid(2),
+  workspaceId: previewUuid(10),
+  workId: previewUuid(3),
+  evidenceIds: [previewUuid(6), previewUuid(7)],
+} as const;
+
 const roleSeeds = [
-  ["role-ceo", "worker-ceo", "Chief Executive Officer"],
-  ["role-cmo", "worker-cmo", "Chief Marketing Officer"],
-  ["role-cto", "worker-cto", "Chief Technology Officer"],
-  ["role-coo", "worker-coo", "Chief Operating Officer"],
-  ["role-cfo", "worker-cfo", "Chief Financial Officer"],
+  [previewUuid(101), previewUuid(201), "Chief Executive Officer"],
+  [previewUuid(102), previewUuid(202), "Chief Marketing Officer"],
+  [previewUuid(103), previewUuid(203), "Chief Technology Officer"],
+  [previewUuid(104), previewUuid(204), "Chief Operating Officer"],
+  [previewUuid(105), previewUuid(205), "Chief Financial Officer"],
 ] as const;
+
+function recordId(
+  phase: Exclude<CouncilPhase, "complete">,
+  index: number,
+): string {
+  const offset = phase === "proposal" ? 301 : phase === "review" ? 311 : 321;
+  return previewUuid(offset + index);
+}
 
 function record(
   roleId: string,
@@ -20,7 +39,9 @@ function record(
   recommendation: string,
 ): CouncilRecord {
   return {
-    id: `record-${phase}-${String(index + 1)}`,
+    id: recordId(phase, index),
+    installationId: previewCouncilScope.installationId,
+    workspaceId: previewCouncilScope.workspaceId,
     kind: phase === "review" ? "review" : "proposal",
     summary:
       phase === "proposal"
@@ -31,7 +52,7 @@ function record(
     actorWorkerId: workerId,
     recommendation: {
       summary: recommendation,
-      evidenceRecordIds: ["evidence-product-01", "evidence-market-02"],
+      evidenceRecordIds: [...previewCouncilScope.evidenceIds],
       alternatives: [
         {
           title: "Preserve the current sequence",
@@ -55,12 +76,10 @@ function record(
     },
     phase,
     roleId,
-    inputRecordIds: ["evidence-product-01", "evidence-market-02"],
+    inputRecordIds: [...previewCouncilScope.evidenceIds],
     peerRecordIds:
       phase === "review" || phase === "synthesis"
-        ? roleSeeds.map(
-            (_, peerIndex) => `record-proposal-${String(peerIndex + 1)}`,
-          )
+        ? roleSeeds.map((_, peerIndex) => recordId("proposal", peerIndex))
         : [],
     providerJob: {
       id: `job-${phase}-${String(index + 1)}`,
@@ -108,8 +127,8 @@ function stateAt(
 ): ExecutiveCouncilState {
   const synthesis = includeSynthesis
     ? record(
-        "role-ceo",
-        "worker-ceo",
+        roleSeeds[0][0],
+        roleSeeds[0][1],
         "synthesis",
         0,
         "Run one bounded evidence experiment with an owner-approved success measure, explicit cost ceiling, and no external publication authority.",
@@ -135,26 +154,26 @@ function stateAt(
       : phase === "proposal"
         ? {
             phase: "proposal" as const,
-            roleId: roles[proposalCount]?.roleId ?? "role-ceo",
+            roleId: roles[proposalCount]?.roleId ?? roleSeeds[0][0],
             roleName: roles[proposalCount]?.name ?? "Chief Executive Officer",
           }
         : phase === "review"
           ? {
               phase: "review" as const,
-              roleId: roles[reviewCount]?.roleId ?? "role-ceo",
+              roleId: roles[reviewCount]?.roleId ?? roleSeeds[0][0],
               roleName: roles[reviewCount]?.name ?? "Chief Executive Officer",
             }
           : {
               phase: "synthesis" as const,
-              roleId: "role-ceo",
+              roleId: roleSeeds[0][0],
               roleName: "Chief Executive Officer",
             };
   return {
     protocol: "vorton.executive-council.v1",
-    installationId: "00000000-0000-4000-8000-000000000002",
-    workspaceId: "00000000-0000-4000-8000-000000000010",
+    installationId: previewCouncilScope.installationId,
+    workspaceId: previewCouncilScope.workspaceId,
     work: {
-      id: "00000000-0000-4000-8000-000000000003",
+      id: previewCouncilScope.workId,
       title: "Choose the next product decision",
       requestedOutcome:
         "Select one decision that creates the most useful evidence for Freed.",

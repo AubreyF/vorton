@@ -13,6 +13,7 @@ import {
   EXECUTIVE_COUNCIL_ROLES,
 } from "./executive-council.js";
 import {
+  previewCouncilScope,
   previewCouncilFailure,
   previewCouncilStates,
 } from "./executive-council.preview.js";
@@ -34,12 +35,12 @@ const workItems = [
 
 const evidence = [
   {
-    id: "evidence-product-01",
+    id: previewCouncilScope.evidenceIds[0],
     summary: "Current product evidence is bounded and synthetic.",
     classification: "synthetic",
   },
   {
-    id: "evidence-market-02",
+    id: previewCouncilScope.evidenceIds[1],
     summary: "No external action has owner authority.",
     classification: "synthetic",
   },
@@ -134,7 +135,7 @@ describe("executive council route and surface", () => {
     expect(html).toContain("Recommendations");
     expect(html).toContain("Cross-review");
     expect(html).toContain("Dissent recorded");
-    expect(html).toContain("evidence-product-01");
+    expect(html).toContain(previewCouncilScope.evidenceIds[0]);
     expect(html).toContain("Synthesis");
     expect(html).toContain(
       "Run one bounded evidence experiment with an owner-approved success measure",
@@ -178,6 +179,36 @@ describe("executive council route and surface", () => {
     expect(html).not.toContain('aria-label="Council progress"');
     expect(html).not.toContain("Install and convene council");
     expect(html).not.toContain("Synthesis is withheld");
+  });
+
+  it("does not reuse another Work item's council while selection changes", () => {
+    const otherWork = {
+      ...workItems[0]!,
+      id: "00000000-0000-4000-8000-000000000099",
+      title: "Review another governed decision",
+      requestedOutcome: "Keep the second Work item isolated.",
+    };
+    const html = renderToStaticMarkup(
+      <CouncilSurface
+        workspaceName="FreedOS"
+        membershipKind="owner"
+        workItems={[...workItems, otherWork]}
+        selectedWorkId={otherWork.id}
+        evidence={[]}
+        council={previewCouncilStates.complete}
+        loading={false}
+        running={false}
+        onSelectWork={() => undefined}
+        onConvene={() => undefined}
+      />,
+    );
+    expect(html).toContain("Keep the second Work item isolated.");
+    expect(html).toContain("Ready to convene");
+    expect(html).toContain("Install and convene council");
+    expect(html).not.toContain("Council record is complete");
+    expect(html).not.toContain(
+      "Run one bounded evidence experiment with an owner-approved success measure",
+    );
   });
 
   it("states the authority boundary and exposes accessible governed controls", () => {
@@ -228,5 +259,26 @@ describe("bounded council advancement", () => {
         () => undefined,
       ),
     ).rejects.toThrow("no durable progress");
+  });
+
+  it("stops before publishing progress after its run is aborted", async () => {
+    const controller = new AbortController();
+    const progress = vi.fn();
+    const advance = vi.fn(async () => {
+      controller.abort();
+      return previewCouncilStates.recommendations;
+    });
+
+    await expect(
+      advanceCouncilUntilSettled(
+        previewCouncilStates.ready,
+        advance,
+        progress,
+        12,
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(advance).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
   });
 });

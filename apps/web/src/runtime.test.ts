@@ -7,7 +7,16 @@ import {
   installExecutiveCouncil,
   postExecutiveRequest,
   readBrowserRuntimeConfig,
+  type ExecutiveCouncilState,
 } from "./runtime.js";
+import {
+  previewCouncilScope,
+  previewCouncilStates,
+} from "./executive-council.preview.js";
+
+function councilState(): ExecutiveCouncilState {
+  return structuredClone(previewCouncilStates.ready);
+}
 
 describe("browser runtime boundary", () => {
   it("fails closed when public Supabase or API configuration is missing", () => {
@@ -111,7 +120,13 @@ describe("browser runtime boundary", () => {
       "https://api.vorton.example",
       "verified-session-token",
       "reviews",
-      { proposalRecordId: "synthetic" },
+      previewCouncilScope.installationId,
+      previewCouncilScope.workspaceId,
+      {
+        proposalRecordId: "synthetic",
+        installationId: "forged-installation",
+        workspaceId: "forged-workspace",
+      },
       requestFetch as typeof fetch,
     );
     expect(requestFetch).toHaveBeenCalledWith(
@@ -121,6 +136,11 @@ describe("browser runtime boundary", () => {
           authorization: "Bearer verified-session-token",
           "content-type": "application/json",
         },
+        body: JSON.stringify({
+          proposalRecordId: "synthetic",
+          installationId: previewCouncilScope.installationId,
+          workspaceId: previewCouncilScope.workspaceId,
+        }),
       }),
     );
   });
@@ -141,23 +161,17 @@ describe("browser runtime boundary", () => {
   });
 
   it("routes council reads with the exact bearer token and installation query", async () => {
-    const requestFetch = vi.fn(async () =>
-      Response.json({
-        protocol: "vorton.executive-council.v1",
-        installationId: "installation-1",
-        workspaceId: "workspace-1",
-      }),
-    );
+    const requestFetch = vi.fn(async () => Response.json(councilState()));
     await getExecutiveCouncil(
       "https://api.vorton.example",
       "verified-session-token",
-      "work/with spaces",
-      "installation-1",
-      "workspace-1",
-      requestFetch as typeof fetch,
+      previewCouncilScope.workId,
+      previewCouncilScope.installationId,
+      previewCouncilScope.workspaceId,
+      { requestFetch: requestFetch as typeof fetch },
     );
     expect(requestFetch).toHaveBeenCalledWith(
-      "https://api.vorton.example/v1/executive/councils/work%2Fwith%20spaces?installationId=installation-1&workspaceId=workspace-1",
+      `https://api.vorton.example/v1/executive/councils/${previewCouncilScope.workId}?installationId=${previewCouncilScope.installationId}&workspaceId=${previewCouncilScope.workspaceId}`,
       { headers: { authorization: "Bearer verified-session-token" } },
     );
   });
@@ -168,23 +182,17 @@ describe("browser runtime boundary", () => {
   ] as const)(
     "routes council %s with the exact bearer token and installation body",
     async (action, request) => {
-      const requestFetch = vi.fn(async () =>
-        Response.json({
-          protocol: "vorton.executive-council.v1",
-          installationId: "installation-1",
-          workspaceId: "workspace-1",
-        }),
-      );
+      const requestFetch = vi.fn(async () => Response.json(councilState()));
       await request(
         "https://api.vorton.example",
         "verified-session-token",
-        "work-1",
-        "installation-1",
-        "workspace-1",
-        requestFetch as typeof fetch,
+        previewCouncilScope.workId,
+        previewCouncilScope.installationId,
+        previewCouncilScope.workspaceId,
+        { requestFetch: requestFetch as typeof fetch },
       );
       expect(requestFetch).toHaveBeenCalledWith(
-        `https://api.vorton.example/v1/executive/councils/work-1/${action}`,
+        `https://api.vorton.example/v1/executive/councils/${previewCouncilScope.workId}/${action}`,
         {
           method: "POST",
           headers: {
@@ -192,8 +200,8 @@ describe("browser runtime boundary", () => {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            installationId: "installation-1",
-            workspaceId: "workspace-1",
+            installationId: previewCouncilScope.installationId,
+            workspaceId: previewCouncilScope.workspaceId,
           }),
         },
       );
@@ -201,23 +209,72 @@ describe("browser runtime boundary", () => {
   );
 
   it("rejects a council response bound to another workspace", async () => {
-    const requestFetch = vi.fn(async () =>
-      Response.json({
-        protocol: "vorton.executive-council.v1",
-        installationId: "installation-1",
-        workspaceId: "workspace-other",
-      }),
-    );
+    const response = councilState();
+    response.workspaceId = "00000000-0000-4000-8000-000000000099";
+    const requestFetch = vi.fn(async () => Response.json(response));
 
     await expect(
       getExecutiveCouncil(
         "https://api.vorton.example",
         "verified-session-token",
-        "work-1",
-        "installation-1",
-        "workspace-1",
-        requestFetch as typeof fetch,
+        previewCouncilScope.workId,
+        previewCouncilScope.installationId,
+        previewCouncilScope.workspaceId,
+        { requestFetch: requestFetch as typeof fetch },
       ),
     ).rejects.toThrow("different workspace");
+  });
+
+  it("rejects invalid, wrong-Work, and cross-workspace nested council state", async () => {
+    const invalidFetch = vi.fn(async () =>
+      Response.json({
+        protocol: "vorton.executive-council.v1",
+        installationId: previewCouncilScope.installationId,
+        workspaceId: previewCouncilScope.workspaceId,
+      }),
+    );
+    await expect(
+      getExecutiveCouncil(
+        "https://api.vorton.example",
+        "verified-session-token",
+        previewCouncilScope.workId,
+        previewCouncilScope.installationId,
+        previewCouncilScope.workspaceId,
+        { requestFetch: invalidFetch as typeof fetch },
+      ),
+    ).rejects.toThrow("invalid state");
+
+    const wrongWork = councilState();
+    wrongWork.work.id = "00000000-0000-4000-8000-000000000098";
+    await expect(
+      getExecutiveCouncil(
+        "https://api.vorton.example",
+        "verified-session-token",
+        previewCouncilScope.workId,
+        previewCouncilScope.installationId,
+        previewCouncilScope.workspaceId,
+        {
+          requestFetch: vi.fn(async () => Response.json(wrongWork)),
+        },
+      ),
+    ).rejects.toThrow("different workspace or Work item");
+
+    const nested: ExecutiveCouncilState = structuredClone(
+      previewCouncilStates.recommendations,
+    );
+    nested.roles[0]!.proposal!.workspaceId =
+      "00000000-0000-4000-8000-000000000099";
+    await expect(
+      getExecutiveCouncil(
+        "https://api.vorton.example",
+        "verified-session-token",
+        previewCouncilScope.workId,
+        previewCouncilScope.installationId,
+        previewCouncilScope.workspaceId,
+        {
+          requestFetch: vi.fn(async () => Response.json(nested)),
+        },
+      ),
+    ).rejects.toThrow("nested record for a different workspace");
   });
 });

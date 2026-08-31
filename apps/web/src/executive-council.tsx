@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type CouncilRecord,
   type ExecutiveCouncilState,
@@ -58,6 +58,7 @@ export function ExecutiveCouncil({
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string>();
+  const activeRun = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!workspace || !selectedWorkId) {
@@ -65,18 +66,24 @@ export function ExecutiveCouncil({
       return;
     }
     let current = true;
+    const controller = new AbortController();
     setLoading(true);
     setFailure(undefined);
     setCouncil((existing) =>
       existing?.work.id === selectedWorkId ? existing : undefined,
     );
     void runtime
-      .getExecutiveCouncil(selectedWorkId, vortonInstallationId, workspace.id)
+      .getExecutiveCouncil(
+        selectedWorkId,
+        vortonInstallationId,
+        workspace.id,
+        controller.signal,
+      )
       .then((state) => {
         if (current) setCouncil(state);
       })
       .catch((error: unknown) => {
-        if (!current) return;
+        if (!current || controller.signal.aborted) return;
         setFailure(
           error instanceof Error
             ? error.message
@@ -88,8 +95,17 @@ export function ExecutiveCouncil({
       });
     return () => {
       current = false;
+      controller.abort();
     };
   }, [runtime, selectedWorkId, vortonInstallationId, workspace]);
+
+  useEffect(
+    () => () => {
+      activeRun.current?.abort();
+      activeRun.current = null;
+    },
+    [selectedWorkId, vortonInstallationId, workspace?.id],
+  );
 
   const evidence =
     workspace?.proposalBindings.find(
@@ -98,16 +114,27 @@ export function ExecutiveCouncil({
 
   async function convene() {
     if (!workspace || !selectedWorkId || running) return;
+    const controller = new AbortController();
+    activeRun.current?.abort();
+    activeRun.current = controller;
     setRunning(true);
     setFailure(undefined);
     try {
+      const currentCouncil =
+        council?.installationId === vortonInstallationId &&
+        council.workspaceId === workspace.id &&
+        council.work.id === selectedWorkId
+          ? council
+          : undefined;
       const startingState =
-        council ??
+        currentCouncil ??
         (await runtime.installExecutiveCouncil(
           selectedWorkId,
           vortonInstallationId,
           workspace.id,
+          controller.signal,
         ));
+      if (controller.signal.aborted) return;
       setCouncil(startingState);
       const completed = await advanceCouncilUntilSettled(
         startingState,
@@ -116,20 +143,38 @@ export function ExecutiveCouncil({
             selectedWorkId,
             vortonInstallationId,
             workspace.id,
+            controller.signal,
           ),
         setCouncil,
+        12,
+        controller.signal,
       );
+      if (controller.signal.aborted) return;
       setCouncil(completed);
       await runtime.refreshBootstrap();
     } catch (error) {
+      if (controller.signal.aborted) return;
       setFailure(
         error instanceof Error
           ? error.message
           : "The council paused after a failed model call.",
       );
     } finally {
-      setRunning(false);
+      if (activeRun.current === controller) {
+        activeRun.current = null;
+        setRunning(false);
+      }
     }
+  }
+
+  function selectWork(workId: string) {
+    if (workId === selectedWorkId) return;
+    activeRun.current?.abort();
+    activeRun.current = null;
+    setRunning(false);
+    setFailure(undefined);
+    setCouncil(undefined);
+    setSelectedWorkId(workId);
   }
 
   return (
@@ -144,7 +189,7 @@ export function ExecutiveCouncil({
       running={running}
       failure={failure}
       embedded={embedded}
-      onSelectWork={setSelectedWorkId}
+      onSelectWork={selectWork}
       onConvene={() => void convene()}
     />
   );
@@ -155,12 +200,15 @@ export async function advanceCouncilUntilSettled(
   advance: () => Promise<ExecutiveCouncilState>,
   onProgress: (state: ExecutiveCouncilState) => void,
   maximumCalls = 12,
+  signal?: AbortSignal,
 ): Promise<ExecutiveCouncilState> {
   let current = initial;
   let calls = 0;
   while (current.phase !== "complete" && calls < maximumCalls) {
+    throwIfCouncilRunAborted(signal);
     const previousTotal = current.counts.total;
     current = await advance();
+    throwIfCouncilRunAborted(signal);
     calls += 1;
     onProgress(current);
     if (current.phase !== "complete" && current.counts.total <= previousTotal) {
@@ -175,6 +223,13 @@ export async function advanceCouncilUntilSettled(
     );
   }
   return current;
+}
+
+function throwIfCouncilRunAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("The council run was stopped.");
+  error.name = "AbortError";
+  throw error;
 }
 
 export function CouncilSurface({
@@ -193,22 +248,24 @@ export function CouncilSurface({
 }: CouncilSurfaceProps) {
   const selectedWork =
     workItems.find((work) => work.id === selectedWorkId) ?? workItems[0];
+  const currentCouncil =
+    council?.work.id === selectedWorkId ? council : undefined;
   const objective =
-    council?.work.requestedOutcome ?? selectedWork?.requestedOutcome;
-  const installedRoles = council?.roles ?? [];
-  const required = council?.counts.required ?? 11;
-  const completed = council?.counts.total ?? 0;
+    currentCouncil?.work.requestedOutcome ?? selectedWork?.requestedOutcome;
+  const installedRoles = currentCouncil?.roles ?? [];
+  const required = currentCouncil?.counts.required ?? 11;
+  const completed = currentCouncil?.counts.total ?? 0;
   const actionLabel = running
-    ? council?.nextStep
-      ? `Consulting ${council.nextStep.roleName}`
+    ? currentCouncil?.nextStep
+      ? `Consulting ${currentCouncil.nextStep.roleName}`
       : "Convening council"
-    : council?.phase === "complete"
+    : currentCouncil?.phase === "complete"
       ? "Council complete"
-      : council
+      : currentCouncil
         ? "Resume council"
         : "Install and convene council";
   const IntroHeading = embedded ? "h2" : "h1";
-  const councilUnavailable = Boolean(failure && !council);
+  const councilUnavailable = Boolean(failure && !currentCouncil);
 
   return (
     <section className="council-module">
@@ -294,7 +351,7 @@ export function CouncilSurface({
               </article>
             ))}
             {(
-              council?.work.acceptanceCriteria ??
+              currentCouncil?.work.acceptanceCriteria ??
               selectedWork?.acceptanceCriteria ??
               []
             ).map((criterion, index) => (
@@ -304,7 +361,7 @@ export function CouncilSurface({
               </article>
             ))}
             {evidence.length === 0 &&
-              (council?.work.acceptanceCriteria.length ??
+              (currentCouncil?.work.acceptanceCriteria.length ??
                 selectedWork?.acceptanceCriteria.length ??
                 0) === 0 && <p>No evidence records are bound to this Work.</p>}
           </div>
@@ -403,7 +460,7 @@ export function CouncilSurface({
             <div className="checkpoint-heading">
               <div>
                 <p className="eyebrow">Council protocol</p>
-                <h2>{progressHeading(council, failure)}</h2>
+                <h2>{progressHeading(currentCouncil, failure)}</h2>
                 <p className="checkpoint-summary">
                   Each advance performs one model call and writes one durable
                   advisory record. Reloading this page resumes from the next
@@ -421,10 +478,10 @@ export function CouncilSurface({
             >
               {completed} of {required}
             </progress>
-            {council?.nextStep && (
+            {currentCouncil?.nextStep && (
               <p className="council-next-step">
-                Next: {formatCouncilStatus(council.nextStep.phase)} by{" "}
-                {council.nextStep.roleName}
+                Next: {formatCouncilStatus(currentCouncil.nextStep.phase)} by{" "}
+                {currentCouncil.nextStep.roleName}
               </p>
             )}
             {failure && (
@@ -444,7 +501,7 @@ export function CouncilSurface({
                 loading ||
                 running ||
                 !selectedWork ||
-                council?.phase === "complete" ||
+                currentCouncil?.phase === "complete" ||
                 membershipKind !== "owner"
               }
               onClick={onConvene}
@@ -453,7 +510,7 @@ export function CouncilSurface({
             </button>
           </section>
 
-          <CouncilResults council={council} />
+          <CouncilResults council={currentCouncil} />
 
           <section className="council-owner-review checkpoint-panel">
             <div>

@@ -757,16 +757,19 @@ function CommandBriefing({
     setBusy(true);
     setStatus(undefined);
     try {
-      const payload = (await runtime.submitExecutive("proposals", {
-        installationId: vortonInstallationId,
-        workspaceId: workspace.id,
-        workId: binding.workId,
-        workerId: binding.workerId,
-        roleId: binding.roleId,
-        objective: objective.trim(),
-        evidenceRecordIds: evidence.map((item) => item.id),
-        background: false,
-      })) as { proposal?: { id?: string } };
+      const payload = (await runtime.submitExecutive(
+        "proposals",
+        vortonInstallationId,
+        workspace.id,
+        {
+          workId: binding.workId,
+          workerId: binding.workerId,
+          roleId: binding.roleId,
+          objective: objective.trim(),
+          evidenceRecordIds: evidence.map((item) => item.id),
+          background: false,
+        },
+      )) as { proposal?: { id?: string } };
       setStatus(
         payload.proposal?.id
           ? `Recommendation recorded as ${payload.proposal.id}. No action was authorized.`
