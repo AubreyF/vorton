@@ -42,6 +42,10 @@ const moduleLifecycleAuthorityMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000400_module_lifecycle_authority.sql",
   import.meta.url,
 );
+const moduleLifecycleExecutionMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000500_module_lifecycle_execution.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -437,6 +441,80 @@ describe("module lifecycle authority migration contract", () => {
     );
     expect(sql).not.toContain(
       "grant select on public.module_lifecycle_action_approvals",
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+});
+
+describe("module lifecycle execution migration contract", () => {
+  it("separates immutable approval consumption from action finalization", async () => {
+    const sql = await readFile(moduleLifecycleExecutionMigrationUrl, "utf8");
+
+    expect(sql).toContain("vorton.module-lifecycle-action-command.v1");
+    expect(sql).toContain("vorton.module-lifecycle-action-receipt.v1");
+    expect(sql).toContain(
+      "insert into public.module_lifecycle_action_commands",
+    );
+    expect(sql).toContain(
+      "insert into public.module_lifecycle_action_receipts",
+    );
+    expect(sql).toContain("approvalConsumptionCount', 1");
+    expect(sql).toContain('"actionExecuted": false');
+    expect(sql).toContain("Lifecycle action command retry conflicts");
+    expect(sql).toContain("Lifecycle action receipt retry conflicts");
+    expect(sql).toContain(
+      "Module lifecycle commands and action receipts are append-only",
+    );
+  });
+
+  it("requires live worker custody and exact action-specific authority", async () => {
+    const sql = await readFile(moduleLifecycleExecutionMigrationUrl, "utf8");
+
+    expect(sql).toContain("aubos_runtime_context_valid(");
+    expect(sql).toContain("Live worker credential is required");
+    expect(sql).toContain("work_row.state <> 'leased'");
+    expect(sql).toContain("work_row.custodian_worker_id <> worker_id_value");
+    expect(sql).toContain(
+      "'module.lifecycle.' || approval.action::text\n       || '.' || exact_proof_scope",
+    );
+    expect(sql).toContain("candidate.mode = 'modify'");
+    expect(sql).toContain("active_grant_count <> 1");
+    expect(sql).toContain("owner_membership.kind <> 'owner'");
+    expect(sql).toContain("approval.expires_at <= consumed_at_value");
+    expect(sql).toContain("Fresh live worker credential is required");
+  });
+
+  it("allows production rollback only through a controlled deletion rehearsal", async () => {
+    const sql = await readFile(moduleLifecycleExecutionMigrationUrl, "utf8");
+
+    expect(sql).toContain("backup.proof_scope <> target_proof_scope");
+    expect(sql).toContain("recovery.proof_scope <> target_proof_scope");
+    expect(sql).toContain("deletion.proof_scope <> 'controlled-synthetic'");
+    expect(sql).toContain(
+      "Deletion rehearsal requires controlled synthetic proof scope",
+    );
+  });
+
+  it("keeps tables private and exposes only the two worker operations", async () => {
+    const sql = await readFile(moduleLifecycleExecutionMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "alter table public.module_lifecycle_action_commands enable row level security",
+    );
+    expect(sql).toContain(
+      "alter table public.module_lifecycle_action_receipts enable row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.module_lifecycle_action_commands",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.consume_module_lifecycle_action_approval",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.finalize_module_lifecycle_action",
+    );
+    expect(sql).not.toContain(
+      "grant select on public.module_lifecycle_action_commands",
     );
     expect(sql.trimEnd()).toMatch(/commit;$/);
   });

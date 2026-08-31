@@ -14,6 +14,7 @@
     "@vorton/contracts": "*",
     "@vorton/database": "*",
     "@vorton/executive": "*",
+    "@vorton/kernel": "*",
     "@vorton/memory": "*",
     "@vorton/workers": "*",
     "jose": "^6.1.0"

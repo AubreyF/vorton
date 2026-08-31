@@ -1,5 +1,6 @@
 import { Database } from "@vorton/database";
 import { DatabaseExecutiveAuthorityVerifier } from "@vorton/executive";
+import { WorkersService } from "@vorton/kernel";
 import { HttpHindsightAdapter } from "@vorton/memory";
 
 import { createSupabaseIdentityVerifier } from "./auth.js";
@@ -8,6 +9,7 @@ import { DatabaseExecutiveLedger } from "./database-ledger.js";
 import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import { DatabaseInstallationAuthority } from "./installation-authority.js";
 import { DatabaseModuleLifecycleAuthority } from "./module-lifecycle-authority.js";
+import { DatabaseModuleLifecycleExecution } from "./module-lifecycle-execution.js";
 import { readApiEnvironment } from "./env.js";
 import { RemoteExecutiveWorkerAdapter } from "./remote-worker.js";
 import { DatabaseExecutiveRequestResolver } from "./request-resolver.js";
@@ -67,6 +69,8 @@ const server = createApiServer({
   councilResolver: new DatabaseExecutiveCouncilResolver(database, worker),
   installationAuthority: new DatabaseInstallationAuthority(database),
   moduleLifecycleAuthority: new DatabaseModuleLifecycleAuthority(database),
+  moduleLifecycleExecution: new DatabaseModuleLifecycleExecution(database),
+  workerCredentialVerifier: new WorkersService(database),
   release: env.release,
   allowedOrigin: env.allowedOrigin,
 });

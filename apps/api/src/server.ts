@@ -14,6 +14,8 @@ import {
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
 import {
   moduleLifecycleActionApprovalRequestSchema,
+  moduleLifecycleActionConsumeRequestSchema,
+  moduleLifecycleActionFinalizeRequestSchema,
   releaseAdoptionApprovalRequestSchema,
   workspaceCreationApprovalRequestSchema,
 } from "@vorton/contracts";
@@ -48,11 +50,22 @@ import {
   type DatabaseModuleLifecycleAuthority,
 } from "./module-lifecycle-authority.js";
 import {
+  ModuleLifecycleExecutionConflictError,
+  ModuleLifecycleExecutionForbiddenError,
+  ModuleLifecycleExecutionInputError,
+  ModuleLifecycleExecutionIntegrityError,
+  type DatabaseModuleLifecycleExecution,
+} from "./module-lifecycle-execution.js";
+import {
   ExecutiveRequestInputError,
   ExecutiveRequestResolutionError,
   parseProposalInput,
   type DatabaseExecutiveRequestResolver,
 } from "./request-resolver.js";
+import {
+  verifyWorkerCredential,
+  type WorkerCredentialVerifier,
+} from "./worker-auth.js";
 
 export interface ApiServerDependencies {
   database: Database;
@@ -65,6 +78,8 @@ export interface ApiServerDependencies {
   councilResolver: DatabaseExecutiveCouncilResolver;
   installationAuthority: DatabaseInstallationAuthority;
   moduleLifecycleAuthority: DatabaseModuleLifecycleAuthority;
+  moduleLifecycleExecution: DatabaseModuleLifecycleExecution;
+  workerCredentialVerifier: WorkerCredentialVerifier;
   release: string;
   allowedOrigin: string;
 }
@@ -311,6 +326,90 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
             workspaceId,
             exactRequest,
             identity,
+          ),
+        );
+        return;
+      }
+      const lifecycleConsumeRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/module-lifecycle-action-approvals\/([^/]+)\/consume$/,
+      );
+      if (
+        request.method === "POST" &&
+        lifecycleConsumeRoute?.[1] &&
+        lifecycleConsumeRoute[2] &&
+        lifecycleConsumeRoute[3]
+      ) {
+        const installationId = lifecycleConsumeRoute[1];
+        const workspaceId = lifecycleConsumeRoute[2];
+        const approvalId = lifecycleConsumeRoute[3];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId) ||
+          !uuidPattern.test(approvalId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Lifecycle execution path identifiers must be canonical UUIDs",
+          );
+        }
+        const worker = await verifyWorkerCredential(
+          request.headers.authorization,
+          dependencies.workerCredentialVerifier,
+        );
+        const exactRequest = moduleLifecycleActionConsumeRequestSchema.parse(
+          objectBody(await readJson(request)),
+        );
+        send(
+          200,
+          await dependencies.moduleLifecycleExecution.consume(
+            installationId,
+            workspaceId,
+            approvalId,
+            exactRequest,
+            worker,
+          ),
+        );
+        return;
+      }
+      const lifecycleFinalizeRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/module-lifecycle-action-commands\/([^/]+)\/finalize$/,
+      );
+      if (
+        request.method === "POST" &&
+        lifecycleFinalizeRoute?.[1] &&
+        lifecycleFinalizeRoute[2] &&
+        lifecycleFinalizeRoute[3]
+      ) {
+        const installationId = lifecycleFinalizeRoute[1];
+        const workspaceId = lifecycleFinalizeRoute[2];
+        const commandId = lifecycleFinalizeRoute[3];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId) ||
+          !uuidPattern.test(commandId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Lifecycle execution path identifiers must be canonical UUIDs",
+          );
+        }
+        const worker = await verifyWorkerCredential(
+          request.headers.authorization,
+          dependencies.workerCredentialVerifier,
+        );
+        const exactRequest = moduleLifecycleActionFinalizeRequestSchema.parse(
+          objectBody(await readJson(request)),
+        );
+        send(
+          200,
+          await dependencies.moduleLifecycleExecution.finalize(
+            installationId,
+            workspaceId,
+            commandId,
+            exactRequest,
+            worker,
           ),
         );
         return;
@@ -651,6 +750,60 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         return;
       }
       if (error instanceof ModuleLifecycleAuthorityIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleExecutionInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleExecutionForbiddenError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleExecutionConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "module_lifecycle_execution_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof ModuleLifecycleExecutionIntegrityError) {
         json(
           response,
           500,

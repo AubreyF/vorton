@@ -20,9 +20,14 @@ import {
   executiveWorkerJobSchema,
   hashModuleLifecycleApprovalCore,
   hashModuleLifecycleApprovalReceipt,
+  hashModuleLifecycleActionCommand,
+  hashModuleLifecycleActionReceipt,
   moduleLifecycleCanonicalSha256,
+  parseModuleLifecycleActionCommandCreation,
+  parseModuleLifecycleActionCompletion,
   parseModuleLifecycleApprovalCreation,
   type ExecutiveWorkerJobRequest,
+  type ModuleLifecycleActionCompletion,
   type ModuleLifecycleApprovalCreation,
 } from "@vorton/contracts";
 import { Database } from "@vorton/database";
@@ -2224,8 +2229,1076 @@ async function proveModuleLifecycleApprovalBoundary(
       as present`,
   );
   requireCondition(
-    !actionReceiptTable.rows[0]?.present,
-    "Approval creation unexpectedly installed an action-consumption ledger",
+    actionReceiptTable.rows[0]?.present,
+    "Module lifecycle action-consumption ledger is missing",
+  );
+  const actionState = await admin.query<{ commands: string; receipts: string }>(
+    `select
+       (select count(*)::text from public.module_lifecycle_action_commands)
+         as commands,
+       (select count(*)::text from public.module_lifecycle_action_receipts)
+         as receipts`,
+  );
+  requireCondition(
+    actionState.rows[0]?.commands === "0" &&
+      actionState.rows[0]?.receipts === "0",
+    "Approval creation unexpectedly consumed or executed an action",
+  );
+}
+
+async function proveModuleLifecycleExecutionBoundary(
+  admin: Client,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  const admissionCredentialId = randomUUID();
+  const finalizationCredentialId = randomUUID();
+  const policy = await admin.query<{ id: string }>(
+    `select id::text from public.policies
+      where installation_id = $1 and workspace_id = $2
+      order by created_at limit 1`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  const policyId = policy.rows[0]?.id;
+  requireCondition(policyId, "Lifecycle execution Policy is missing");
+  await admin.query(
+    `update public.work
+        set state = 'leased', custodian_worker_id = $1,
+            lease_expires_at = clock_timestamp() + interval '10 minutes'
+      where installation_id = $2 and workspace_id = $3 and id = $4`,
+    [
+      bootstrap.workerId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workId,
+    ],
+  );
+  const grants = new Map<string, string>();
+  const grantKey = (
+    action: "backup" | "recovery" | "deletion" | "rollback",
+    proofScope: "controlled-synthetic" | "workspace-production",
+  ): string => `${action}:${proofScope}`;
+  for (const action of [
+    "backup",
+    "recovery",
+    "deletion",
+    "rollback",
+  ] as const) {
+    const grantId = randomUUID();
+    grants.set(grantKey(action, "controlled-synthetic"), grantId);
+    await admin.query(
+      `insert into public.capability_grants (
+         id, installation_id, workspace_id, policy_id, principal_kind,
+         worker_id, capability, mode, work_id, expires_at,
+         granted_by_person_id
+       ) values ($1, $2, $3, $4, 'worker', $5, $6, 'modify', $7,
+                 clock_timestamp() + interval '10 minutes', $8)`,
+      [
+        grantId,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        policyId,
+        bootstrap.workerId,
+        `module.lifecycle.${action}.controlled-synthetic`,
+        bootstrap.workId,
+        ownerPersonId,
+      ],
+    );
+  }
+  await admin.query(
+    `insert into public.worker_credentials (
+       id, installation_id, workspace_id, worker_id, token_hash, token_hint,
+       issued_at, expires_at, issued_by_person_id
+     ) values
+       ($1, $3, $4, $5,
+        extensions.digest(convert_to($1::uuid::text, 'UTF8'), 'sha256'),
+        'lifecycle-admit', clock_timestamp(),
+        clock_timestamp() + interval '10 minutes', $6),
+       ($2, $3, $4, $5,
+        extensions.digest(convert_to($2::uuid::text, 'UTF8'), 'sha256'),
+        'lifecycle-final', clock_timestamp(),
+        clock_timestamp() + interval '10 minutes', $6)`,
+    [
+      admissionCredentialId,
+      finalizationCredentialId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workerId,
+      ownerPersonId,
+    ],
+  );
+
+  const digest = (label: string): string =>
+    `sha256:${createHash("sha256").update(label).digest("hex")}`;
+  const common = {
+    vortonInstallationId: bootstrap.installationId,
+    workspaceId: bootstrap.workspaceId,
+    realm: "organizational" as const,
+    module: "tasks",
+    sequence: 100,
+    migrationPlanHash: digest("execution-plan"),
+    sourceSnapshotSha256: digest("execution-source"),
+    targetPreimageSha256: digest("execution-preimage"),
+    targetPostimageSha256: digest("execution-postimage"),
+  };
+  const createApproval = (
+    binding: Record<string, unknown>,
+    validFor = "10 minutes",
+  ): Promise<ModuleLifecycleApprovalCreation> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setWorkspaceStepUpContext(
+          client,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerAuthUserId,
+          Math.floor(Date.now() / 1000),
+        ),
+      async (client) => {
+        const result = await client.query<{ creation: unknown }>(
+          `select public.create_module_lifecycle_action_approval(
+             $1, $2, $3, $4::jsonb,
+             date_trunc('milliseconds', clock_timestamp() + $5::interval)
+           ) as creation`,
+          [
+            randomUUID(),
+            bootstrap.installationId,
+            bootstrap.workspaceId,
+            JSON.stringify(binding),
+            validFor,
+          ],
+        );
+        return parseModuleLifecycleApprovalCreation(result.rows[0]?.creation);
+      },
+    );
+  const consumeSql = `select public.consume_module_lifecycle_action_approval(
+    $1, $2, $3, $4, $5, $6
+  ) as creation`;
+  const finalizeSql = `select public.finalize_module_lifecycle_action(
+    $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb
+  ) as completion`;
+  const signedWorkerContext =
+    (
+      credentialId = admissionCredentialId,
+      installationId = bootstrap.installationId,
+      workspaceId = bootstrap.workspaceId,
+      workerId = bootstrap.workerId,
+    ) =>
+    (client: Client) =>
+      setSignedContext(
+        client,
+        "worker",
+        installationId,
+        workspaceId,
+        workerId,
+        credentialId,
+      );
+  const expectConsumeDenied = (
+    label: string,
+    approval: ModuleLifecycleApprovalCreation,
+    setup = signedWorkerContext(),
+    commandId = randomUUID(),
+    installationId = bootstrap.installationId,
+    workspaceId = bootstrap.workspaceId,
+    workId = bootstrap.workId,
+    proofScope:
+      "controlled-synthetic" | "workspace-production" = "controlled-synthetic",
+  ) =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "aubos_worker",
+      setup,
+      consumeSql,
+      [
+        commandId,
+        approval.approval.approvalId,
+        installationId,
+        workspaceId,
+        workId,
+        proofScope,
+      ],
+      "P0001",
+      label,
+    );
+  const consume = (
+    approval: ModuleLifecycleApprovalCreation,
+    commandId = randomUUID(),
+    credentialId = admissionCredentialId,
+    proofScope:
+      "controlled-synthetic" | "workspace-production" = "controlled-synthetic",
+  ) =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "aubos_worker",
+      (client) =>
+        setSignedContext(
+          client,
+          "worker",
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workerId,
+          credentialId,
+        ),
+      async (client) => {
+        const result = await client.query<{ creation: unknown }>(consumeSql, [
+          commandId,
+          approval.approval.approvalId,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workId,
+          proofScope,
+        ]);
+        return parseModuleLifecycleActionCommandCreation(
+          result.rows[0]?.creation,
+        );
+      },
+    );
+  const finalize = (
+    command: Awaited<ReturnType<typeof consume>>,
+    outcome: Record<string, unknown>,
+    effects: Record<string, unknown>,
+    evidence: Record<string, unknown>,
+    receiptId = randomUUID(),
+  ): Promise<ModuleLifecycleActionCompletion> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "aubos_worker",
+      (client) =>
+        setSignedContext(
+          client,
+          "worker",
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          bootstrap.workerId,
+          finalizationCredentialId,
+        ),
+      async (client) => {
+        const result = await client.query<{ completion: unknown }>(
+          finalizeSql,
+          [
+            receiptId,
+            command.command.commandId,
+            bootstrap.installationId,
+            bootstrap.workspaceId,
+            JSON.stringify(outcome),
+            JSON.stringify(effects),
+            JSON.stringify(evidence),
+          ],
+        );
+        return parseModuleLifecycleActionCompletion(result.rows[0]?.completion);
+      },
+    );
+  const successOutcome = { status: "succeeded", code: "completed" };
+  const successEffects = (mutationBoundary: string) => ({
+    approvalConsumed: true,
+    actionAttempted: true,
+    actionCompleted: true,
+    productionModuleDataMutated: false,
+    otherWorkspaceMutated: false,
+    mutationBoundary,
+  });
+
+  const backupApproval = await createApproval({
+    ...common,
+    target: {
+      action: "backup",
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/execution/preimage.json",
+      encryptionKeyBindingId: randomUUID(),
+    },
+  });
+  const backupCommand = await consume(backupApproval);
+  requireCondition(
+    (await hashModuleLifecycleActionCommand(backupCommand.command)) ===
+      backupCommand.command.commandHash,
+    "PostgreSQL lifecycle command hash differs from TypeScript",
+  );
+  const backupEffects = successEffects("workspace-backup-artifact");
+  const backupEvidence = {
+    action: "backup",
+    capturedAt: backupCommand.command.consumedAt,
+    recordCount: 3,
+    capturedStateSha256: common.targetPreimageSha256,
+    manifestSha256: digest("execution-backup-manifest"),
+    encryptedArtifactSha256: digest("execution-backup-artifact"),
+    encryptedAtRest: true,
+    workspaceKeyBound: true,
+    workspaceStorageBound: true,
+    otherWorkspaceAccessDenied: true,
+  };
+  const backupCompletion = await finalize(
+    backupCommand,
+    successOutcome,
+    backupEffects,
+    backupEvidence,
+  );
+  requireCondition(
+    (await hashModuleLifecycleActionReceipt(backupCompletion.actionReceipt)) ===
+      backupCompletion.actionReceipt.receiptHash,
+    "PostgreSQL lifecycle action receipt hash differs from TypeScript",
+  );
+
+  const backupReference = {
+    receiptId: backupCompletion.actionReceipt.receiptId,
+    receiptSha256: backupCompletion.actionReceipt.receiptHash,
+  };
+  const recoveryApproval = await createApproval({
+    ...common,
+    target: {
+      action: "recovery",
+      recoveryId: randomUUID(),
+      recoveryNamespace: "tasks-recovery-proof",
+      backupReceipt: backupReference,
+    },
+  });
+  const recoveryCommand = await consume(recoveryApproval);
+  const recoveryCompletion = await finalize(
+    recoveryCommand,
+    successOutcome,
+    successEffects("isolated-recovery-namespace"),
+    {
+      action: "recovery",
+      isolatedNamespaceSha256: digest("execution-recovery-namespace"),
+      restoredRecordCount: 3,
+      restoredStateSha256: common.targetPreimageSha256,
+      productionNamespaceMutated: false,
+      otherWorkspaceMutationCount: 0,
+      recoveryNamespaceDeleted: true,
+    },
+  );
+
+  const recoveryReference = {
+    receiptId: recoveryCompletion.actionReceipt.receiptId,
+    receiptSha256: recoveryCompletion.actionReceipt.receiptHash,
+  };
+  const controlledFixtureId = randomUUID();
+  const deletionApproval = await createApproval({
+    ...common,
+    target: {
+      action: "deletion",
+      mode: "controlled-fixture",
+      rehearsalId: randomUUID(),
+      controlledFixtureId,
+      productionDeletion: false,
+      noProductionRecords: true,
+      backupReceipt: backupReference,
+      recoveryReceipt: recoveryReference,
+      surfaces: {
+        database: true,
+        storage: true,
+        memory: true,
+        search: true,
+        backups: true,
+      },
+    },
+  });
+  const deletionCommand = await consume(deletionApproval);
+  const deletionCompletion = await finalize(
+    deletionCommand,
+    successOutcome,
+    successEffects("controlled-fixture"),
+    {
+      action: "deletion",
+      mode: "controlled-fixture",
+      controlledFixtureId,
+      deletionManifestSha256: digest("execution-deletion-manifest"),
+      productionRecordsDeleted: 0,
+      residualCounts: {
+        databaseRows: 0,
+        storageObjects: 0,
+        memoryFragments: 0,
+        searchDocuments: 0,
+        backupObjects: 0,
+      },
+      postDeletionRetrievalDenied: true,
+      otherWorkspaceMutationCount: 0,
+    },
+  );
+
+  const deletionReference = {
+    receiptId: deletionCompletion.actionReceipt.receiptId,
+    receiptSha256: deletionCompletion.actionReceipt.receiptHash,
+  };
+  const rollbackApproval = await createApproval({
+    ...common,
+    target: {
+      action: "rollback",
+      rollbackId: randomUUID(),
+      rollbackNamespace: "tasks-rollback-proof",
+      backupReceipt: backupReference,
+      recoveryReceipt: recoveryReference,
+      deletionRehearsalReceipt: deletionReference,
+    },
+  });
+  const rollbackCommand = await consume(rollbackApproval);
+  await finalize(
+    rollbackCommand,
+    successOutcome,
+    successEffects("isolated-rollback-namespace"),
+    {
+      action: "rollback",
+      fromPostimageSha256: common.targetPostimageSha256,
+      restoredPreimageSha256: common.targetPreimageSha256,
+      replayedPostimageSha256: common.targetPostimageSha256,
+      productionNamespaceMutated: false,
+      otherWorkspaceMutationCount: 0,
+      rollbackNamespaceDeleted: true,
+    },
+  );
+
+  const syntheticOnlyProductionApproval = await createApproval({
+    ...common,
+    target: {
+      action: "backup",
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/execution/scope-escalation-preimage.json",
+      encryptionKeyBindingId: randomUUID(),
+    },
+  });
+  await expectConsumeDenied(
+    "synthetic lifecycle capability cannot select production proof scope",
+    syntheticOnlyProductionApproval,
+    signedWorkerContext(),
+    randomUUID(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    bootstrap.workId,
+    "workspace-production",
+  );
+
+  for (const action of ["backup", "recovery", "rollback"] as const) {
+    const grantId = randomUUID();
+    grants.set(grantKey(action, "workspace-production"), grantId);
+    await admin.query(
+      `insert into public.capability_grants (
+         id, installation_id, workspace_id, policy_id, principal_kind,
+         worker_id, capability, mode, work_id, expires_at,
+         granted_by_person_id
+       ) values ($1, $2, $3, $4, 'worker', $5, $6, 'modify', $7,
+                 clock_timestamp() + interval '10 minutes', $8)`,
+      [
+        grantId,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        policyId,
+        bootstrap.workerId,
+        `module.lifecycle.${action}.workspace-production`,
+        bootstrap.workId,
+        ownerPersonId,
+      ],
+    );
+  }
+
+  const productionBackupApproval = await createApproval({
+    ...common,
+    target: {
+      action: "backup",
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/execution/production-preimage.json",
+      encryptionKeyBindingId: randomUUID(),
+    },
+  });
+  const productionBackupCommand = await consume(
+    productionBackupApproval,
+    randomUUID(),
+    admissionCredentialId,
+    "workspace-production",
+  );
+  const productionBackupCompletion = await finalize(
+    productionBackupCommand,
+    successOutcome,
+    successEffects("workspace-backup-artifact"),
+    {
+      action: "backup",
+      capturedAt: productionBackupCommand.command.consumedAt,
+      recordCount: 4,
+      capturedStateSha256: common.targetPreimageSha256,
+      manifestSha256: digest("production-backup-manifest"),
+      encryptedArtifactSha256: digest("production-backup-artifact"),
+      encryptedAtRest: true,
+      workspaceKeyBound: true,
+      workspaceStorageBound: true,
+      otherWorkspaceAccessDenied: true,
+    },
+  );
+  const productionBackupReference = {
+    receiptId: productionBackupCompletion.actionReceipt.receiptId,
+    receiptSha256: productionBackupCompletion.actionReceipt.receiptHash,
+  };
+  const productionRecoveryApproval = await createApproval({
+    ...common,
+    target: {
+      action: "recovery",
+      recoveryId: randomUUID(),
+      recoveryNamespace: "tasks-production-recovery-proof",
+      backupReceipt: productionBackupReference,
+    },
+  });
+  const productionRecoveryCommand = await consume(
+    productionRecoveryApproval,
+    randomUUID(),
+    admissionCredentialId,
+    "workspace-production",
+  );
+  const productionRecoveryCompletion = await finalize(
+    productionRecoveryCommand,
+    successOutcome,
+    successEffects("isolated-recovery-namespace"),
+    {
+      action: "recovery",
+      isolatedNamespaceSha256: digest("production-recovery-namespace"),
+      restoredRecordCount: 4,
+      restoredStateSha256: common.targetPreimageSha256,
+      productionNamespaceMutated: false,
+      otherWorkspaceMutationCount: 0,
+      recoveryNamespaceDeleted: true,
+    },
+  );
+  const productionRecoveryReference = {
+    receiptId: productionRecoveryCompletion.actionReceipt.receiptId,
+    receiptSha256: productionRecoveryCompletion.actionReceipt.receiptHash,
+  };
+  const productionFixtureId = randomUUID();
+  const productionDeletionApproval = await createApproval({
+    ...common,
+    target: {
+      action: "deletion",
+      mode: "controlled-fixture",
+      rehearsalId: randomUUID(),
+      controlledFixtureId: productionFixtureId,
+      productionDeletion: false,
+      noProductionRecords: true,
+      backupReceipt: productionBackupReference,
+      recoveryReceipt: productionRecoveryReference,
+      surfaces: {
+        database: true,
+        storage: true,
+        memory: true,
+        search: true,
+        backups: true,
+      },
+    },
+  });
+  const productionDeletionCommand = await consume(productionDeletionApproval);
+  const productionDeletionCompletion = await finalize(
+    productionDeletionCommand,
+    successOutcome,
+    successEffects("controlled-fixture"),
+    {
+      action: "deletion",
+      mode: "controlled-fixture",
+      controlledFixtureId: productionFixtureId,
+      deletionManifestSha256: digest("production-deletion-manifest"),
+      productionRecordsDeleted: 0,
+      residualCounts: {
+        databaseRows: 0,
+        storageObjects: 0,
+        memoryFragments: 0,
+        searchDocuments: 0,
+        backupObjects: 0,
+      },
+      postDeletionRetrievalDenied: true,
+      otherWorkspaceMutationCount: 0,
+    },
+  );
+  const productionDeletionReference = {
+    receiptId: productionDeletionCompletion.actionReceipt.receiptId,
+    receiptSha256: productionDeletionCompletion.actionReceipt.receiptHash,
+  };
+  const productionRollbackApproval = await createApproval({
+    ...common,
+    target: {
+      action: "rollback",
+      rollbackId: randomUUID(),
+      rollbackNamespace: "tasks-production-rollback-proof",
+      backupReceipt: productionBackupReference,
+      recoveryReceipt: productionRecoveryReference,
+      deletionRehearsalReceipt: productionDeletionReference,
+    },
+  });
+  const productionRollbackCommand = await consume(
+    productionRollbackApproval,
+    randomUUID(),
+    admissionCredentialId,
+    "workspace-production",
+  );
+  await finalize(
+    productionRollbackCommand,
+    successOutcome,
+    successEffects("isolated-rollback-namespace"),
+    {
+      action: "rollback",
+      fromPostimageSha256: common.targetPostimageSha256,
+      restoredPreimageSha256: common.targetPreimageSha256,
+      replayedPostimageSha256: common.targetPostimageSha256,
+      productionNamespaceMutated: false,
+      otherWorkspaceMutationCount: 0,
+      rollbackNamespaceDeleted: true,
+    },
+  );
+
+  const wrongScopeRecoveryApproval = await createApproval({
+    ...common,
+    target: {
+      action: "recovery",
+      recoveryId: randomUUID(),
+      recoveryNamespace: "tasks-wrong-scope-recovery-proof",
+      backupReceipt: productionBackupReference,
+    },
+  });
+  await expectConsumeDenied(
+    "lifecycle recovery predecessor proof scope substitution",
+    wrongScopeRecoveryApproval,
+  );
+
+  const hostileBackupBinding = {
+    ...common,
+    target: {
+      action: "backup",
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/execution/hostile-preimage.json",
+      encryptionKeyBindingId: randomUUID(),
+    },
+  };
+  const forgedApproval = await createApproval(hostileBackupBinding);
+  const forgedWorkerContext = async (client: Client): Promise<void> => {
+    await setSignedContext(
+      client,
+      "worker",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workerId,
+      admissionCredentialId,
+    );
+    await client.query(
+      "select set_config('aubos.context_signature', $1, true)",
+      ["0".repeat(64)],
+    );
+  };
+  await expectConsumeDenied(
+    "forged lifecycle worker context",
+    forgedApproval,
+    forgedWorkerContext,
+  );
+  await expectConsumeDenied(
+    "wrong lifecycle workspace",
+    forgedApproval,
+    signedWorkerContext(
+      admissionCredentialId,
+      bootstrap.installationId,
+      otherWorkspaceId,
+    ),
+    randomUUID(),
+    bootstrap.installationId,
+    otherWorkspaceId,
+  );
+  await expectConsumeDenied(
+    "wrong lifecycle Vorton installation",
+    forgedApproval,
+    signedWorkerContext(
+      admissionCredentialId,
+      otherInstallationId,
+      bootstrap.workspaceId,
+    ),
+    randomUUID(),
+    otherInstallationId,
+    bootstrap.workspaceId,
+  );
+  await expectConsumeDenied(
+    "wrong lifecycle worker",
+    forgedApproval,
+    signedWorkerContext(
+      admissionCredentialId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      otherWorkerId,
+    ),
+  );
+  await expectConsumeDenied(
+    "wrong lifecycle credential",
+    forgedApproval,
+    signedWorkerContext(randomUUID()),
+  );
+  await expectConsumeDenied(
+    "wrong lifecycle Work custody",
+    forgedApproval,
+    signedWorkerContext(),
+    randomUUID(),
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    otherWorkId,
+  );
+
+  const expiredApproval = await createApproval(
+    hostileBackupBinding,
+    "1 second",
+  );
+  await expectConsumeDenied(
+    "expired lifecycle approval",
+    expiredApproval,
+    async (client) => {
+      await signedWorkerContext()(client);
+      await client.query("select pg_sleep(1.05)");
+    },
+  );
+
+  const substitutedRecoveryApproval = await createApproval({
+    ...common,
+    target: {
+      action: "recovery",
+      recoveryId: randomUUID(),
+      recoveryNamespace: "tasks-substituted-recovery-proof",
+      backupReceipt: {
+        receiptId: randomUUID(),
+        receiptSha256: digest("substituted-backup-receipt"),
+      },
+    },
+  });
+  await expectConsumeDenied(
+    "lifecycle predecessor receipt substitution",
+    substitutedRecoveryApproval,
+  );
+
+  const concurrentApproval = await createApproval({
+    ...hostileBackupBinding,
+    target: {
+      ...hostileBackupBinding.target,
+      backupId: randomUUID(),
+    },
+  });
+  const concurrentCommandId = randomUUID();
+  const [concurrentLeft, concurrentRight] = await Promise.all([
+    consume(concurrentApproval, concurrentCommandId),
+    consume(concurrentApproval, concurrentCommandId),
+  ]);
+  requireCondition(
+    canonicalModuleLifecycleJson(concurrentLeft) ===
+      canonicalModuleLifecycleJson(concurrentRight) &&
+      concurrentLeft.command.approvalConsumptionCount === 1,
+    "Concurrent lifecycle consumption did not converge on one command",
+  );
+  const responseLossReplay = await consume(
+    concurrentApproval,
+    concurrentCommandId,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(responseLossReplay) ===
+      canonicalModuleLifecycleJson(concurrentLeft),
+    "Lifecycle command response-loss replay changed the command",
+  );
+  await expectConsumeDenied(
+    "conflicting lifecycle consumption replay",
+    concurrentApproval,
+  );
+
+  await admin.query(
+    `update public.workspace_memberships set kind = 'member'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+  );
+  await expectConsumeDenied(
+    "lifecycle replay after original owner revocation",
+    concurrentApproval,
+    signedWorkerContext(),
+    concurrentCommandId,
+  );
+  await admin.query(
+    `update public.workspace_memberships set kind = 'owner'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+  );
+
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(finalizationCredentialId),
+    finalizeSql,
+    [
+      randomUUID(),
+      concurrentLeft.command.commandId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      JSON.stringify(successOutcome),
+      JSON.stringify(successEffects("workspace-backup-artifact")),
+      JSON.stringify({
+        ...backupEvidence,
+        capturedAt: concurrentLeft.command.consumedAt,
+        capturedStateSha256: common.targetPreimageSha256,
+        recordCount: -1,
+      }),
+    ],
+    "P0001",
+    "invalid lifecycle action evidence",
+  );
+  const invalidResultState = await admin.query<{ receipts: string }>(
+    `select count(*)::text as receipts
+       from public.module_lifecycle_action_receipts
+      where command_id = $1`,
+    [concurrentLeft.command.commandId],
+  );
+  requireCondition(
+    invalidResultState.rows[0]?.receipts === "0",
+    "Invalid lifecycle result left a partial receipt",
+  );
+  const failureCompletion = await finalize(
+    concurrentLeft,
+    {
+      status: "failed",
+      code: "synthetic-verification-failure",
+      stage: "verification",
+      retryDisposition: "new-approval-required",
+    },
+    {
+      approvalConsumed: true,
+      actionAttempted: true,
+      actionCompleted: false,
+      authorizedTargetMutation: "none",
+      productionModuleDataMutation: "none",
+      otherWorkspaceMutation: "none",
+      quarantined: true,
+    },
+    {
+      action: "backup",
+      failureEvidenceSha256: digest("synthetic-verification-failure"),
+      lastSafeCheckpoint: "approval-consumed",
+    },
+  );
+  requireCondition(
+    failureCompletion.actionReceipt.outcome.status === "failed" &&
+      (await hashModuleLifecycleActionReceipt(
+        failureCompletion.actionReceipt,
+      )) === failureCompletion.actionReceipt.receiptHash,
+    "Failed lifecycle action was not recorded as an exact immutable receipt",
+  );
+
+  const replayedCompletion = await finalize(
+    backupCommand,
+    successOutcome,
+    backupEffects,
+    backupEvidence,
+    backupCompletion.actionReceipt.receiptId,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(replayedCompletion) ===
+      canonicalModuleLifecycleJson(backupCompletion),
+    "Lifecycle action response-loss replay changed the receipt",
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(finalizationCredentialId),
+    finalizeSql,
+    [
+      randomUUID(),
+      backupCommand.command.commandId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      JSON.stringify(successOutcome),
+      JSON.stringify(backupEffects),
+      JSON.stringify(backupEvidence),
+    ],
+    "P0001",
+    "conflicting lifecycle action receipt replay",
+  );
+
+  const duplicateGrantId = randomUUID();
+  await admin.query(
+    `insert into public.capability_grants (
+       id, installation_id, workspace_id, policy_id, principal_kind,
+       worker_id, capability, mode, work_id, expires_at,
+       granted_by_person_id
+     ) values ($1, $2, $3, $4, 'worker', $5,
+               'module.lifecycle.backup.controlled-synthetic', 'modify', $6,
+               clock_timestamp() + interval '10 minutes', $7)`,
+    [
+      duplicateGrantId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      policyId,
+      bootstrap.workerId,
+      bootstrap.workId,
+      ownerPersonId,
+    ],
+  );
+  const ambiguousGrantApproval = await createApproval({
+    ...hostileBackupBinding,
+    target: {
+      ...hostileBackupBinding.target,
+      backupId: randomUUID(),
+    },
+  });
+  await expectConsumeDenied(
+    "ambiguous lifecycle capability grant",
+    ambiguousGrantApproval,
+  );
+  await admin.query("delete from public.capability_grants where id = $1", [
+    duplicateGrantId,
+  ]);
+
+  const backupGrantId = grants.get(grantKey("backup", "controlled-synthetic"));
+  requireCondition(backupGrantId, "Lifecycle backup grant is missing");
+  const grantRevocationId = randomUUID();
+  await admin.query(
+    `insert into public.capability_grant_revocations (
+       id, installation_id, workspace_id, grant_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5, 'Synthetic hostile proof')`,
+    [
+      grantRevocationId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      backupGrantId,
+      ownerPersonId,
+    ],
+  );
+  const revokedGrantApproval = await createApproval({
+    ...hostileBackupBinding,
+    target: {
+      ...hostileBackupBinding.target,
+      backupId: randomUUID(),
+    },
+  });
+  await expectConsumeDenied(
+    "revoked lifecycle capability grant",
+    revokedGrantApproval,
+  );
+  await admin.query(
+    "delete from public.capability_grant_revocations where id = $1",
+    [grantRevocationId],
+  );
+
+  const credentialRevocationId = randomUUID();
+  await admin.query(
+    `insert into public.worker_credential_revocations (
+       id, installation_id, workspace_id, credential_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5, 'Synthetic hostile proof')`,
+    [
+      credentialRevocationId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      admissionCredentialId,
+      ownerPersonId,
+    ],
+  );
+  const revokedCredentialApproval = await createApproval({
+    ...hostileBackupBinding,
+    target: {
+      ...hostileBackupBinding.target,
+      backupId: randomUUID(),
+    },
+  });
+  await expectConsumeDenied(
+    "revoked lifecycle worker credential",
+    revokedCredentialApproval,
+  );
+  await admin.query(
+    "delete from public.worker_credential_revocations where id = $1",
+    [credentialRevocationId],
+  );
+
+  const postAuthorityApproval = await createApproval({
+    ...hostileBackupBinding,
+    target: {
+      ...hostileBackupBinding.target,
+      backupId: randomUUID(),
+      storageObjectKey: "tasks/execution/post-authority-preimage.json",
+    },
+  });
+  const postAuthorityCommand = await consume(postAuthorityApproval);
+  const postAuthorityGrantRevocationId = randomUUID();
+  await admin.query(
+    `update public.work
+        set state = 'ready', custodian_worker_id = null,
+            lease_expires_at = null
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workId],
+  );
+  await admin.query(
+    `insert into public.capability_grant_revocations (
+       id, installation_id, workspace_id, grant_id,
+       revoked_by_person_id, reason
+     ) values ($1, $2, $3, $4, $5,
+               'Synthetic post-admission finalization proof')`,
+    [
+      postAuthorityGrantRevocationId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      backupGrantId,
+      ownerPersonId,
+    ],
+  );
+  const postAuthorityCompletion = await finalize(
+    postAuthorityCommand,
+    successOutcome,
+    successEffects("workspace-backup-artifact"),
+    {
+      action: "backup",
+      capturedAt: postAuthorityCommand.command.consumedAt,
+      recordCount: 5,
+      capturedStateSha256: common.targetPreimageSha256,
+      manifestSha256: digest("post-authority-backup-manifest"),
+      encryptedArtifactSha256: digest("post-authority-backup-artifact"),
+      encryptedAtRest: true,
+      workspaceKeyBound: true,
+      workspaceStorageBound: true,
+      otherWorkspaceAccessDenied: true,
+    },
+  );
+  requireCondition(
+    postAuthorityCompletion.actionReceipt.outcome.status === "succeeded" &&
+      postAuthorityCompletion.actionReceipt.executor.finalization
+        .credentialId === finalizationCredentialId &&
+      postAuthorityCompletion.actionReceipt.executor.admission
+        .capabilityGrantId === backupGrantId,
+    "Lifecycle finalization incorrectly required renewed Work or grant authority",
+  );
+  await admin.query(
+    "delete from public.capability_grant_revocations where id = $1",
+    [postAuthorityGrantRevocationId],
+  );
+
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(),
+    "select * from public.module_lifecycle_action_commands",
+    [],
+    "direct lifecycle command read",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    signedWorkerContext(),
+    "select * from public.module_lifecycle_action_receipts",
+    [],
+    "direct lifecycle receipt read",
+  );
+  await expectSqlState(
+    admin,
+    `update public.module_lifecycle_action_commands
+        set proof_scope = 'workspace-production'
+      where command_id = $1`,
+    [backupCommand.command.commandId],
+    "P0001",
+    "lifecycle command mutation",
+  );
+  await expectSqlState(
+    admin,
+    "delete from public.module_lifecycle_action_receipts where receipt_id = $1",
+    [backupCompletion.actionReceipt.receiptId],
+    "P0001",
+    "lifecycle receipt deletion",
+  );
+
+  await admin.query(
+    `update public.work set state = 'ready', custodian_worker_id = null,
+        lease_expires_at = null
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, bootstrap.workId],
   );
 }
 
@@ -2939,6 +4012,12 @@ async function main(): Promise<void> {
       bootstrap,
       ownerPersonId,
     );
+    await proveModuleLifecycleExecutionBoundary(
+      admin,
+      runtimeDatabaseUrl,
+      bootstrap,
+      ownerPersonId,
+    );
     await provePersonBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveCouncilResolverFrozenEvidenceRead(runtimeDatabaseUrl, bootstrap);
@@ -2989,6 +4068,19 @@ async function main(): Promise<void> {
             moduleLifecycleMembershipMutationSerialized: true,
             moduleLifecycleFailureRollsBackAtomically: true,
             moduleLifecycleApprovalHasNoActionEffects: true,
+            moduleLifecycleExecutionApprovalConsumedExactlyOnce: true,
+            moduleLifecycleExecutionCommandAndReceiptAtomic: true,
+            moduleLifecycleExecutionPredecessorChainExact: true,
+            moduleLifecycleExecutionHashesCrossLanguageCanonical: true,
+            moduleLifecycleExecutionControlledDeletionOnly: true,
+            moduleLifecycleExecutionMixedScopeRollbackExact: true,
+            moduleLifecycleExecutionHostileAuthorityDenied: true,
+            moduleLifecycleExecutionProofScopeCapabilityBound: true,
+            moduleLifecycleExecutionCrossInstallationDenied: true,
+            moduleLifecycleExecutionConcurrentConsumptionConvergesOnce: true,
+            moduleLifecycleExecutionFinalizationSurvivesAuthorityExpiry: true,
+            moduleLifecycleExecutionResponseLossReplayExact: true,
+            moduleLifecycleExecutionTablesPrivateAndImmutable: true,
             workerHumanAuthorityDenied: true,
             councilAttemptFenced: true,
             councilStorageDenied: true,

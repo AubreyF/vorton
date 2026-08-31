@@ -20,6 +20,8 @@ const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
 const personId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
+const credentialId = "ae24e48d-19b0-4e8f-8e06-6194bacf1ae1";
+const workerToken = "w".repeat(43);
 const workId = "fbc4ac66-4a32-4a34-b810-88f4330205aa";
 const roleId = "d37f356b-6297-4cd1-902d-c2755423a612";
 const servers: ReturnType<typeof createApiServer>[] = [];
@@ -88,6 +90,14 @@ async function runtime(
     workspaceId: string;
     request: unknown;
     identity: AuthenticatedIdentity;
+  }> = [];
+  const moduleLifecycleExecutionCalls: Array<{
+    operation: "consume" | "finalize";
+    installationId: string;
+    workspaceId: string;
+    authorityId: string;
+    request: unknown;
+    worker: unknown;
   }> = [];
   const councilState = {
     protocol: "vorton.executive-council.v1",
@@ -328,6 +338,69 @@ async function runtime(
         };
       },
     } as never,
+    workerCredentialVerifier: {
+      authenticateCredential: async (token: string) =>
+        token === workerToken
+          ? {
+              credentialId,
+              installationId,
+              workspaceId,
+              workerId,
+              expiresAt: "2026-08-31T20:00:00.000Z",
+            }
+          : null,
+    },
+    moduleLifecycleExecution: {
+      consume: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        approvalId: string,
+        request: unknown,
+        resolvedWorker: unknown,
+      ) => {
+        moduleLifecycleExecutionCalls.push({
+          operation: "consume",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          authorityId: approvalId,
+          request,
+          worker: resolvedWorker,
+        });
+        return {
+          approval: { contract: "vorton.module-lifecycle-action-approval.v1" },
+          approvalReceipt: {
+            contract: "vorton.module-lifecycle-approval-receipt.v1",
+          },
+          command: {
+            contract: "vorton.module-lifecycle-action-command.v1",
+          },
+        };
+      },
+      finalize: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        commandId: string,
+        request: unknown,
+        resolvedWorker: unknown,
+      ) => {
+        moduleLifecycleExecutionCalls.push({
+          operation: "finalize",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          authorityId: commandId,
+          request,
+          worker: resolvedWorker,
+        });
+        return {
+          command: {
+            contract: "vorton.module-lifecycle-action-command.v1",
+          },
+          actionReceipt: {
+            contract: "vorton.module-lifecycle-action-receipt.v1",
+          },
+        };
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
@@ -341,6 +414,7 @@ async function runtime(
     councilCalls,
     installationAuthorityCalls,
     moduleLifecycleAuthorityCalls,
+    moduleLifecycleExecutionCalls,
   };
 }
 
@@ -381,6 +455,46 @@ function moduleLifecycleApproval(
       },
     },
     expiresAt: "2026-08-31T12:00:00.000Z",
+  };
+}
+
+const lifecycleApprovalId = "55555555-5555-4555-8555-555555555555";
+const lifecycleCommandId = "66666666-6666-4666-8666-666666666666";
+const lifecycleReceiptId = "77777777-7777-4777-8777-777777777777";
+
+function moduleLifecycleConsume() {
+  return {
+    commandId: lifecycleCommandId,
+    workId,
+    proofScope: "controlled-synthetic" as const,
+  };
+}
+
+function moduleLifecycleFinalize() {
+  const digest = (character: string) => `sha256:${character.repeat(64)}`;
+  return {
+    receiptId: lifecycleReceiptId,
+    outcome: { status: "succeeded" as const, code: "completed" as const },
+    effects: {
+      approvalConsumed: true as const,
+      actionAttempted: true as const,
+      actionCompleted: true as const,
+      productionModuleDataMutated: false as const,
+      otherWorkspaceMutated: false as const,
+      mutationBoundary: "workspace-backup-artifact" as const,
+    },
+    evidence: {
+      action: "backup" as const,
+      capturedAt: "2026-08-31T18:00:00.000Z",
+      recordCount: 0,
+      capturedStateSha256: digest("5"),
+      manifestSha256: digest("6"),
+      encryptedArtifactSha256: digest("7"),
+      encryptedAtRest: true as const,
+      workspaceKeyBound: true as const,
+      workspaceStorageBound: true as const,
+      otherWorkspaceAccessDenied: true as const,
+    },
   };
 }
 
@@ -729,10 +843,156 @@ describe("control-plane API", () => {
     }
   });
 
-  it("does not expose lifecycle apply, consume, or action routes", async () => {
+  it("routes originless worker-only lifecycle consume and finalize requests without caching", async () => {
+    const { baseUrl, moduleLifecycleExecutionCalls } = await runtime();
+    const consumeRequest = moduleLifecycleConsume();
+    const consumeResponse = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals/${lifecycleApprovalId}/consume`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${workerToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(consumeRequest),
+      },
+    );
+
+    expect(consumeResponse.status).toBe(200);
+    expect(consumeResponse.headers.get("cache-control")).toBe("no-store");
+    expect(
+      consumeResponse.headers.get("access-control-allow-origin"),
+    ).toBeNull();
+    await expect(consumeResponse.json()).resolves.toMatchObject({
+      approval: { contract: "vorton.module-lifecycle-action-approval.v1" },
+      approvalReceipt: {
+        contract: "vorton.module-lifecycle-approval-receipt.v1",
+      },
+      command: { contract: "vorton.module-lifecycle-action-command.v1" },
+    });
+
+    const finalizeRequest = moduleLifecycleFinalize();
+    const finalizeResponse = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-commands/${lifecycleCommandId}/finalize`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${workerToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(finalizeRequest),
+      },
+    );
+
+    expect(finalizeResponse.status).toBe(200);
+    expect(finalizeResponse.headers.get("cache-control")).toBe("no-store");
+    expect(
+      finalizeResponse.headers.get("access-control-allow-origin"),
+    ).toBeNull();
+    await expect(finalizeResponse.json()).resolves.toMatchObject({
+      command: { contract: "vorton.module-lifecycle-action-command.v1" },
+      actionReceipt: {
+        contract: "vorton.module-lifecycle-action-receipt.v1",
+      },
+    });
+
+    const authenticatedWorker = {
+      credentialId,
+      installationId,
+      workspaceId,
+      workerId,
+      expiresAt: "2026-08-31T20:00:00.000Z",
+    };
+    expect(moduleLifecycleExecutionCalls).toEqual([
+      {
+        operation: "consume",
+        installationId,
+        workspaceId,
+        authorityId: lifecycleApprovalId,
+        request: consumeRequest,
+        worker: authenticatedWorker,
+      },
+      {
+        operation: "finalize",
+        installationId,
+        workspaceId,
+        authorityId: lifecycleCommandId,
+        request: finalizeRequest,
+        worker: authenticatedWorker,
+      },
+    ]);
+  });
+
+  it("rejects missing and human-session bearer credentials at the worker boundary", async () => {
+    const { baseUrl, moduleLifecycleExecutionCalls } = await runtime();
+    const route = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals/${lifecycleApprovalId}/consume`;
+    const humanJwt =
+      "eyJhbGciOiJSUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.signature";
+
+    for (const authorization of [undefined, `Bearer ${humanJwt}`]) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers: {
+          ...(authorization ? { authorization } : {}),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(moduleLifecycleConsume()),
+      });
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "unauthorized" },
+      });
+    }
+    expect(moduleLifecycleExecutionCalls).toEqual([]);
+  });
+
+  it("rejects claimed worker identities and noncanonical lifecycle execution paths before the adapter", async () => {
+    const { baseUrl, moduleLifecycleExecutionCalls } = await runtime();
+    const headers = {
+      authorization: `Bearer ${workerToken}`,
+      "content-type": "application/json",
+    };
+    const consumeRoute = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals/${lifecycleApprovalId}/consume`;
+    const finalizeRoute = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-commands/${lifecycleCommandId}/finalize`;
+
+    const claimedWorkerResponse = await fetch(consumeRoute, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...moduleLifecycleConsume(), workerId }),
+    });
+    expect(claimedWorkerResponse.status).toBe(400);
+
+    const claimedCredentialResponse = await fetch(finalizeRoute, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...moduleLifecycleFinalize(), credentialId }),
+    });
+    expect(claimedCredentialResponse.status).toBe(400);
+
+    for (const path of [
+      `/v1/installations/not-a-uuid/workspaces/${workspaceId}/module-lifecycle-action-approvals/${lifecycleApprovalId}/consume`,
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-commands/${credentialId.toUpperCase()}/finalize`,
+    ]) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(
+          path.includes("/consume")
+            ? moduleLifecycleConsume()
+            : moduleLifecycleFinalize(),
+        ),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "invalid_request" },
+      });
+    }
+    expect(moduleLifecycleExecutionCalls).toEqual([]);
+  });
+
+  it("does not expose generic lifecycle apply or action routes", async () => {
     const { baseUrl } = await runtime();
     for (const path of [
-      `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-action-approvals/${crypto.randomUUID()}/consume`,
       `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-actions`,
       `/v1/installations/${installationId}/workspaces/${workspaceId}/module-lifecycle-apply`,
     ]) {

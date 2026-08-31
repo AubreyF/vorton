@@ -32,7 +32,11 @@ export interface IssuedWorkerCredential {
   expiresAt: string;
 }
 
-export interface AuthenticatedWorkerCredential extends WorkerContext {
+export interface AuthenticatedWorkerCredential extends Omit<
+  WorkerContext,
+  "credentialId"
+> {
+  credentialId: string;
   expiresAt: string;
 }
 

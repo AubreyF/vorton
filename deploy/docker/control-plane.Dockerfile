@@ -5,6 +5,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/executive/package.json packages/executive/package.json
+COPY packages/kernel/package.json packages/kernel/package.json
 COPY packages/memory/package.json packages/memory/package.json
 COPY packages/workers/package.json packages/workers/package.json
 RUN npm ci --ignore-scripts
@@ -12,6 +13,7 @@ COPY apps/api apps/api
 COPY packages/contracts packages/contracts
 COPY packages/database packages/database
 COPY packages/executive packages/executive
+COPY packages/kernel packages/kernel
 COPY packages/memory packages/memory
 COPY packages/workers packages/workers
 RUN npm run build --workspace=@vorton/api
