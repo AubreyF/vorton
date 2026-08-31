@@ -28,6 +28,23 @@ const requester = {
 };
 const secondSourceRevisionId = "11111111-2222-4333-8444-555555555555";
 
+function memoryBankRow(
+  realm: "personal" | "organizational",
+  workspaceId = input.workspaceId,
+  externalBankId = workspaceHindsightBank(
+    input.installationId,
+    workspaceId,
+    realm,
+  ).id,
+) {
+  return {
+    installation_id: input.installationId,
+    workspace_id: workspaceId,
+    installation_realm: realm,
+    external_bank_id: externalBankId,
+  };
+}
+
 class FakeDatabase {
   results: Array<Array<Record<string, unknown>>> = [];
   statements: string[] = [];
@@ -240,6 +257,10 @@ describe("database executive request resolver", () => {
       sourceRevisionIds: [input.evidenceRecordIds[0]!],
       invalidatedAt: null,
     });
+    const ensureBank = vi.spyOn(memory, "ensureBank");
+    const retrieve = vi.spyOn(memory, "retrieve");
+    ensureBank.mockClear();
+    retrieve.mockClear();
     database.results = [
       [
         {
@@ -261,6 +282,7 @@ describe("database executive request resolver", () => {
           classification: "synthetic",
         },
       ],
+      [memoryBankRow("personal")],
       [
         {
           source_revision_id: input.evidenceRecordIds[0],
@@ -296,27 +318,40 @@ describe("database executive request resolver", () => {
     expect(database.statements[0]).toContain(
       "join public.workspaces workspace",
     );
-    expect(database.statements[2]).toContain("public.memory_candidates");
+    expect(database.statements[2]).toContain("from public.memory_banks");
+    expect(database.statements[2]).toContain("installation_id = $1");
+    expect(database.statements[2]).toContain("workspace_id = $2");
     expect(database.statements[2]).toContain(
+      "installation_realm = $3::public.installation_realm",
+    );
+    expect(database.parameters[2]).toEqual([
+      input.installationId,
+      input.workspaceId,
+      "personal",
+    ]);
+    expect(database.statements[3]).toContain("public.memory_candidates");
+    expect(database.statements[3]).toContain(
       "candidate.admission_state = 'admitted'",
     );
-    expect(database.statements[2]).toContain(
+    expect(database.statements[3]).toContain(
       "revision.admission_state = 'admitted'",
     );
-    expect(database.statements[2]).toContain(
+    expect(database.statements[3]).toContain(
       "successor.supersedes_revision_id",
     );
-    expect(database.statements[2]).toContain(
+    expect(database.statements[3]).toContain(
       "revision.installation_realm = $3::public.installation_realm",
     );
-    expect(database.statements[2]).toContain(
+    expect(database.statements[3]).toContain(
       "revision.boundary = $5::public.source_boundary",
     );
-    expect(database.parameters[2]?.[2]).toBe("personal");
-    expect(database.parameters[2]?.[4]).toBe("personal");
+    expect(database.parameters[3]?.[2]).toBe("personal");
+    expect(database.parameters[3]?.[4]).toBe("personal");
+    expect(ensureBank).not.toHaveBeenCalled();
+    expect(retrieve).toHaveBeenCalledWith(bank, input.objective);
   });
 
-  it("cannot recall another workspace bank in the same installation and realm", async () => {
+  it("makes no Hindsight request when the workspace has no memory bank", async () => {
     const database = new FakeDatabase();
     const memory = new InMemoryHindsightAdapter();
     const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -342,6 +377,11 @@ describe("database executive request resolver", () => {
         invalidatedAt: null,
       },
     );
+    const ensureBank = vi.spyOn(memory, "ensureBank");
+    const retrieve = vi.spyOn(memory, "retrieve");
+    ensureBank.mockClear();
+    retrieve.mockClear();
+    const warning = vi.fn();
     database.results = [
       [
         {
@@ -363,12 +403,14 @@ describe("database executive request resolver", () => {
           classification: "synthetic",
         },
       ],
+      [],
     ];
     const resolver = new DatabaseExecutiveRequestResolver(
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
       memory,
+      warning,
     );
 
     await expect(
@@ -376,7 +418,120 @@ describe("database executive request resolver", () => {
     ).resolves.toMatchObject({
       derivedContext: [],
     });
-    expect(database.statements).toHaveLength(2);
+    expect(database.statements).toHaveLength(3);
+    expect(ensureBank).not.toHaveBeenCalled();
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it("fails the memory lane closed when the external bank ID does not match", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          work_id: input.workId,
+          worker_id: input.workerId,
+          role_id: input.roleId,
+          role_name: "Reviewer",
+          role_version: 2,
+          skill_markdown: "Database-owned role",
+          content_sha256: "b".repeat(64),
+          workspace_realm: "organizational",
+        },
+      ],
+      [
+        {
+          id: input.evidenceRecordIds[0],
+          summary: "Database-owned evidence",
+          source_uri: null,
+          classification: "synthetic",
+        },
+      ],
+      [memoryBankRow("organizational", input.workspaceId, "mismatched-bank")],
+    ];
+    const ensureBank = vi.fn();
+    const retrieve = vi.fn();
+    const warning = vi.fn();
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+      {
+        ensureBank,
+        retain: vi.fn(),
+        retrieve,
+        invalidateSource: vi.fn(),
+      },
+      warning,
+    );
+
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({ derivedContext: [] });
+    expect(ensureBank).not.toHaveBeenCalled();
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "PostgreSQL memory bank binding does not match the selected workspace",
+      }),
+    );
+  });
+
+  it("rejects a memory bank row returned for another workspace", async () => {
+    const database = new FakeDatabase();
+    const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    database.results = [
+      [
+        {
+          work_id: input.workId,
+          worker_id: input.workerId,
+          role_id: input.roleId,
+          role_name: "Reviewer",
+          role_version: 2,
+          skill_markdown: "Database-owned role",
+          content_sha256: "b".repeat(64),
+          workspace_realm: "organizational",
+        },
+      ],
+      [
+        {
+          id: input.evidenceRecordIds[0],
+          summary: "Database-owned evidence",
+          source_uri: null,
+          classification: "synthetic",
+        },
+      ],
+      [memoryBankRow("organizational", otherWorkspaceId)],
+    ];
+    const ensureBank = vi.fn();
+    const retrieve = vi.fn();
+    const warning = vi.fn();
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+      {
+        ensureBank,
+        retain: vi.fn(),
+        retrieve,
+        invalidateSource: vi.fn(),
+      },
+      warning,
+    );
+
+    await expect(
+      resolver.resolveProposal(input, requester),
+    ).resolves.toMatchObject({ derivedContext: [] });
+    expect(database.parameters[2]).toEqual([
+      input.installationId,
+      input.workspaceId,
+      "organizational",
+    ]);
+    expect(ensureBank).not.toHaveBeenCalled();
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledOnce();
   });
 
   it("fails closed when the authoritative workspace realm is invalid", async () => {
@@ -431,6 +586,7 @@ describe("database executive request resolver", () => {
           classification: "synthetic",
         },
       ],
+      [memoryBankRow("organizational")],
       [
         {
           source_revision_id: input.evidenceRecordIds[0],
@@ -448,8 +604,9 @@ describe("database executive request resolver", () => {
         },
       ],
     ];
+    const ensureBank = vi.fn();
     const memory = {
-      ensureBank: async () => undefined,
+      ensureBank,
       retain: async () => undefined,
       retrieve: async () => [
         {
@@ -491,6 +648,7 @@ describe("database executive request resolver", () => {
     ).resolves.toMatchObject({
       derivedContext: [{ classification: "restricted" }],
     });
+    expect(ensureBank).not.toHaveBeenCalled();
   });
 
   it("degrades a derived-memory outage to empty context with an explicit warning", async () => {
@@ -516,18 +674,20 @@ describe("database executive request resolver", () => {
           classification: "synthetic",
         },
       ],
+      [memoryBankRow("organizational")],
     ];
     const warning = vi.fn();
+    const ensureBank = vi.fn();
     const resolver = new DatabaseExecutiveRequestResolver(
       database as unknown as Database,
       "openai-responses",
       "explicit-model",
       {
-        ensureBank: async () => {
+        ensureBank,
+        retain: vi.fn(),
+        retrieve: async () => {
           throw new Error("synthetic Hindsight outage");
         },
-        retain: vi.fn(),
-        retrieve: vi.fn(),
         invalidateSource: vi.fn(),
       },
       warning,
@@ -541,6 +701,7 @@ describe("database executive request resolver", () => {
     expect(warning).toHaveBeenCalledWith(
       expect.objectContaining({ message: "synthetic Hindsight outage" }),
     );
+    expect(ensureBank).not.toHaveBeenCalled();
   });
 
   it("rejects forged role markdown and evidence descriptors at the HTTP contract", () => {
@@ -553,5 +714,25 @@ describe("database executive request resolver", () => {
     expect(() =>
       parseProposalInput({ ...input, evidence: [{ summary: "forged" }] }),
     ).toThrow("server-resolved");
+  });
+
+  it("rejects uppercase UUIDs at the HTTP contract", () => {
+    for (const key of [
+      "installationId",
+      "workspaceId",
+      "workId",
+      "workerId",
+      "roleId",
+    ] as const) {
+      expect(() =>
+        parseProposalInput({ ...input, [key]: input[key].toUpperCase() }),
+      ).toThrow(`${key} must be a lowercase canonical UUID`);
+    }
+    expect(() =>
+      parseProposalInput({
+        ...input,
+        evidenceRecordIds: [input.evidenceRecordIds[0]!.toUpperCase()],
+      }),
+    ).toThrow("evidenceRecordIds must contain lowercase canonical UUIDs");
   });
 });

@@ -46,6 +46,10 @@ const moduleLifecycleExecutionMigrationUrl = new URL(
   "../../../supabase/migrations/20260830000500_module_lifecycle_execution.sql",
   import.meta.url,
 );
+const workspaceMemoryBankIdentityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260830000600_workspace_memory_bank_identity.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -516,6 +520,34 @@ describe("module lifecycle execution migration contract", () => {
     expect(sql).not.toContain(
       "grant select on public.module_lifecycle_action_commands",
     );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+});
+
+describe("workspace memory-bank identity migration contract", () => {
+  it("binds every new or changed Hindsight bank to its exact workspace", async () => {
+    const sql = await readFile(workspaceMemoryBankIdentityMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "constraint memory_banks_external_bank_workspace_identity check",
+    );
+    expect(sql).toContain("workspace_id is not null");
+    expect(sql).toContain("installation_realm::text || ':'");
+    expect(sql).toContain("installation_id::text || ':'");
+    expect(sql).toContain("workspace_id::text || ':lineage-v2'");
+    expect(sql).not.toContain("workspace_id::text || ':default'");
+    expect(sql).toContain(") not valid;");
+  });
+
+  it("preserves unresolved legacy rows without inferring or rewriting identity", async () => {
+    const sql = await readFile(workspaceMemoryBankIdentityMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "NOT VALID preserves explicitly unresolved legacy rows without rewriting them",
+    );
+    expect(sql).toContain("Nothing is inferred.");
+    expect(sql).not.toMatch(/update\s+public\.memory_banks/i);
+    expect(sql).not.toMatch(/validate\s+constraint/i);
     expect(sql.trimEnd()).toMatch(/commit;$/);
   });
 });

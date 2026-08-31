@@ -58,6 +58,13 @@ interface MemorySourceRow {
   locator: string;
 }
 
+interface MemoryBankBindingRow {
+  installation_id: string;
+  workspace_id: string;
+  installation_realm: unknown;
+  external_bank_id: string;
+}
+
 interface GrantRow {
   policy_id: string;
   worker_id: string;
@@ -454,8 +461,19 @@ export class DatabaseExecutiveRequestResolver {
             "One or more evidence records are missing or belong to another workspace",
           );
         }
+        const memoryBankBindings =
+          await transaction.query<MemoryBankBindingRow>(
+            `select installation_id, workspace_id, installation_realm, external_bank_id
+               from public.memory_banks
+              where installation_id = $1
+                and workspace_id = $2
+                and installation_realm = $3::public.installation_realm
+                and adapter = 'hindsight'`,
+            [input.installationId, input.workspaceId, workspaceRealm.data],
+          );
         return {
           workspaceRealm: workspaceRealm.data,
+          memoryBankBindings: memoryBankBindings.rows,
           request: {
             installationId: input.installationId,
             workspaceId: input.workspaceId,
@@ -485,20 +503,35 @@ export class DatabaseExecutiveRequestResolver {
       input.workspaceId,
       resolution.workspaceRealm,
     );
-    let derivedContext: RetrievedContext[];
-    try {
-      await this.memory.ensureBank(bank);
-      const recalled = await this.memory.retrieve(bank, input.objective);
-      derivedContext = await this.#resolveDerivedContext(
-        input.installationId,
-        input.workspaceId,
-        resolution.workspaceRealm,
-        requester,
-        recalled,
-      );
-    } catch (error) {
-      this.onMemoryWarning(error);
-      derivedContext = [];
+    let derivedContext: RetrievedContext[] = [];
+    if (resolution.memoryBankBindings.length > 0) {
+      const memoryBankBinding = resolution.memoryBankBindings[0];
+      const bindingMatches =
+        resolution.memoryBankBindings.length === 1 &&
+        memoryBankBinding?.installation_id === input.installationId &&
+        memoryBankBinding.workspace_id === input.workspaceId &&
+        memoryBankBinding.installation_realm === resolution.workspaceRealm &&
+        memoryBankBinding.external_bank_id === bank.id;
+      if (!bindingMatches) {
+        this.onMemoryWarning(
+          new ExecutiveRequestResolutionError(
+            "PostgreSQL memory bank binding does not match the selected workspace",
+          ),
+        );
+      } else {
+        try {
+          const recalled = await this.memory.retrieve(bank, input.objective);
+          derivedContext = await this.#resolveDerivedContext(
+            input.installationId,
+            input.workspaceId,
+            resolution.workspaceRealm,
+            requester,
+            recalled,
+          );
+        } catch (error) {
+          this.onMemoryWarning(error);
+        }
+      }
     }
     return {
       ...resolution.request,
@@ -697,7 +730,7 @@ function citationKey(citation: SourceCitation | MemorySourceRow): string {
 }
 
 const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export function parseProposalInput(value: unknown): ProposalInput {
   if (!value || typeof value !== "object")
@@ -724,7 +757,9 @@ export function parseProposalInput(value: unknown): ProposalInput {
     "roleId",
   ] as const) {
     if (typeof input[key] !== "string" || !uuid.test(input[key]))
-      throw new ExecutiveRequestInputError(`${key} must be a UUID`);
+      throw new ExecutiveRequestInputError(
+        `${key} must be a lowercase canonical UUID`,
+      );
   }
   if (typeof input.objective !== "string" || !input.objective.trim())
     throw new ExecutiveRequestInputError("objective is required");
@@ -736,7 +771,7 @@ export function parseProposalInput(value: unknown): ProposalInput {
     )
   ) {
     throw new ExecutiveRequestInputError(
-      "evidenceRecordIds must contain UUIDs",
+      "evidenceRecordIds must contain lowercase canonical UUIDs",
     );
   }
   if (input.background !== undefined && typeof input.background !== "boolean")

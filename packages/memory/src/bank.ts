@@ -9,6 +9,7 @@ export type HindsightBank = {
 
 const canonicalUuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const hindsightLineageIdentity = "lineage-v2";
 
 function requiredIdentity(value: string, label: string): string {
   if (!value.trim()) throw new Error(`${label} is required`);
@@ -18,7 +19,7 @@ function requiredIdentity(value: string, label: string): string {
   return value;
 }
 
-/** One deterministic Hindsight routing identity per workspace and realm. */
+/** One lineage-qualified Hindsight routing identity per workspace and realm. */
 export function workspaceHindsightBank(
   installationId: string,
   workspaceId: string,
@@ -33,7 +34,7 @@ export function workspaceHindsightBank(
   );
   const canonicalWorkspaceId = requiredIdentity(workspaceId, "Workspace ID");
   return {
-    id: `${realm}:${canonicalInstallationId}:${canonicalWorkspaceId}:default`,
+    id: `${realm}:${canonicalInstallationId}:${canonicalWorkspaceId}:${hindsightLineageIdentity}`,
     installationId: canonicalInstallationId,
     workspaceId: canonicalWorkspaceId,
     realm,

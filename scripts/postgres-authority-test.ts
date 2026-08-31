@@ -56,6 +56,11 @@ const otherRoleId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const otherPolicyId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const organizationalBankId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const personalBankId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const legacyInstallationId = "10101010-1010-4010-8010-101010101010";
+const legacyOwnerAuthUserId = "20202020-2020-4020-8020-202020202020";
+const legacyOwnerPersonId = "30303030-3030-4030-8030-303030303030";
+const legacyWorkspaceId = "40404040-4040-4040-8040-404040404040";
+const legacyBankId = "50505050-5050-4050-8050-505050505050";
 const releaseAdoptionReceiptId = "88888888-8888-4888-8888-888888888888";
 const workspaceCreationReceiptId = "99999999-9999-4999-8999-999999999999";
 
@@ -222,6 +227,41 @@ async function connect(databaseUrl: string): Promise<Client> {
   return client;
 }
 
+async function seedLegacyMemoryBankBeforeIdentityMigration(
+  admin: Client,
+): Promise<void> {
+  await admin.query(
+    "insert into auth.users (id, email) values ($1, 'legacy-memory-owner@synthetic.invalid')",
+    [legacyOwnerAuthUserId],
+  );
+  await admin.query(
+    `insert into public.installations (id, slug, display_name, realm)
+     values ($1, 'legacy-memory-fixture', 'Legacy Memory Fixture', 'organizational')`,
+    [legacyInstallationId],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values ($1, $2, $3, 'Legacy Memory Owner', 'owner')`,
+    [legacyOwnerPersonId, legacyInstallationId, legacyOwnerAuthUserId],
+  );
+  await admin.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, 'legacy-memory', 'Legacy Memory', 'organizational', $3)`,
+    [legacyWorkspaceId, legacyInstallationId, legacyOwnerPersonId],
+  );
+  await admin.query(
+    `insert into public.memory_banks
+       (id, installation_id, workspace_id, installation_realm, adapter,
+        external_bank_id, database_locator, object_bucket_locator)
+     values ($1, $2, $3, 'organizational', 'hindsight',
+             'legacy-unscoped-bank', 'postgres://legacy-memory-bank',
+             'object://legacy-memory-bank')`,
+    [legacyBankId, legacyInstallationId, legacyWorkspaceId],
+  );
+}
+
 async function applyMigrations(admin: Client): Promise<string[]> {
   const migrationNames = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name))
@@ -231,6 +271,9 @@ async function applyMigrations(admin: Client): Promise<string[]> {
     "No Vorton migrations were found",
   );
   for (const migrationName of migrationNames) {
+    if (migrationName === "20260830000600_workspace_memory_bank_identity.sql") {
+      await seedLegacyMemoryBankBeforeIdentityMigration(admin);
+    }
     await admin.query(
       await readFile(join(migrationDirectory, migrationName), "utf8"),
     );
@@ -459,6 +502,27 @@ async function expectSqlState(
     requireCondition(
       code === expectedCode,
       `${label} failed with SQLSTATE ${code ?? "unknown"}, not ${expectedCode}`,
+    );
+    return;
+  }
+  throw new Error(`${label} unexpectedly succeeded`);
+}
+
+async function expectConstraintViolation(
+  client: Client,
+  sql: string,
+  values: unknown[],
+  expectedConstraint: string,
+  label: string,
+): Promise<void> {
+  try {
+    await client.query(sql, values);
+  } catch (error) {
+    const databaseError = error as { code?: string; constraint?: string };
+    requireCondition(
+      databaseError.code === "23514" &&
+        databaseError.constraint === expectedConstraint,
+      `${label} failed with SQLSTATE ${databaseError.code ?? "unknown"} on ${databaseError.constraint ?? "an unknown constraint"}`,
     );
     return;
   }
@@ -1216,10 +1280,10 @@ async function proveWorkspaceResourceCoexistence(
         external_bank_id, database_locator, object_bucket_locator)
      values
        ($1, $2, $3, 'organizational', 'hindsight',
-        'hostile-organizational-bank', 'postgres://organizational-bank',
+        $6, 'postgres://organizational-bank',
         'object://organizational-bank'),
        ($4, $2, $5, 'personal', 'hindsight',
-        'hostile-personal-bank', 'postgres://personal-bank',
+        $7, 'postgres://personal-bank',
         'object://personal-bank')`,
     [
       organizationalBankId,
@@ -1227,6 +1291,8 @@ async function proveWorkspaceResourceCoexistence(
       bootstrap.workspaceId,
       personalBankId,
       otherWorkspaceId,
+      `organizational:${bootstrap.installationId}:${bootstrap.workspaceId}:lineage-v2`,
+      `personal:${bootstrap.installationId}:${otherWorkspaceId}:lineage-v2`,
     ],
   );
 
@@ -1278,6 +1344,144 @@ async function proveWorkspaceResourceCoexistence(
     JSON.stringify(row.realms) ===
       JSON.stringify(["organizational", "personal"]),
     "Personal and organizational banks did not remain realm separated",
+  );
+}
+
+async function proveWorkspaceMemoryBankIdentity(
+  admin: Client,
+  bootstrap: BootstrapResult,
+): Promise<void> {
+  const constraintName = "memory_banks_external_bank_workspace_identity";
+  const constraint = await admin.query<{
+    convalidated: boolean;
+    definition: string;
+  }>(
+    `select convalidated, pg_get_constraintdef(oid) as definition
+       from pg_constraint
+      where conrelid = 'public.memory_banks'::regclass
+        and conname = $1`,
+    [constraintName],
+  );
+  requireCondition(
+    constraint.rows.length === 1 && !constraint.rows[0]?.convalidated,
+    "Memory-bank identity constraint did not preserve explicit legacy remediation",
+  );
+  requireCondition(
+    constraint.rows[0]?.definition.endsWith("NOT VALID"),
+    "Memory-bank identity constraint is not visibly marked NOT VALID",
+  );
+
+  const preservedLegacy = await admin.query<{ external_bank_id: string }>(
+    "select external_bank_id from public.memory_banks where id = $1",
+    [legacyBankId],
+  );
+  requireCondition(
+    preservedLegacy.rows[0]?.external_bank_id === "legacy-unscoped-bank",
+    "The NOT VALID migration rewrote or rejected the unresolved legacy bank",
+  );
+  await expectConstraintViolation(
+    admin,
+    `update public.memory_banks
+        set database_locator = database_locator
+      where id = $1`,
+    [legacyBankId],
+    constraintName,
+    "Unreconciled legacy memory-bank unrelated update",
+  );
+
+  const legacyCanonical =
+    `organizational:${legacyInstallationId}:` +
+    `${legacyWorkspaceId}:lineage-v2`;
+  const reconciledLegacy = await admin.query<{
+    external_bank_id: string;
+  }>(
+    `update public.memory_banks
+        set external_bank_id = $1
+      where id = $2
+      returning external_bank_id`,
+    [legacyCanonical, legacyBankId],
+  );
+  requireCondition(
+    reconciledLegacy.rows[0]?.external_bank_id === legacyCanonical,
+    "Explicit legacy memory-bank identity reconciliation failed",
+  );
+  const reconciledUnrelatedUpdate = await admin.query<{ id: string }>(
+    `update public.memory_banks
+        set database_locator = database_locator
+      where id = $1
+      returning id`,
+    [legacyBankId],
+  );
+  requireCondition(
+    reconciledUnrelatedUpdate.rows[0]?.id === legacyBankId,
+    "Reconciled legacy memory bank did not accept an unrelated update",
+  );
+
+  const canonical =
+    `organizational:${bootstrap.installationId}:` +
+    `${bootstrap.workspaceId}:lineage-v2`;
+  const personalCanonical = `personal:${bootstrap.installationId}:${otherWorkspaceId}:lineage-v2`;
+  const banks = await admin.query<{
+    id: string;
+    external_bank_id: string;
+  }>(
+    `select id, external_bank_id
+       from public.memory_banks
+      where id = any($1::uuid[])
+      order by id`,
+    [[organizationalBankId, personalBankId]],
+  );
+  requireCondition(
+    banks.rows.some(
+      (bank) =>
+        bank.id === organizationalBankId && bank.external_bank_id === canonical,
+    ) &&
+      banks.rows.some(
+        (bank) =>
+          bank.id === personalBankId &&
+          bank.external_bank_id === personalCanonical,
+      ),
+    "Canonical workspace-bound memory banks were not persisted",
+  );
+
+  for (const [label, hostileBankId] of [
+    [
+      "wrong workspace",
+      `organizational:${bootstrap.installationId}:${otherWorkspaceId}:lineage-v2`,
+    ],
+    [
+      "wrong realm",
+      `personal:${bootstrap.installationId}:${bootstrap.workspaceId}:lineage-v2`,
+    ],
+    [
+      "wrong installation",
+      `organizational:${otherInstallationId}:${bootstrap.workspaceId}:lineage-v2`,
+    ],
+    [
+      "legacy default suffix",
+      `organizational:${bootstrap.installationId}:${bootstrap.workspaceId}:default`,
+    ],
+    ["grafted suffix", `${canonical}:grafted`],
+  ] as const) {
+    await expectConstraintViolation(
+      admin,
+      "update public.memory_banks set external_bank_id = $1 where id = $2",
+      [hostileBankId, organizationalBankId],
+      constraintName,
+      `Memory-bank identity ${label}`,
+    );
+  }
+
+  const canonicalUpdate = await admin.query<{ external_bank_id: string }>(
+    `update public.memory_banks
+        set external_bank_id = $1
+      where id = $2
+      returning external_bank_id`,
+    [canonical, organizationalBankId],
+  );
+  requireCondition(
+    canonicalUpdate.rows[0]?.external_bank_id === canonical,
+    "Canonical workspace-bound memory-bank update failed",
   );
 }
 
@@ -4005,6 +4209,7 @@ async function main(): Promise<void> {
       bootstrap,
     );
     await proveWorkspaceResourceCoexistence(admin, bootstrap, ownerPersonId);
+    await proveWorkspaceMemoryBankIdentity(admin, bootstrap);
     await proveModuleLifecycleApprovalBoundary(
       admin,
       adminDatabaseUrl,
@@ -4044,6 +4249,9 @@ async function main(): Promise<void> {
             signedWorkerProposalAndRunScoped: true,
             sameNamedWorkspaceResourcesCoexist: true,
             personalAndOrganizationalMemoryBanksSeparated: true,
+            memoryBankExternalIdentityWorkspaceBound: true,
+            memoryBankLegacyIdentityPreservedUntilExplicitReconciliation: true,
+            memoryBankLegacyIdentityRequiresExplicitRemediation: true,
             installationScopedReleaseAdoptionApprovalConsumed: true,
             releaseAdoptionExactReleaseSubstitutionsDenied: true,
             releaseAdoptionReceiptHashCanonicalAndImmutable: true,

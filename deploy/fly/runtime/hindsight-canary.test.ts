@@ -255,7 +255,7 @@ describe("Hindsight release canary", () => {
     }
     expect(server.calls[0]?.path).toContain(
       encodeURIComponent(
-        "organizational:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee:bbbbbbbb-cccc-4ddd-8eee-ffffffffffff:default",
+        "organizational:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee:bbbbbbbb-cccc-4ddd-8eee-ffffffffffff:lineage-v2",
       ),
     );
     expect(server.calls.filter((call) => call.method === "PATCH")).toHaveLength(

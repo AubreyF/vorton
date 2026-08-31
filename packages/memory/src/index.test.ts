@@ -11,15 +11,25 @@ const personal = workspaceHindsightBank(
 );
 
 describe("Hindsight adapter isolation", () => {
-  it("derives one canonical default bank for an installation workspace realm", () => {
+  it("derives one lineage-qualified bank for an installation workspace realm", () => {
     expect(
       workspaceHindsightBank(installationId, workspaceId, "organizational"),
     ).toEqual({
-      id: `organizational:${installationId}:${workspaceId}:default`,
+      id: `organizational:${installationId}:${workspaceId}:lineage-v2`,
       installationId,
       workspaceId,
       realm: "organizational",
     });
+  });
+
+  it("rejects the legacy default bank identity", async () => {
+    const adapter = new InMemoryHindsightAdapter();
+    await expect(
+      adapter.ensureBank({
+        ...personal,
+        id: `personal:${installationId}:${workspaceId}:default`,
+      }),
+    ).rejects.toThrow("does not match");
   });
 
   it("requires injective lowercase canonical UUID components", () => {
@@ -80,6 +90,10 @@ describe("Hindsight adapter isolation", () => {
       installationId,
       "8af0569c-1eba-4b2e-97c2-c12570208531",
       "personal",
+    );
+    expect(other.id).not.toBe(personal.id);
+    expect(other.id).toBe(
+      `personal:${installationId}:8af0569c-1eba-4b2e-97c2-c12570208531:lineage-v2`,
     );
     await adapter.retain(other, {
       id: "other-workspace-memory",
