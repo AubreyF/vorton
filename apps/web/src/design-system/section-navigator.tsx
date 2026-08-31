@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
+import { HorizontalNavigation } from "./horizontal-navigation.js";
+
 export interface SectionNavigationItem {
   id: string;
   label: string;
@@ -132,12 +134,16 @@ export function SectionNavigator({
         <p>On this page</p>
         {links}
       </nav>
-      <nav
-        className="section-navigator-mobile section-navigator-topbar"
-        aria-label={`${label}, compact`}
+      <HorizontalNavigation
+        activeKey={activeId}
+        activeSelector=".section-navigator-link.active"
+        label={`${label}, compact`}
+        shellClassName="section-navigator-mobile-shell"
+        navigationClassName="section-navigator-mobile section-navigator-topbar"
+        trackClassName="section-navigator-topbar__track"
       >
         {links}
-      </nav>
+      </HorizontalNavigation>
       <div ref={contentRef} className="section-navigator-content">
         {children}
       </div>

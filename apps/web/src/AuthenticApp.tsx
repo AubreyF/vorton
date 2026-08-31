@@ -3,6 +3,7 @@ import { factoryModuleManifest } from "@vorton/factory";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { AccountMenu } from "./design-system/account-menu.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
+import { HorizontalNavigation } from "./design-system/horizontal-navigation.js";
 import {
   SectionNavigator,
   type SectionNavigationItem,
@@ -308,24 +309,26 @@ function PrimaryNavigation({
   navigate: (section: SectionId) => void;
 }) {
   return (
-    <nav
-      className="primary-navigation"
-      aria-label={`${installationName} sections`}
+    <HorizontalNavigation
+      activeKey={section}
+      label={`${installationName} sections`}
+      shellClassName="primary-nav-shell"
+      navigationClassName="primary-navigation"
+      trackClassName="primary-navigation__track"
     >
-      <div className="primary-navigation__track">
-        {primarySections.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`nav-button ${section === id ? "active" : ""}`}
-            aria-current={section === id ? "page" : undefined}
-            onClick={() => navigate(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </nav>
+      {primarySections.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          className={`nav-button ${section === id ? "active" : ""}`}
+          aria-current={section === id ? "page" : undefined}
+          aria-controls="dashboard-content"
+          onClick={() => navigate(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </HorizontalNavigation>
   );
 }
 
@@ -340,19 +343,26 @@ function SecondaryNavigation({
 }) {
   return (
     <div className="section-nav-bar">
-      <nav className="secondary-navigation" aria-label={`${section} sections`}>
+      <HorizontalNavigation
+        activeKey={`${section}:${subsection}`}
+        label={`${section} sections`}
+        shellClassName="secondary-nav-shell"
+        navigationClassName="secondary-navigation"
+        trackClassName="secondary-navigation__track"
+      >
         {secondarySections[section].map((label) => (
           <button
             key={label}
             type="button"
             className={`nav-button secondary-nav-link ${subsection === label ? "active" : ""}`}
             aria-current={subsection === label ? "page" : undefined}
+            aria-controls="dashboard-content"
             onClick={() => navigate(label)}
           >
             {label}
           </button>
         ))}
-      </nav>
+      </HorizontalNavigation>
     </div>
   );
 }

@@ -142,8 +142,21 @@
   backdrop-filter: var(--vorton-header-backdrop);
 }
 
+.section-navigator-mobile-shell {
+  display: none;
+  width: 100%;
+  height: 50px;
+  margin-bottom: 24px;
+}
+
 .section-navigator-topbar.section-navigator-mobile {
   display: none;
+  margin-bottom: 0;
+}
+
+.section-navigator-topbar__track {
+  min-height: 100%;
+  gap: 0;
 }
 
 .section-navigator-topbar::-webkit-scrollbar {
@@ -1487,6 +1500,7 @@
     display: none;
   }
 
+  .section-navigator-mobile-shell,
   .section-navigator-topbar.section-navigator-mobile {
     display: flex;
   }

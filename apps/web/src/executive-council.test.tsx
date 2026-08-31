@@ -107,7 +107,10 @@ describe("executive council route and surface", () => {
     );
     expect(html).toContain('class="section-navigator-rail"');
     expect(html).toContain(
-      'class="section-navigator-mobile section-navigator-topbar"',
+      'class="view-nav-shell section-navigator-mobile-shell"',
+    );
+    expect(html).toContain(
+      'class="view-nav section-navigator-mobile section-navigator-topbar"',
     );
     expect(html).toContain('href="#command/Council"');
     expect(html).toContain('id="command-decisions"');
