@@ -37,4 +37,3 @@ Follow the roadmap to see what exists and what remains to be built.
 - [Security model](docs/SECURITY.md)
 - [Memory architecture](docs/MEMORY.md)
 - [Factory](docs/FACTORY.md)
-- [Accepted shared-installation and module architecture](docs/decisions/0007-shared-installation-modules-factory-and-goals.md)

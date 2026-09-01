@@ -182,7 +182,7 @@ Implementation priority is:
 This decision fixes the product and authority boundaries. It does not invent
 the following lower-level contracts:
 
-- the Module SDK ABI, compatibility negotiation, and interface contribution
+- the Module SDK API, compatibility negotiation, and interface contribution
   schema;
 - the module signature format, publisher-key lifecycle, and private artifact
   registry;

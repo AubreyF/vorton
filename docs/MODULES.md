@@ -118,17 +118,17 @@ Core and module migrations are separate operations. A module upgrade requires:
 Deactivating or uninstalling code does not delete module data. Retention and
 deletion are separate governed lifecycle operations.
 
-## Factory, Goals, and AubOS
+## First-party and installation-owned modules
 
 Factory and Goals are first-party Vorton modules. They begin behind the final
 internal module boundary while compiled with the application. This lets the
 highest-priority product milestones proceed before remote artifact loading is
 complete.
 
-The private AubOS repository owns modules that are personal by design, such as
-Finance. One Finance module may contain many views, workflows, importers,
-tools, and skills. It uses Vorton's existing themes and ships no custom theme
-for MVP.
+An installation may also load private modules that are specific to its own
+workspaces. A domain module may contain multiple views, workflows, importers,
+tools, and skills. Installation-owned modules inherit Vorton's themes and API
+surface. Custom themes are optional and outside the first module milestone.
 
 ## Related artifact types
 
