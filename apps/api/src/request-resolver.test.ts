@@ -91,6 +91,9 @@ describe("database executive request resolver", () => {
           workspace_slug: "synthetic-workspace",
           workspace_display_name: "Synthetic workspace",
           workspace_default_module_id: "command",
+          core_surface_selection_receipt_id:
+            "11111111-1111-4111-8111-111111111111",
+          core_surface_selection_receipt_hash: `sha256:${"1".repeat(64)}`,
           workspace_realm: "organizational",
           person_kind: "owner",
         },
@@ -174,6 +177,11 @@ describe("database executive request resolver", () => {
                   },
                 ],
               },
+              coreSurfaceSelectionReceipt: {
+                receiptId: "11111111-1111-4111-8111-111111111111",
+                receiptSha256: `sha256:${"1".repeat(64)}`,
+              },
+              coreSurfaceState: "selected",
               workItems: [
                 {
                   id: input.workId,
@@ -219,6 +227,8 @@ describe("database executive request resolver", () => {
           workspace_slug: "aubos",
           workspace_display_name: "AubOS",
           workspace_default_module_id: null,
+          core_surface_selection_receipt_id: null,
+          core_surface_selection_receipt_hash: null,
           workspace_realm: "personal",
           person_kind: "owner",
         },
@@ -245,8 +255,123 @@ describe("database executive request resolver", () => {
               displayName: "AubOS",
               realm: "personal",
               moduleSurface: { defaultModuleId: null, modules: [] },
+              coreSurfaceSelectionReceipt: null,
+              coreSurfaceState: "unconfigured",
               workItems: [],
               proposalBindings: [],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("fails closed when stored core-surface presentation drifts from the compiled registry", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          installation_id: input.installationId,
+          installation_slug: "vorton",
+          installation_display_name: "Vorton",
+          workspace_id: input.workspaceId,
+          workspace_slug: "freedos",
+          workspace_display_name: "FreedOS",
+          workspace_default_module_id: "factory",
+          core_surface_selection_receipt_id:
+            "11111111-1111-4111-8111-111111111111",
+          core_surface_selection_receipt_hash: `sha256:${"1".repeat(64)}`,
+          workspace_realm: "organizational",
+          person_kind: "owner",
+        },
+      ],
+      [
+        {
+          installation_id: input.installationId,
+          workspace_id: input.workspaceId,
+          module_id: "factory",
+          contract_version: "v1",
+          label: "Caller Factory",
+          navigation_order: 10,
+          presentation_variant: "read-only",
+        },
+      ],
+      [],
+      [],
+      [],
+    ];
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+    );
+
+    await expect(
+      resolver.resolveBootstrap("0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"),
+    ).resolves.toMatchObject({
+      installations: [
+        {
+          workspaces: [
+            {
+              coreSurfaceState: "invalid",
+              moduleSurface: { defaultModuleId: null, modules: [] },
+              coreSurfaceSelectionReceipt: null,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("marks legacy nonempty unlineaged surfaces as upgrade-required", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          installation_id: input.installationId,
+          installation_slug: "vorton",
+          installation_display_name: "Vorton",
+          workspace_id: input.workspaceId,
+          workspace_slug: "freedos",
+          workspace_display_name: "FreedOS",
+          workspace_default_module_id: "factory",
+          core_surface_selection_receipt_id: null,
+          core_surface_selection_receipt_hash: null,
+          workspace_realm: "organizational",
+          person_kind: "owner",
+        },
+      ],
+      [
+        {
+          installation_id: input.installationId,
+          workspace_id: input.workspaceId,
+          module_id: "factory",
+          contract_version: "v1",
+          label: "Factory",
+          navigation_order: 10,
+          presentation_variant: "freed-read-only",
+        },
+      ],
+      [],
+      [],
+      [],
+    ];
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+    );
+
+    await expect(
+      resolver.resolveBootstrap("0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"),
+    ).resolves.toMatchObject({
+      installations: [
+        {
+          workspaces: [
+            {
+              coreSurfaceState: "upgrade-required",
+              moduleSurface: { defaultModuleId: null, modules: [] },
+              coreSurfaceSelectionReceipt: null,
             },
           ],
         },

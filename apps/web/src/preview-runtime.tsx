@@ -22,13 +22,13 @@ const previewRuntime: RuntimeContextValue = {
     installations: [
       {
         id: "00000000-0000-4000-8000-000000000002",
-        slug: "freed",
+        slug: "vorton",
         displayName: "Vorton",
         workspaces: [
           {
             id: "00000000-0000-4000-8000-000000000010",
-            slug: "freed-os",
-            displayName: "FreedOS",
+            slug: "organization",
+            displayName: "Organizational Workspace",
             moduleSurface: {
               defaultModuleId: "command",
               modules: [
@@ -37,7 +37,7 @@ const previewRuntime: RuntimeContextValue = {
                 ["goals", "Goals", 30, "standard"],
                 ["tasks", "Tasks", 40, "standard"],
                 ["tools", "Tools", 50, "standard"],
-                ["factory", "Factory", 60, "freed-read-only"],
+                ["factory", "Factory", 60, "read-only"],
                 ["admin", "Admin", 70, "standard"],
               ].map(([id, label, navigationOrder, presentationVariant]) => ({
                 id: id as string,
@@ -47,6 +47,11 @@ const previewRuntime: RuntimeContextValue = {
                 presentationVariant: presentationVariant as string,
               })),
             },
+            coreSurfaceState: "selected",
+            coreSurfaceSelectionReceipt: {
+              receiptId: "00000000-0000-4000-8000-000000000012",
+              receiptSha256: `sha256:${"a".repeat(64)}`,
+            },
             realm: "organizational",
             personKind: "owner",
             workItems: [
@@ -54,7 +59,7 @@ const previewRuntime: RuntimeContextValue = {
                 id: "00000000-0000-4000-8000-000000000003",
                 title: "Choose the next product decision",
                 requestedOutcome:
-                  "Select one decision that creates the most useful evidence for Freed.",
+                  "Select one decision that creates the most useful organizational evidence.",
                 acceptanceCriteria: [
                   "The recommendation cites current evidence.",
                   "The owner makes the consequential decision.",
@@ -120,9 +125,11 @@ const previewRuntime: RuntimeContextValue = {
           },
           {
             id: "00000000-0000-4000-8000-000000000011",
-            slug: "aubos",
-            displayName: "AubOS",
+            slug: "personal",
+            displayName: "Personal Workspace",
             moduleSurface: { defaultModuleId: null, modules: [] },
+            coreSurfaceState: "unconfigured",
+            coreSurfaceSelectionReceipt: null,
             realm: "personal",
             personKind: "owner",
             workItems: [],

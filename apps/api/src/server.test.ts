@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeExecutiveWorkerAdapter } from "@vorton/workers";
 import { InMemoryExecutiveLedger } from "@vorton/executive";
 import type { Database } from "@vorton/database";
+import { workspaceCompiledCoreSurfaceRegistrySha256 } from "@vorton/contracts";
 
 import type { AuthenticatedIdentity } from "./auth.js";
 import { InstallationAuthorityIntegrityError } from "./installation-authority.js";
@@ -19,6 +20,12 @@ import {
   WorkspaceMembershipRevocationInputError,
   WorkspaceMembershipRevocationIntegrityError,
 } from "./workspace-membership-revocation.js";
+import {
+  WorkspaceCoreSurfaceSelectionConflictError,
+  WorkspaceCoreSurfaceSelectionForbiddenError,
+  WorkspaceCoreSurfaceSelectionInputError,
+  WorkspaceCoreSurfaceSelectionIntegrityError,
+} from "./workspace-core-surface-selection.js";
 import { createApiServer } from "./server.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
@@ -106,6 +113,14 @@ async function runtime(
     worker: unknown;
   }> = [];
   const workspaceMembershipRevocationCalls: Array<{
+    operation: "approve" | "apply";
+    installationId: string;
+    workspaceId: string;
+    approvalId?: string;
+    request: unknown;
+    identity: AuthenticatedIdentity;
+  }> = [];
+  const workspaceCoreSurfaceSelectionCalls: Array<{
     operation: "approve" | "apply";
     installationId: string;
     workspaceId: string;
@@ -342,6 +357,11 @@ async function runtime(
             "The requested approval conflicts with immutable lifecycle authority",
           );
         }
+        if (request.approvalId === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab") {
+          throw new WorkspaceCoreSurfaceSelectionConflictError(
+            "Expected predecessor core-surface selection receipt is invalid",
+          );
+        }
         if (request.approvalId === "99999999-9999-4999-8999-999999999999") {
           throw new ModuleLifecycleAuthorityIntegrityError(
             "sensitive malformed lifecycle receipt detail",
@@ -502,6 +522,81 @@ async function runtime(
         };
       },
     } as never,
+    workspaceCoreSurfaceSelectionAuthority: {
+      approve: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        request: { approvalId: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        if (request.approvalId === "66666666-6666-4666-8666-666666666666") {
+          throw new WorkspaceCoreSurfaceSelectionInputError(
+            "The workspace core-surface selection request is invalid",
+          );
+        }
+        if (request.approvalId === "77777777-7777-4777-8777-777777777777") {
+          throw new WorkspaceCoreSurfaceSelectionForbiddenError(
+            "Live workspace owner authority is required",
+          );
+        }
+        if (request.approvalId === "88888888-8888-4888-8888-888888888888") {
+          throw new WorkspaceCoreSurfaceSelectionConflictError(
+            "The request conflicts with immutable workspace core-surface authority",
+          );
+        }
+        if (request.approvalId === "99999999-9999-4999-8999-999999999999") {
+          throw new WorkspaceCoreSurfaceSelectionIntegrityError(
+            "sensitive malformed core-surface selection detail",
+          );
+        }
+        workspaceCoreSurfaceSelectionCalls.push({
+          operation: "approve",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract: "vorton.workspace-core-surface-selection-approval.v1",
+            approvalId: request.approvalId,
+          },
+          approvalReceipt: {
+            contract:
+              "vorton.workspace-core-surface-selection-approval-receipt.v1",
+          },
+        };
+      },
+      apply: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        approvalId: string,
+        request: unknown,
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        workspaceCoreSurfaceSelectionCalls.push({
+          operation: "apply",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          approvalId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract: "vorton.workspace-core-surface-selection-approval.v1",
+            approvalId,
+          },
+          approvalReceipt: {
+            contract:
+              "vorton.workspace-core-surface-selection-approval-receipt.v1",
+          },
+          receipt: {
+            contract: "vorton.workspace-core-surface-selection-receipt.v1",
+          },
+        };
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
@@ -517,6 +612,7 @@ async function runtime(
     moduleLifecycleAuthorityCalls,
     moduleLifecycleExecutionCalls,
     workspaceMembershipRevocationCalls,
+    workspaceCoreSurfaceSelectionCalls,
   };
 }
 
@@ -580,6 +676,41 @@ function workspaceMembershipRevocationApproval(
 
 function workspaceMembershipRevocationApply() {
   return { receiptId: membershipReceiptId };
+}
+
+const coreSurfaceSelectionApprovalId = "a6161616-1616-4616-8616-161616161616";
+const coreSurfaceSelectionReceiptId = "17171717-1717-4717-8717-171717171717";
+const coreSurfaceSelectionCapabilityGrantId =
+  "18181818-1818-4818-8818-181818181818";
+const coreSurfaceSelectionPredecessorReceiptId =
+  "19191919-1919-4919-8919-191919191919";
+
+function workspaceCoreSurfaceSelectionApproval(
+  approvalId = coreSurfaceSelectionApprovalId,
+) {
+  return {
+    approvalId,
+    workId,
+    capabilityGrantId: coreSurfaceSelectionCapabilityGrantId,
+    compiledRegistrySha256: workspaceCompiledCoreSurfaceRegistrySha256,
+    expectedCurrentSurfaceSha256: `sha256:${"1".repeat(64)}`,
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: coreSurfaceSelectionPredecessorReceiptId,
+      receiptSha256: `sha256:${"2".repeat(64)}`,
+    },
+    targetPreferences: {
+      defaultCoreSurfaceId: "command" as const,
+      coreSurfaces: [
+        { id: "command" as const, navigationOrder: 10 },
+        { id: "factory" as const, navigationOrder: 20 },
+      ],
+    },
+    expiresAt: "2026-09-01T12:00:00.000Z",
+  };
+}
+
+function workspaceCoreSurfaceSelectionApply() {
+  return { receiptId: coreSurfaceSelectionReceiptId };
 }
 
 const lifecycleApprovalId = "55555555-5555-4555-8555-555555555555";
@@ -955,6 +1086,11 @@ describe("control-plane API", () => {
         409,
         "module_lifecycle_authority_conflict",
       ],
+      [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab",
+        409,
+        "workspace_core_surface_selection_conflict",
+      ],
     ] as const;
     for (const [approvalId, status, code] of cases) {
       const response = await fetch(route, {
@@ -1115,6 +1251,200 @@ describe("control-plane API", () => {
         method: "POST",
         headers,
         body: JSON.stringify(workspaceMembershipRevocationApproval(approvalId)),
+      });
+      expect(response.status).toBe(status);
+      const payload = JSON.stringify(await response.json());
+      expect(payload).toContain(code);
+      expect(payload).not.toContain("sensitive malformed");
+    }
+  });
+
+  it("routes strict same-person core-surface selection approval and execution requests", async () => {
+    const { baseUrl, workspaceCoreSurfaceSelectionCalls } = await runtime();
+    const baseRoute = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/core-surface-selection-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const approvalRequest = workspaceCoreSurfaceSelectionApproval();
+    const approvalResponse = await fetch(baseRoute, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(approvalRequest),
+    });
+    expect(approvalResponse.status).toBe(201);
+    expect(approvalResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(approvalResponse.json()).resolves.toMatchObject({
+      approval: {
+        contract: "vorton.workspace-core-surface-selection-approval.v1",
+        approvalId: coreSurfaceSelectionApprovalId,
+      },
+      approvalReceipt: {
+        contract: "vorton.workspace-core-surface-selection-approval-receipt.v1",
+      },
+    });
+
+    const applyRequest = workspaceCoreSurfaceSelectionApply();
+    const applyResponse = await fetch(
+      `${baseRoute}/${coreSurfaceSelectionApprovalId}/execute`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(applyRequest),
+      },
+    );
+    expect(applyResponse.status).toBe(200);
+    expect(applyResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(applyResponse.json()).resolves.toMatchObject({
+      receipt: {
+        contract: "vorton.workspace-core-surface-selection-receipt.v1",
+      },
+    });
+    expect(workspaceCoreSurfaceSelectionCalls).toEqual([
+      {
+        operation: "approve",
+        installationId,
+        workspaceId,
+        request: approvalRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+      {
+        operation: "apply",
+        installationId,
+        workspaceId,
+        approvalId: coreSurfaceSelectionApprovalId,
+        request: applyRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+    ]);
+  });
+
+  it("rejects stale or future identity, claimed identity, malformed body, and noncanonical core-surface selection paths", async () => {
+    for (const authTime of [
+      Math.floor(Date.now() / 1_000) - 11 * 60,
+      Math.floor(Date.now() / 1_000) + 60,
+    ]) {
+      const runtimeWithInvalidAal2 = await runtime({
+        authUserId,
+        aal: "aal2",
+        authTime,
+      });
+      const response = await fetch(
+        `${runtimeWithInvalidAal2.baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/core-surface-selection-approvals`,
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer verified-by-fixture",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(workspaceCoreSurfaceSelectionApproval()),
+        },
+      );
+      expect(response.status).toBe(403);
+      expect(runtimeWithInvalidAal2.workspaceCoreSurfaceSelectionCalls).toEqual(
+        [],
+      );
+    }
+
+    const current = await runtime();
+    const baseRoute = `${current.baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/core-surface-selection-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      "content-type": "application/json",
+    };
+    const invalidBodies = [
+      {
+        ...workspaceCoreSurfaceSelectionApproval(),
+        authUserId: crypto.randomUUID(),
+      },
+      { ...workspaceCoreSurfaceSelectionApproval(), unexpected: true },
+      {
+        ...workspaceCoreSurfaceSelectionApproval(),
+        compiledRegistrySha256: `sha256:${"9".repeat(64)}`,
+      },
+      {
+        ...workspaceCoreSurfaceSelectionApproval(),
+        targetPreferences: {
+          ...workspaceCoreSurfaceSelectionApproval().targetPreferences,
+          label: "Caller injection",
+        },
+      },
+      {
+        ...workspaceCoreSurfaceSelectionApproval(),
+        targetPreferences: {
+          ...workspaceCoreSurfaceSelectionApproval().targetPreferences,
+          presentationVariant: "read-only",
+        },
+      },
+      { receiptId: coreSurfaceSelectionReceiptId, unexpected: true },
+    ];
+    const bodyRoutes = [
+      baseRoute,
+      baseRoute,
+      baseRoute,
+      baseRoute,
+      baseRoute,
+      `${baseRoute}/${coreSurfaceSelectionApprovalId}/execute`,
+    ];
+    for (let index = 0; index < invalidBodies.length; index += 1) {
+      const response = await fetch(bodyRoutes[index]!, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(invalidBodies[index]),
+      });
+      expect(response.status).toBe(400);
+    }
+
+    for (const path of [
+      `/v1/installations/not-a-uuid/workspaces/${workspaceId}/core-surface-selection-approvals`,
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/core-surface-selection-approvals/${coreSurfaceSelectionApprovalId.toUpperCase()}/execute`,
+    ]) {
+      const response = await fetch(`${current.baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(
+          path.endsWith("/execute")
+            ? workspaceCoreSurfaceSelectionApply()
+            : workspaceCoreSurfaceSelectionApproval(),
+        ),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(current.workspaceCoreSurfaceSelectionCalls).toEqual([]);
+  });
+
+  it("maps core-surface selection authority failures without leaking integrity details", async () => {
+    const { baseUrl } = await runtime();
+    const route = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/core-surface-selection-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const cases = [
+      ["66666666-6666-4666-8666-666666666666", 400, "invalid_request"],
+      ["77777777-7777-4777-8777-777777777777", 403, "forbidden"],
+      [
+        "88888888-8888-4888-8888-888888888888",
+        409,
+        "workspace_core_surface_selection_conflict",
+      ],
+      ["99999999-9999-4999-8999-999999999999", 500, "internal_error"],
+    ] as const;
+    for (const [approvalId, status, code] of cases) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(workspaceCoreSurfaceSelectionApproval(approvalId)),
       });
       expect(response.status).toBe(status);
       const payload = JSON.stringify(await response.json());

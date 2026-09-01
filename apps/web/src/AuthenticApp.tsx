@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { factoryModuleManifest } from "@vorton/factory";
 import { AgentPromptButton } from "./design-system/agent-prompt-button.js";
 import { AccountMenu } from "./design-system/account-menu.js";
 import { BackgroundAtmosphere } from "./design-system/background-atmosphere.js";
@@ -13,22 +12,22 @@ import {
   type SectionNavigationItem,
 } from "./design-system/section-navigator.js";
 import {
-  resolveWorkspaceModuleRoute,
-  resolveWorkspaceModuleSurface,
+  resolveWorkspaceCoreSurfaceRoute,
+  resolveWorkspaceCoreSurface,
   resolveWorkspaceSwitchRoute,
-  supportedWorkspaceModuleDefinition,
-  supportedWorkspaceModuleId,
-  workspaceModuleRouteHash,
-  type ResolvedWorkspaceModule,
-  type ResolvedWorkspaceModuleRoute,
-  type WorkspaceModuleId,
-  type WorkspaceModuleSurfaceResolution,
-} from "./design-system/workspace-module-registry.js";
+  supportedCompiledCoreSurfaceDefinition,
+  supportedCompiledCoreSurfaceId,
+  workspaceCoreSurfaceRouteHash,
+  type ResolvedCoreSurface,
+  type ResolvedCoreSurfaceRoute,
+  type CompiledCoreSurfaceId,
+  type WorkspaceCoreSurfaceResolution,
+} from "./design-system/compiled-core-surface-registry.js";
 import { ExecutiveCouncil } from "./executive-council.js";
 import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
 import { ToolsView } from "./tools/tools-view.js";
 
-type SectionId = WorkspaceModuleId;
+type SectionId = CompiledCoreSurfaceId;
 type Installation = RuntimeBootstrap["installations"][number];
 type Workspace = Installation["workspaces"][number];
 type WorkItem = Workspace["workItems"][number];
@@ -68,12 +67,12 @@ export const commandBridgeSections = [
 
 export function sectionFromHash(hash: string): SectionId {
   const value = hash.slice(1).split("/")[0] ?? "";
-  return supportedWorkspaceModuleId(value) ?? "command";
+  return supportedCompiledCoreSurfaceId(value) ?? "command";
 }
 
 export function subsectionFromHash(section: SectionId, hash: string): string {
   const [requestedSection = "", encodedSubsection] = hash.slice(1).split("/");
-  const definition = supportedWorkspaceModuleDefinition(section);
+  const definition = supportedCompiledCoreSurfaceDefinition(section);
   if (
     definition.legacyRouteIds?.includes(requestedSection) &&
     section === "admin"
@@ -104,13 +103,22 @@ export function AuthenticApp() {
     selectedWorkspaceId,
   )!;
   const workspaceName = workspace.displayName;
-  const workspaceModuleSurface = useMemo(
-    () => resolveWorkspaceModuleSurface(workspace.moduleSurface),
-    [workspace.moduleSurface],
+  const workspaceCoreSurface = useMemo(
+    () =>
+      resolveWorkspaceCoreSurface(
+        workspace.moduleSurface,
+        workspace.coreSurfaceState,
+        workspace.coreSurfaceSelectionReceipt,
+      ),
+    [
+      workspace.coreSurfaceSelectionReceipt,
+      workspace.coreSurfaceState,
+      workspace.moduleSurface,
+    ],
   );
   const activeRoute = useMemo(
-    () => resolveWorkspaceModuleRoute(workspaceModuleSurface, currentHash),
-    [currentHash, workspaceModuleSurface],
+    () => resolveWorkspaceCoreSurfaceRoute(workspaceCoreSurface, currentHash),
+    [currentHash, workspaceCoreSurface],
   );
   const workspaceOptions = useMemo(
     () =>
@@ -145,14 +153,14 @@ export function AuthenticApp() {
 
   useEffect(() => {
     if (!activeRoute) return;
-    const canonicalHash = workspaceModuleRouteHash(activeRoute);
+    const canonicalHash = workspaceCoreSurfaceRouteHash(activeRoute);
     if (canonicalHash !== currentHash) {
       replaceBrowserHash(canonicalHash);
       setCurrentHash(canonicalHash);
     }
   }, [activeRoute, currentHash, workspace.id]);
 
-  function navigate(next: ResolvedWorkspaceModule) {
+  function navigate(next: ResolvedCoreSurface) {
     navigateToRoute({
       module: next,
       subsection: next.definition.subsections[0]!,
@@ -167,17 +175,21 @@ export function AuthenticApp() {
   function selectWorkspace(workspaceId: string) {
     const next = resolveSelectedWorkspace(installation.workspaces, workspaceId);
     if (!next || next.id !== workspaceId) return;
-    const nextSurface = resolveWorkspaceModuleSurface(next.moduleSurface);
+    const nextSurface = resolveWorkspaceCoreSurface(
+      next.moduleSurface,
+      next.coreSurfaceState,
+      next.coreSurfaceSelectionReceipt,
+    );
     const nextRoute = resolveWorkspaceSwitchRoute(nextSurface, activeRoute);
-    const nextHash = workspaceModuleRouteHash(nextRoute);
+    const nextHash = workspaceCoreSurfaceRouteHash(nextRoute);
     writeWorkspaceSelectionHint(workspaceStorageKey, workspaceId);
     setSelectedWorkspaceId(workspaceId);
     replaceBrowserHash(nextHash);
     setCurrentHash(nextHash);
   }
 
-  function navigateToRoute(next: ResolvedWorkspaceModuleRoute) {
-    const nextHash = workspaceModuleRouteHash(next);
+  function navigateToRoute(next: ResolvedCoreSurfaceRoute) {
+    const nextHash = workspaceCoreSurfaceRouteHash(next);
     if (typeof window !== "undefined") window.location.hash = nextHash;
     setCurrentHash(nextHash);
   }
@@ -201,8 +213,8 @@ export function AuthenticApp() {
         <PrimaryNavigation
           workspaceName={workspaceName}
           modules={
-            workspaceModuleSurface.state === "ready"
-              ? workspaceModuleSurface.modules
+            workspaceCoreSurface.state === "ready"
+              ? workspaceCoreSurface.modules
               : []
           }
           activeModule={activeRoute?.module}
@@ -230,10 +242,10 @@ export function AuthenticApp() {
         className="view-frame"
         tabIndex={-1}
       >
-        <WorkspaceModuleContent
+        <WorkspaceCoreSurfaceContent
           vortonInstallationId={installation.id}
           workspace={workspace}
-          surface={workspaceModuleSurface}
+          surface={workspaceCoreSurface}
           activeRoute={activeRoute}
           navigateSubsection={navigateSubsection}
         />
@@ -261,7 +273,7 @@ function writeWorkspaceSelectionHint(key: string, workspaceId: string) {
     localStorage.setItem(key, workspaceId);
 }
 
-function WorkspaceModuleContent({
+function WorkspaceCoreSurfaceContent({
   vortonInstallationId,
   workspace,
   surface,
@@ -270,8 +282,8 @@ function WorkspaceModuleContent({
 }: {
   vortonInstallationId: string;
   workspace: Workspace;
-  surface: WorkspaceModuleSurfaceResolution;
-  activeRoute: ResolvedWorkspaceModuleRoute | null;
+  surface: WorkspaceCoreSurfaceResolution;
+  activeRoute: ResolvedCoreSurfaceRoute | null;
   navigateSubsection(next: string): void;
 }) {
   const workspaceName = workspace.displayName;
@@ -279,8 +291,26 @@ function WorkspaceModuleContent({
     return (
       <WorkspaceSurfaceState
         workspaceName={workspaceName}
-        title="No modules enabled"
-        detail="This workspace has no enabled modules yet. Choose another workspace or ask an owner to configure its module surface."
+        title="No core surfaces selected"
+        detail="This workspace is empty. Selecting a compiled core surface requires separate governed authority."
+      />
+    );
+  }
+  if (surface.state === "upgrade-required") {
+    return (
+      <WorkspaceSurfaceState
+        workspaceName={workspaceName}
+        title="Workspace upgrade required"
+        detail="This workspace has an older presentation projection with no governed selection receipt. Vorton will not display or reinterpret it until an approved installation upgrade reconciles the exact preimage."
+      />
+    );
+  }
+  if (surface.state === "invalid") {
+    return (
+      <WorkspaceSurfaceState
+        workspaceName={workspaceName}
+        title="Workspace surface blocked"
+        detail="The selected core surface and its authority receipt disagree. No surface was opened."
       />
     );
   }
@@ -317,16 +347,16 @@ function WorkspaceModuleContent({
       />
     );
   }
-  if (component === "freed-read-only-factory") {
+  if (component === "read-only-factory") {
     return (
-      <FreedReadOnlyFactoryModule
+      <ReadOnlyFactoryModule
         installationName={workspaceName}
         view={activeRoute.subsection}
       />
     );
   }
   return (
-    <ModuleFoundation
+    <CoreSurfaceFoundation
       installationName={workspaceName}
       module={activeRoute.module}
       view={activeRoute.subsection}
@@ -345,7 +375,7 @@ function WorkspaceSurfaceState({
 }) {
   return (
     <section className="module-foundation">
-      <p className="eyebrow">{workspaceName} / Modules</p>
+      <p className="eyebrow">{workspaceName} / Core surfaces</p>
       <h1>{title}</h1>
       <div className="directional-empty-state">
         <p>{detail}</p>
@@ -354,14 +384,13 @@ function WorkspaceSurfaceState({
   );
 }
 
-function FreedReadOnlyFactoryModule({
+function ReadOnlyFactoryModule({
   installationName,
   view,
 }: {
   installationName: string;
   view: string;
 }) {
-  const manifest = factoryModuleManifest;
   return (
     <section className="factory-module">
       <header className="module-intro">
@@ -371,16 +400,16 @@ function FreedReadOnlyFactoryModule({
           </p>
           <h1>Factory</h1>
           <p className="lede">
-            Governed software work across repositories and enrolled workers. The
-            {manifest.connector} is installed in {installationName}. Live
-            execution remains under Freed task authority and stays closed until
-            its pilot gates pass.
+            Governed software work across repositories and enrolled workers.
+            This compiled surface stays read only until a workspace-scoped
+            Factory connector is admitted by an immutable Vorton release and
+            explicitly bound to {installationName}.
           </p>
         </div>
         <dl className="work-summary" aria-label="Factory integration summary">
           <div>
             <dt>Runtime</dt>
-            <dd>Integrated</dd>
+            <dd>Not connected</dd>
           </div>
           <div>
             <dt>Projection</dt>
@@ -394,41 +423,33 @@ function FreedReadOnlyFactoryModule({
       </header>
 
       <div className="factory-authority-grid">
-        {Object.entries(manifest.authority).map(([name, owner]) => (
-          <article key={name}>
-            <p className="eyebrow">{name}</p>
-            <h2>
-              {owner === "Vorton Postgres"
-                ? `${installationName} Postgres`
-                : owner}
-            </h2>
-          </article>
-        ))}
+        <article>
+          <p className="eyebrow">Workspace</p>
+          <h2>{installationName} authority</h2>
+        </article>
+        <article>
+          <p className="eyebrow">Tickets</p>
+          <h2>No source admitted</h2>
+        </article>
+        <article>
+          <p className="eyebrow">Execution</p>
+          <h2>Separate capability required</h2>
+        </article>
       </div>
 
       <article className="factory-connector-card">
         <header>
           <div>
             <p className="eyebrow">Installed connector</p>
-            <h2>{manifest.connector}</h2>
+            <h2>No connector admitted</h2>
           </div>
-          <span className="work-state">{manifest.mode}</span>
+          <span className="work-state">closed</span>
         </header>
         <p>
-          This connector imports the proven admission, custody, routing,
-          checkpoint, review, and draft publication machinery. It does not copy
-          credentials, mutable host state, OAuth caches, worktrees, or a second
-          authority ledger into {installationName}.
+          Enabling this navigation surface does not install a connector, grant
+          execution authority, or select a repository. Those remain separate,
+          release-bound workspace decisions.
         </p>
-        <ul className="factory-capabilities">
-          {manifest.capabilities.map((capability) => (
-            <li key={capability}>{capability}</li>
-          ))}
-        </ul>
-        <footer>
-          <span>Source {manifest.sourceRepository}</span>
-          <code>{manifest.sourceCommit.slice(0, 12)}</code>
-        </footer>
       </article>
 
       <div className="directional-empty-state">
@@ -450,9 +471,9 @@ function PrimaryNavigation({
   navigate,
 }: {
   workspaceName: string;
-  modules: readonly ResolvedWorkspaceModule[];
-  activeModule: ResolvedWorkspaceModule | undefined;
-  navigate: (module: ResolvedWorkspaceModule) => void;
+  modules: readonly ResolvedCoreSurface[];
+  activeModule: ResolvedCoreSurface | undefined;
+  navigate: (module: ResolvedCoreSurface) => void;
 }) {
   return (
     <HorizontalNavigation
@@ -487,7 +508,7 @@ function SecondaryNavigation({
   subsection,
   navigate,
 }: {
-  module: ResolvedWorkspaceModule;
+  module: ResolvedCoreSurface;
   subsection: string;
   navigate: (subsection: string) => void;
 }) {
@@ -1098,13 +1119,13 @@ function CommandLane({
   );
 }
 
-function ModuleFoundation({
+function CoreSurfaceFoundation({
   installationName,
   module,
   view,
 }: {
   installationName: string;
-  module: ResolvedWorkspaceModule;
+  module: ResolvedCoreSurface;
   view: string;
 }) {
   const sectionLabel = module.label;
@@ -1117,17 +1138,16 @@ function ModuleFoundation({
       </p>
       <h1>{pageLabel}</h1>
       <p className="lede">
-        This {module.definition.id === "admin" ? "Admin area" : "module"} is
-        being translated into {installationName} from the proven personal
-        interface. The previous generic preview has been removed rather than
-        presented as finished product.
+        This compiled surface is selected for {installationName}. Selection does
+        not admit an installable module, load an artifact, start a module
+        runtime, or authorize workspace data.
       </p>
       <div className="directional-empty-state">
-        <h2>The interface migration is in progress</h2>
+        <h2>No workspace experience is installed here yet</h2>
         <p>
-          The module will inherit the canonical themes, controls, navigation,
-          evidence disclosures, authority language, responsive behavior, and
-          real installation data.
+          A later release-bound module admission must provide the interface,
+          capabilities, data contracts, and rollback evidence before this
+          surface can do more.
         </p>
       </div>
     </section>

@@ -62,6 +62,10 @@ const workspaceModuleProjectionMigrationUrl = new URL(
   "../../../supabase/migrations/20260831000300_workspace_module_projection.sql",
   import.meta.url,
 );
+const workspaceCoreSurfaceSelectionAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260831000400_workspace_core_surface_selection_authority.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -762,6 +766,7 @@ describe("workspace membership revocation authority migration contract", () => {
     expect(sql).toContain("grant_row.principal_kind <> 'person'");
     expect(sql).toContain("grant_row.mode <> 'modify'");
     expect(sql).toContain("grant_row.work_id is distinct from target_work_id");
+    expect(sql).toContain("Exact Work-scoped capability grant does not exist");
     expect(sql).toContain("policy_row.content_sha256 <> encode(");
     expect(sql).toContain("public.vorton_workspace_step_up_context_valid(");
     expect(sql).toContain("membership.kind = 'owner'");
@@ -904,5 +909,289 @@ describe("workspace module projection migration contract", () => {
       /grant (insert|update|delete) on public\.workspace_module_activations/i,
     );
     expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+});
+
+describe("workspace core-surface selection authority migration contract", () => {
+  it("creates separate immutable approval, no-effect receipt, and application receipt planes", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "create table public.workspace_core_surface_selection_approvals",
+    );
+    expect(sql).toContain(
+      "create table public.workspace_core_surface_selection_approval_receipts",
+    );
+    expect(sql).toContain(
+      "create table public.workspace_core_surface_selection_receipts",
+    );
+    expect(sql).toContain(
+      "vorton.workspace-core-surface-selection-approval.v1",
+    );
+    expect(sql).toContain(
+      "vorton.workspace-core-surface-selection-approval-receipt.v1",
+    );
+    expect(sql).toContain("vorton.workspace-core-surface-selection-receipt.v1");
+    expect(sql).toContain("vorton_module_lifecycle_hash(");
+    expect(sql).toContain(
+      "new.approval_receipt_hash is distinct from\n      approval_receipt.receipt_hash",
+    );
+    expect(sql).toContain(
+      "new.binding is distinct from approval_receipt.binding",
+    );
+    expect(sql).toContain(
+      "Workspace core-surface selection authority is append-only",
+    );
+  });
+
+  it("preserves legacy rows without granting legacy values new selection authority", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "add constraint workspace_module_activations_supported_tuple check (",
+    );
+    expect(sql).toContain("presentation_variant = 'read-only'");
+    expect(sql).toContain(") not valid;");
+    expect(sql).not.toMatch(
+      /update\s+public\.workspace_module_activations[\s\S]*freed-read-only/i,
+    );
+    expect(sql).toContain(
+      "foreign key (installation_id, created_by_person_id)\n    references public.people(installation_id, id)",
+    );
+    expect(sql).not.toContain(
+      "foreign key (installation_id, workspace_id, created_by_person_id)",
+    );
+  });
+
+  it("derives exact owner, ready Work, Policy, capability, surface, and AAL2 authority", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "create function public.workspace_core_surface_selection_work_snapshot(",
+    );
+    expect(sql).toContain(
+      "create function public.workspace_core_surface_document(",
+    );
+    expect(sql).toContain("work_row.state <> 'ready'");
+    expect(sql).toContain(
+      "work_row.custodian_person_id is distinct from actor_person_id_value",
+    );
+    expect(sql).toContain("'workspace.core-surface.select'");
+    expect(sql).toContain("grant_row.principal_kind <> 'person'");
+    expect(sql).toContain("grant_row.mode <> 'modify'");
+    expect(sql).toContain("grant_row.work_id is distinct from target_work_id");
+    expect(sql).toContain("policy_row.content_sha256 <> encode(");
+    expect(sql).toContain("public.vorton_workspace_step_up_context_valid(");
+    expect(sql).toContain("membership.kind = 'owner'");
+    expect(sql).toContain(
+      "Current workspace core surface lacks exact receipt lineage",
+    );
+    expect(sql).toContain(
+      "Workspace core-surface selection request reuses an authority identity or hash",
+    );
+    expect(sql).toContain("target_approval_id = policy_row.id");
+    expect(sql).toContain("if not generated_distinct_ids then");
+    expect(sql).toContain(
+      "expected_predecessor_reference_value := coalesce(\n    expected_predecessor_core_surface_selection_receipt,\n    'null'::jsonb",
+    );
+    expect(sql).toContain(
+      "constraint workspace_core_surface_selection_approvals_owner_person_fk",
+    );
+    expect(sql).toContain(
+      "constraint workspace_core_surface_selection_approval_receipts_owner_person_fk",
+    );
+    expect(sql).toContain(
+      "constraint workspace_core_surface_selection_receipts_applier_person_fk",
+    );
+    expect(sql).not.toContain(
+      "workspace_core_surface_selection_approvals_owner_fk",
+    );
+    expect(sql).not.toContain("worker_role_assignments");
+  });
+
+  it("validates the exact compiled surface and atomically replaces only that workspace", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "create function public.normalize_workspace_core_surface(",
+    );
+    expect(sql).toContain(
+      "create function public.workspace_compiled_core_surface_registry_document()",
+    );
+    expect(sql).toContain(
+      "sha256:f9ae99ad9b8a053f5fb3915e94efd130f6c5d9a00b4abc6037a0c4e73368bd93",
+    );
+    expect(sql).toContain(
+      "create function public.normalize_workspace_core_surface_preferences(",
+    );
+    expect(sql).toContain(
+      "target_surface_value := public.derive_workspace_core_surface(",
+    );
+    expect(sql).toContain("requested_target_preferences jsonb");
+    expect(sql).not.toContain("requested_target_surface jsonb");
+    expect(sql).toContain("'presentationVariant', 'read-only'");
+    expect(sql).toContain("Unsupported workspace core-surface tuple");
+    expect(sql).toContain("Workspace core-surface identifiers must be unique");
+    expect(sql).toContain(
+      "Workspace core-surface navigation orders must be unique",
+    );
+    expect(sql).toContain("An empty core surface requires a null default");
+    expect(sql).toContain("Workspace default core surface must be selected");
+    expect(sql).toContain("set default_module_id = null");
+    expect(sql).toContain("delete from public.workspace_module_activations");
+    expect(sql).toContain("insert into public.workspace_module_activations");
+    expect(sql).toContain(
+      "when approval.target_surface->'defaultModuleId' = 'null'::jsonb",
+    );
+    expect(sql).toContain("approval_consumption_count = 1");
+    expect(sql).not.toMatch(/update\s+public\.work\b/i);
+    expect(sql).not.toContain(
+      "create table public.workspace_core_surface_selection_commands",
+    );
+    expect(sql).toContain(
+      "revoke all on function public.workspace_compiled_core_surface_registry_document()",
+    );
+    expect(sql).toContain(
+      "revoke all on function public.normalize_workspace_core_surface_preferences(jsonb)",
+    );
+    expect(sql).toContain(
+      "revoke all on function public.derive_workspace_core_surface(jsonb)",
+    );
+  });
+
+  it("keeps replay same-person, live-owner, exact, receipt-lined, and private", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "A live workspace owner is required to apply or replay core-surface selection",
+    );
+    expect(sql).toContain(
+      "The same live workspace owner must apply or replay core-surface selection",
+    );
+    expect(sql).toContain(
+      "Core-surface selection receipt retry conflicts with immutable application",
+    );
+    expect(sql).toContain(
+      "raise exception 'Core-surface selection receipt identity conflicts with authority'",
+    );
+    expect(sql).not.toContain(
+      "from public.records existing\n       where existing.id = target_receipt_id",
+    );
+    expect(sql).toContain("violated_constraint_name = constraint_name");
+    expect(sql).toContain(
+      "'workspace_core_surface_selection_receipts_pkey',\n        'records_pkey',\n        'records_installation_id_id_key'",
+    );
+    expect(sql).toContain("with recursive lineage as (");
+    expect(sql).toContain("or not replayed_receipt_is_ancestor");
+    expect(sql).toContain(
+      "constraint workspace_core_surface_selection_receipts_linear_successor unique",
+    );
+    expect(sql).toContain(
+      "create unique index workspace_core_surface_selection_receipts_one_genesis_idx",
+    );
+    expect(sql).toContain(
+      "from public.workspace_core_surface_selection_receipts successor",
+    );
+    expect(sql).toContain(
+      "resulting_surface_value is distinct from\n        lineage_receipt.postimage_surface",
+    );
+    expect(sql).toContain("'exactReplayReturnsSameReceipt', true");
+    expect(sql).toContain("'additionalProjectionMutationsOnReplay', 0");
+    expect(sql).toContain(
+      "alter table public.workspace_core_surface_selection_approvals\n  enable row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.workspace_core_surface_selection_approvals",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.create_workspace_core_surface_selection_approval",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.apply_workspace_core_surface_selection",
+    );
+    expect(sql).not.toMatch(
+      /grant execute on function public\.(create|apply)_workspace_core_surface_selection[\s\S]*to aubos_worker/i,
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+
+  it("serializes workspace surface and capability authority changes", async () => {
+    const sql = await readFile(
+      workspaceCoreSurfaceSelectionAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(
+      sql.match(/from public\.workspaces workspace[\s\S]*?for update;/g),
+    ).toHaveLength(2);
+    expect(
+      sql.match(/from public\.capability_grants candidate[\s\S]*?for update;/g),
+    ).toHaveLength(2);
+    expect(sql).toContain("for update of membership");
+    expect(sql).toContain(
+      "Current workspace core surface changed after approval",
+    );
+    expect(sql).not.toContain("pg_advisory_xact_lock");
+    expect(
+      sql.match(
+        /create or replace function public\.aubos_runtime_context_valid\(/g,
+      ),
+    ).toHaveLength(2);
+    expect(sql).toContain(
+      "create or replace function public.vorton_workspace_step_up_context_valid(",
+    );
+    expect(sql).toContain(
+      "create or replace function public.vorton_installation_step_up_context_valid(",
+    );
+    expect(sql.match(/select coalesce\(\(/g)).toHaveLength(4);
+
+    const createFunction = sql.slice(
+      sql.indexOf(
+        "create function public.create_workspace_core_surface_selection_approval(",
+      ),
+      sql.indexOf(
+        "create function public.apply_workspace_core_surface_selection(",
+      ),
+    );
+    const applyFunction = sql.slice(
+      sql.indexOf(
+        "create function public.apply_workspace_core_surface_selection(",
+      ),
+    );
+    for (const functionSql of [createFunction, applyFunction]) {
+      expect(
+        functionSql.indexOf(
+          "if public.vorton_workspace_step_up_context_valid(",
+        ),
+      ).toBeGreaterThan(-1);
+      expect(
+        functionSql.indexOf(
+          "if public.vorton_workspace_step_up_context_valid(",
+        ),
+      ).toBeLessThan(functionSql.indexOf("select * into workspace_row"));
+    }
+    expect(
+      sql.match(
+        /if public\.vorton_workspace_step_up_context_valid\([\s\S]*?\) is not true then/g,
+      ),
+    ).toHaveLength(6);
+    expect(sql).not.toContain(
+      "if not public.vorton_workspace_step_up_context_valid(",
+    );
   });
 });

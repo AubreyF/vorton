@@ -1,4 +1,6 @@
 import {
+  projectWorkspaceCoreSurface,
+  workspaceCoreSurfaceSelectionReceiptReferenceSchema,
   type ExecutiveWorkerJobRequest,
   type ExecutionAuthority,
 } from "@vorton/contracts";
@@ -51,6 +53,8 @@ interface InstallationRow {
   workspace_slug: string;
   workspace_display_name: string;
   workspace_default_module_id: string | null;
+  core_surface_selection_receipt_id: string | null;
+  core_surface_selection_receipt_hash: string | null;
   workspace_realm: "personal" | "organizational";
   person_kind: "owner" | "member";
 }
@@ -104,6 +108,59 @@ interface BootstrapEvidenceRow extends EvidenceRow {
   work_id: string | null;
 }
 
+function resolveBootstrapCoreSurface(
+  workspace: InstallationRow,
+  rows: BootstrapModuleRow[],
+): Pick<
+  RuntimeBootstrap["installations"][number]["workspaces"][number],
+  "moduleSurface" | "coreSurfaceState" | "coreSurfaceSelectionReceipt"
+> {
+  const candidate = {
+    defaultModuleId: workspace.workspace_default_module_id,
+    modules: rows.map((module) => ({
+      id: module.module_id,
+      contractVersion: module.contract_version,
+      label: module.label,
+      navigationOrder: module.navigation_order,
+      presentationVariant: module.presentation_variant,
+    })),
+  };
+  let parsed: ReturnType<typeof projectWorkspaceCoreSurface> | null = null;
+  try {
+    parsed = projectWorkspaceCoreSurface(candidate);
+  } catch {
+    // A stored projection that drifts from the compiled registry fails closed.
+  }
+  const hasRows =
+    rows.length > 0 || workspace.workspace_default_module_id !== null;
+  const hasReceiptId = workspace.core_surface_selection_receipt_id !== null;
+  const hasReceiptHash = workspace.core_surface_selection_receipt_hash !== null;
+  const receipt =
+    hasReceiptId && hasReceiptHash
+      ? workspaceCoreSurfaceSelectionReceiptReferenceSchema.safeParse({
+          receiptId: workspace.core_surface_selection_receipt_id,
+          receiptSha256: workspace.core_surface_selection_receipt_hash,
+        })
+      : null;
+  const coreSurfaceState =
+    !hasRows && !hasReceiptId && !hasReceiptHash
+      ? "unconfigured"
+      : hasRows && !hasReceiptId && !hasReceiptHash
+        ? "upgrade-required"
+        : hasRows && parsed && receipt?.success
+          ? "selected"
+          : "invalid";
+  return {
+    coreSurfaceState,
+    moduleSurface:
+      coreSurfaceState === "selected" && parsed
+        ? parsed
+        : { defaultModuleId: null, modules: [] },
+    coreSurfaceSelectionReceipt:
+      coreSurfaceState === "selected" && receipt?.success ? receipt.data : null,
+  };
+}
+
 export interface RuntimeBootstrap {
   installations: Array<{
     id: string;
@@ -123,6 +180,12 @@ export interface RuntimeBootstrap {
           presentationVariant: string;
         }>;
       };
+      coreSurfaceState:
+        "unconfigured" | "selected" | "upgrade-required" | "invalid";
+      coreSurfaceSelectionReceipt: {
+        receiptId: string;
+        receiptSha256: string;
+      } | null;
       realm: "personal" | "organizational";
       personKind: "owner" | "member";
       workItems: Array<{
@@ -173,6 +236,8 @@ export class DatabaseExecutiveRequestResolver {
                   workspace.slug as workspace_slug,
                   workspace.display_name as workspace_display_name,
                   workspace.default_module_id as workspace_default_module_id,
+                  workspace.core_surface_selection_receipt_id,
+                  workspace.core_surface_selection_receipt_hash,
                   workspace.realm as workspace_realm,
                   membership.kind as person_kind
            from public.people person
@@ -297,22 +362,14 @@ export class DatabaseExecutiveRequestResolver {
                   id: workspace.workspace_id,
                   slug: workspace.workspace_slug,
                   displayName: workspace.workspace_display_name,
-                  moduleSurface: {
-                    defaultModuleId: workspace.workspace_default_module_id,
-                    modules: modules.rows
-                      .filter(
-                        (module) =>
-                          module.installation_id === installationId &&
-                          module.workspace_id === workspace.workspace_id,
-                      )
-                      .map((module) => ({
-                        id: module.module_id,
-                        contractVersion: module.contract_version,
-                        label: module.label,
-                        navigationOrder: module.navigation_order,
-                        presentationVariant: module.presentation_variant,
-                      })),
-                  },
+                  ...resolveBootstrapCoreSurface(
+                    workspace,
+                    modules.rows.filter(
+                      (module) =>
+                        module.installation_id === installationId &&
+                        module.workspace_id === workspace.workspace_id,
+                    ),
+                  ),
                   realm: workspace.workspace_realm,
                   personKind: workspace.person_kind,
                   workItems: workItems.rows

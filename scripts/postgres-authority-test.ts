@@ -26,17 +26,29 @@ import {
   hashWorkspaceMembershipRevocationApprovalReceipt,
   hashWorkspaceMembershipRevocationReceipt,
   hashWorkspaceMembershipRevocationWorkSnapshot,
+  hashWorkspaceCoreSurfaceSelectionApprovalCore,
+  hashWorkspaceCoreSurfaceSelectionApprovalReceipt,
+  hashWorkspaceCoreSurfaceSelectionReceipt,
+  hashWorkspaceCoreSurfaceSelectionWorkSnapshot,
+  hashWorkspaceCoreSurface,
+  deriveWorkspaceCoreSurface,
+  workspaceCompiledCoreSurfaceRegistrySha256,
   moduleLifecycleCanonicalSha256,
   parseModuleLifecycleActionCommandCreation,
   parseModuleLifecycleActionCompletion,
   parseModuleLifecycleApprovalCreation,
   parseWorkspaceMembershipRevocationApprovalCreation,
   parseWorkspaceMembershipRevocationReceipt,
+  parseWorkspaceCoreSurfaceSelectionApprovalCreation,
+  parseWorkspaceCoreSurfaceSelectionReceipt,
   type ExecutiveWorkerJobRequest,
   type ModuleLifecycleActionCompletion,
   type ModuleLifecycleApprovalCreation,
   type WorkspaceMembershipRevocationApprovalCreation,
   type WorkspaceMembershipRevocationReceipt,
+  type WorkspaceCoreSurfaceSelectionApprovalCreation,
+  type WorkspaceCoreSurfaceSelectionReceipt,
+  type WorkspaceCoreSurface,
 } from "@vorton/contracts";
 import { Database } from "@vorton/database";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
@@ -69,6 +81,10 @@ const legacyOwnerAuthUserId = "20202020-2020-4020-8020-202020202020";
 const legacyOwnerPersonId = "30303030-3030-4030-8030-303030303030";
 const legacyWorkspaceId = "40404040-4040-4040-8040-404040404040";
 const legacyBankId = "50505050-5050-4050-8050-505050505050";
+const legacyCoreSurfaceInstallationId = "61616161-6161-4161-8161-616161616161";
+const legacyCoreSurfaceOwnerAuthUserId = "62626262-6262-4262-8262-626262626262";
+const legacyCoreSurfaceOwnerPersonId = "63636363-6363-4363-8363-636363636363";
+const legacyCoreSurfaceWorkspaceId = "64646464-6464-4464-8464-646464646464";
 const releaseAdoptionReceiptId = "88888888-8888-4888-8888-888888888888";
 const workspaceCreationReceiptId = "99999999-9999-4999-8999-999999999999";
 
@@ -270,6 +286,128 @@ async function seedLegacyMemoryBankBeforeIdentityMigration(
   );
 }
 
+async function seedLegacyCoreSurfaceBeforeAuthorityMigration(
+  admin: Client,
+): Promise<void> {
+  await admin.query(
+    "insert into auth.users (id, email) values ($1, 'legacy-core-surface-owner@synthetic.invalid')",
+    [legacyCoreSurfaceOwnerAuthUserId],
+  );
+  await admin.query(
+    `insert into public.installations (id, slug, display_name, realm)
+     values ($1, 'legacy-core-surface-fixture',
+             'Legacy Core Surface Fixture', 'organizational')`,
+    [legacyCoreSurfaceInstallationId],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values ($1, $2, $3, 'Legacy Core Surface Owner', 'owner')`,
+    [
+      legacyCoreSurfaceOwnerPersonId,
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceOwnerAuthUserId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, 'legacy-core-surface', 'Legacy Core Surface',
+             'organizational', $3)`,
+    [
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind, created_at)
+     values ($1, $2, $3, 'owner', '2026-08-31T00:00:00.000Z')`,
+    [
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id,
+        created_at)
+     values
+       ($1, $2, 'command', 'v1', 'Legacy Command', 10, 'standard', $3,
+        '2026-08-31T00:00:01.000Z'),
+       ($1, $2, 'factory', 'v1', 'Legacy Factory', 20,
+        'freed-read-only', $3, '2026-08-31T00:00:02.000Z')`,
+    [
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  await admin.query(
+    `update public.workspaces set default_module_id = 'command'
+      where installation_id = $1 and id = $2`,
+    [legacyCoreSurfaceInstallationId, legacyCoreSurfaceWorkspaceId],
+  );
+  await admin.query(
+    `create temporary table vorton_legacy_core_surface_preimage
+       on commit preserve rows as
+     select to_jsonb(activation) as row_document
+       from public.workspace_module_activations activation
+      where activation.installation_id = $1
+        and activation.workspace_id = $2
+      order by activation.navigation_order, activation.module_id`,
+    [legacyCoreSurfaceInstallationId, legacyCoreSurfaceWorkspaceId],
+  );
+}
+
+async function verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(
+  admin: Client,
+): Promise<void> {
+  const result = await admin.query<{
+    preimage: unknown;
+    current_rows: unknown;
+    legacy_factory_rows: string;
+    lineage_id: string | null;
+    lineage_hash: string | null;
+  }>(
+    `select
+       (select jsonb_agg(snapshot.row_document order by
+          (snapshot.row_document->>'navigation_order')::integer,
+          snapshot.row_document->>'module_id')
+          from vorton_legacy_core_surface_preimage snapshot) as preimage,
+       (select jsonb_agg(to_jsonb(activation) order by
+          activation.navigation_order, activation.module_id)
+          from public.workspace_module_activations activation
+         where activation.installation_id = $1
+           and activation.workspace_id = $2) as current_rows,
+       (select count(*)::text
+          from public.workspace_module_activations activation
+         where activation.installation_id = $1
+           and activation.workspace_id = $2
+           and activation.module_id = 'factory'
+           and activation.contract_version = 'v1'
+           and activation.presentation_variant = 'freed-read-only')
+         as legacy_factory_rows,
+       workspace.core_surface_selection_receipt_id::text as lineage_id,
+       workspace.core_surface_selection_receipt_hash as lineage_hash
+      from public.workspaces workspace
+     where workspace.installation_id = $1 and workspace.id = $2`,
+    [legacyCoreSurfaceInstallationId, legacyCoreSurfaceWorkspaceId],
+  );
+  const row = result.rows[0];
+  requireCondition(
+    canonicalModuleLifecycleJson(row?.preimage) ===
+      canonicalModuleLifecycleJson(row?.current_rows) &&
+      row?.legacy_factory_rows === "1" &&
+      row.lineage_id === null &&
+      row.lineage_hash === null,
+    "Core-surface authority migration rewrote or blessed legacy projection rows",
+  );
+}
+
 async function applyMigrations(admin: Client): Promise<string[]> {
   const migrationNames = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_[a-z0-9_]+\.sql$/.test(name))
@@ -282,9 +420,21 @@ async function applyMigrations(admin: Client): Promise<string[]> {
     if (migrationName === "20260830000600_workspace_memory_bank_identity.sql") {
       await seedLegacyMemoryBankBeforeIdentityMigration(admin);
     }
+    if (
+      migrationName ===
+      "20260831000400_workspace_core_surface_selection_authority.sql"
+    ) {
+      await seedLegacyCoreSurfaceBeforeAuthorityMigration(admin);
+    }
     await admin.query(
       await readFile(join(migrationDirectory, migrationName), "utf8"),
     );
+    if (
+      migrationName ===
+      "20260831000400_workspace_core_surface_selection_authority.sql"
+    ) {
+      await verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(admin);
+    }
   }
   return migrationNames;
 }
@@ -578,6 +728,32 @@ async function expectRuntimeSqlState(
     requireCondition(
       code === expectedCode,
       `${label} failed with SQLSTATE ${code ?? "unknown"}, not ${expectedCode}`,
+    );
+    return;
+  }
+  throw new Error(`${label} unexpectedly succeeded`);
+}
+
+async function expectRuntimeSqlStateAndMessage(
+  databaseUrl: string,
+  role: "authenticated" | "aubos_worker",
+  setup: (client: Client) => Promise<void>,
+  sql: string,
+  values: unknown[],
+  expectedCode: string,
+  expectedMessage: string,
+  label: string,
+): Promise<void> {
+  try {
+    await inRuntimeTransaction(databaseUrl, role, setup, (client) =>
+      client.query(sql, values),
+    );
+  } catch (error) {
+    const databaseError = error as { code?: string; message?: string };
+    requireCondition(
+      databaseError.code === expectedCode &&
+        databaseError.message === expectedMessage,
+      `${label} failed with SQLSTATE ${databaseError.code ?? "unknown"} and ${databaseError.message ?? "no message"}`,
     );
     return;
   }
@@ -2980,7 +3156,7 @@ async function proveWorkspaceModuleProjectionBoundary(
         navigation_order, presentation_variant, created_by_person_id)
      values
        ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3),
-       ($1, $2, 'factory', 'v1', 'Factory', 20, 'freed-read-only', $3)`,
+       ($1, $2, 'factory', 'v1', 'Factory', 20, 'read-only', $3)`,
     [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
   );
   await admin.query(
@@ -3140,7 +3316,7 @@ async function proveWorkspaceModuleProjectionBoundary(
             contract_version: "v1",
             label: "Factory",
             navigation_order: 20,
-            presentation_variant: "freed-read-only",
+            presentation_variant: "read-only",
           },
         ]),
     "Organizational workspace module projection drifted from exact tuples",
@@ -3188,6 +3364,2481 @@ async function proveWorkspaceModuleProjectionBoundary(
       revokedLegacyProjection.activations.length === 0,
     "Revoked workspace member retained module projection access",
   );
+}
+
+async function proveWorkspaceCoreSurfaceSelectionBoundary(
+  admin: Client,
+  adminDatabaseUrl: string,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+): Promise<void> {
+  const ids = {
+    workspace: randomUUID(),
+    outOfBandWorkspace: randomUUID(),
+    ownerAuth: randomUUID(),
+    ownerPerson: randomUUID(),
+    nonOwnerAuth: randomUUID(),
+    nonOwnerPerson: randomUUID(),
+    revokedOwnerAuth: randomUUID(),
+    revokedOwnerPerson: randomUUID(),
+    noMembershipAuth: randomUUID(),
+    noMembershipPerson: randomUUID(),
+    worker: randomUUID(),
+    validWork: randomUUID(),
+    proposedWork: randomUUID(),
+    wrongCustodianWork: randomUUID(),
+    leasedWork: randomUUID(),
+    workDriftWork: randomUUID(),
+    policyDriftWork: randomUUID(),
+    grantDriftWork: randomUUID(),
+    rollbackWork: randomUUID(),
+    receiptRaceWorkspaceA: randomUUID(),
+    receiptRaceWorkspaceB: randomUUID(),
+    receiptRaceWorkA: randomUUID(),
+    receiptRaceWorkB: randomUUID(),
+    receiptRacePolicyA: randomUUID(),
+    receiptRacePolicyB: randomUUID(),
+    receiptRaceGrantA: randomUUID(),
+    receiptRaceGrantB: randomUUID(),
+    goodPolicy: randomUUID(),
+    badPolicy: randomUUID(),
+    policyDriftPolicy: randomUUID(),
+    goodGrant: randomUUID(),
+    wrongPrincipalGrant: randomUUID(),
+    wrongWorkGrant: randomUUID(),
+    wrongCapabilityGrant: randomUUID(),
+    wrongModeGrant: randomUUID(),
+    expiredGrant: randomUUID(),
+    revokedGrant: randomUUID(),
+    badPolicyGrant: randomUUID(),
+    proposedWorkGrant: randomUUID(),
+    wrongCustodianGrant: randomUUID(),
+    leasedWorkGrant: randomUUID(),
+    workDriftGrant: randomUUID(),
+    policyDriftGrant: randomUUID(),
+    grantDriftGrant: randomUUID(),
+    rollbackGrant: randomUUID(),
+  };
+
+  await admin.query(
+    `insert into auth.users (id, email) values
+       ($1, 'core-surface-selection-owner@synthetic.invalid'),
+       ($2, 'core-surface-selection-member@synthetic.invalid'),
+       ($3, 'core-surface-selection-revoked@synthetic.invalid'),
+       ($4, 'core-surface-selection-no-membership@synthetic.invalid')`,
+    [
+      ids.ownerAuth,
+      ids.nonOwnerAuth,
+      ids.revokedOwnerAuth,
+      ids.noMembershipAuth,
+    ],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values
+       ($1, $9, $2, 'Synthetic core-surface selection owner', 'owner'),
+       ($3, $9, $4, 'Synthetic core-surface selection member', 'member'),
+       ($5, $9, $6, 'Synthetic revoked core-surface selection owner', 'owner'),
+       ($7, $9, $8, 'Synthetic core-surface selection person without membership',
+        'owner')`,
+    [
+      ids.ownerPerson,
+      ids.ownerAuth,
+      ids.nonOwnerPerson,
+      ids.nonOwnerAuth,
+      ids.revokedOwnerPerson,
+      ids.revokedOwnerAuth,
+      ids.noMembershipPerson,
+      ids.noMembershipAuth,
+      bootstrap.installationId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values
+       ($1, $3, $4, 'Synthetic governed core-surface selection',
+        'organizational', $5),
+       ($2, $3, $6, 'Synthetic out-of-band module projection',
+        'organizational', $5),
+       ($7, $3, $8, 'Synthetic receipt identity race A',
+        'organizational', $5),
+       ($9, $3, $10, 'Synthetic receipt identity race B',
+        'organizational', $5)`,
+    [
+      ids.workspace,
+      ids.outOfBandWorkspace,
+      bootstrap.installationId,
+      `selection-${ids.workspace.slice(0, 8)}`,
+      ids.ownerPerson,
+      `out-of-band-${ids.outOfBandWorkspace.slice(0, 8)}`,
+      ids.receiptRaceWorkspaceA,
+      `receipt-race-a-${ids.receiptRaceWorkspaceA.slice(0, 8)}`,
+      ids.receiptRaceWorkspaceB,
+      `receipt-race-b-${ids.receiptRaceWorkspaceB.slice(0, 8)}`,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values
+       ($1, $2, $4, 'owner'),
+       ($1, $2, $5, 'member'),
+       ($1, $2, $6, 'owner'),
+       ($1, $3, $4, 'owner'),
+       ($1, $7, $4, 'owner'),
+       ($1, $8, $4, 'owner')`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      ids.outOfBandWorkspace,
+      ids.ownerPerson,
+      ids.nonOwnerPerson,
+      ids.revokedOwnerPerson,
+      ids.receiptRaceWorkspaceA,
+      ids.receiptRaceWorkspaceB,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values ($1, $2, $3, $4,
+             date_trunc('milliseconds', clock_timestamp()))`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      ids.revokedOwnerPerson,
+      ids.ownerPerson,
+    ],
+  );
+  await admin.query(
+    `insert into public.workers
+       (id, installation_id, workspace_id, name, provider, billing_realm, host,
+        runtime, model, advertised_capabilities, data_classification_ceiling,
+        isolation, network_policy, health)
+     select $1, installation_id, $2, $3, provider, billing_realm, host,
+            runtime, model, advertised_capabilities, data_classification_ceiling,
+            isolation, network_policy, health
+       from public.workers
+      where installation_id = $4 and workspace_id = $5 and id = $6`,
+    [
+      ids.worker,
+      ids.workspace,
+      `Synthetic core-surface selection worker ${ids.worker.slice(0, 8)}`,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      bootstrap.workerId,
+    ],
+  );
+
+  const insertWork = async (
+    id: string,
+    state: "proposed" | "ready" | "leased",
+    custodianPersonId: string | null,
+    custodianWorkerId: string | null = null,
+    workspaceId = ids.workspace,
+  ): Promise<void> => {
+    await admin.query(
+      `insert into public.work
+         (id, installation_id, workspace_id, title, requested_outcome,
+          acceptance_criteria, state, priority, requested_by_person_id,
+          custodian_person_id, custodian_worker_id, lease_expires_at,
+          created_at, updated_at)
+       values
+         ($1, $2, $3, $4, $5, $6::jsonb, $7::public.work_state, 91,
+          $8, $9, $10,
+          case when $7::text = 'leased'
+            then clock_timestamp() + interval '1 hour' else null end,
+          '2026-08-31T18:00:00.123456Z'::timestamptz,
+          '2026-08-31T18:15:00.654321Z'::timestamptz)`,
+      [
+        id,
+        bootstrap.installationId,
+        workspaceId,
+        `Govern core-surface selection ${id.slice(0, 8)}`,
+        "Replace one exact compiled workspace core surface",
+        JSON.stringify([
+          "Bind the exact current receipt lineage",
+          "Leave every foreign workspace unchanged",
+        ]),
+        state,
+        ids.ownerPerson,
+        custodianPersonId,
+        custodianWorkerId,
+      ],
+    );
+  };
+  await insertWork(ids.validWork, "ready", ids.ownerPerson);
+  await insertWork(ids.proposedWork, "proposed", ids.ownerPerson);
+  await insertWork(ids.wrongCustodianWork, "ready", ids.nonOwnerPerson);
+  await insertWork(ids.leasedWork, "leased", null, ids.worker);
+  await insertWork(ids.workDriftWork, "ready", ids.ownerPerson);
+  await insertWork(ids.policyDriftWork, "ready", ids.ownerPerson);
+  await insertWork(ids.grantDriftWork, "ready", ids.ownerPerson);
+  await insertWork(ids.rollbackWork, "ready", ids.ownerPerson);
+  await insertWork(
+    ids.receiptRaceWorkA,
+    "ready",
+    ids.ownerPerson,
+    null,
+    ids.receiptRaceWorkspaceA,
+  );
+  await insertWork(
+    ids.receiptRaceWorkB,
+    "ready",
+    ids.ownerPerson,
+    null,
+    ids.receiptRaceWorkspaceB,
+  );
+
+  const goodPolicyDefinition = {
+    version: 1,
+    capability: "workspace.core-surface.select",
+    rule: "exact-compiled-surface",
+  };
+  const policyDriftDefinition = {
+    version: 1,
+    capability: "workspace.core-surface.select",
+    rule: "drift-test",
+  };
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     values
+       ($1, $4, $5, 'Synthetic core-surface selection', 1, $6::jsonb, $7, $8),
+       ($2, $4, $5, 'Synthetic invalid core-surface selection', 1, $6::jsonb,
+        $9, $8),
+       ($3, $4, $5, 'Synthetic drifting core-surface selection', 1,
+        $10::jsonb, $11, $8)`,
+    [
+      ids.goodPolicy,
+      ids.badPolicy,
+      ids.policyDriftPolicy,
+      bootstrap.installationId,
+      ids.workspace,
+      JSON.stringify(goodPolicyDefinition),
+      canonicalSha256(goodPolicyDefinition).slice("sha256:".length),
+      ids.ownerPerson,
+      "0".repeat(64),
+      JSON.stringify(policyDriftDefinition),
+      canonicalSha256(policyDriftDefinition).slice("sha256:".length),
+    ],
+  );
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     values
+       ($1, $3, $4, 'Synthetic receipt identity race A', 1, $5::jsonb,
+        $6, $7),
+       ($2, $3, $8, 'Synthetic receipt identity race B', 1, $5::jsonb,
+        $6, $7)`,
+    [
+      ids.receiptRacePolicyA,
+      ids.receiptRacePolicyB,
+      bootstrap.installationId,
+      ids.receiptRaceWorkspaceA,
+      JSON.stringify(goodPolicyDefinition),
+      canonicalSha256(goodPolicyDefinition).slice("sha256:".length),
+      ids.ownerPerson,
+      ids.receiptRaceWorkspaceB,
+    ],
+  );
+
+  const insertGrant = async (options: {
+    id: string;
+    workId: string;
+    policyId?: string;
+    personId?: string;
+    capability?: string;
+    mode?: "observe" | "modify";
+    expiresAt?: string | null;
+    workspaceId?: string;
+  }): Promise<void> => {
+    await admin.query(
+      `insert into public.capability_grants
+         (id, installation_id, workspace_id, policy_id, principal_kind,
+          person_id, worker_id, capability, mode, work_id, expires_at,
+          granted_by_person_id, granted_at)
+       values
+         ($1, $2, $3, $4, 'person', $5, null, $6, $7, $8,
+          $9::timestamptz, $10, clock_timestamp() - interval '2 hours')`,
+      [
+        options.id,
+        bootstrap.installationId,
+        options.workspaceId ?? ids.workspace,
+        options.policyId ?? ids.goodPolicy,
+        options.personId ?? ids.ownerPerson,
+        options.capability ?? "workspace.core-surface.select",
+        options.mode ?? "modify",
+        options.workId,
+        options.expiresAt ?? null,
+        ids.ownerPerson,
+      ],
+    );
+  };
+  await insertGrant({ id: ids.goodGrant, workId: ids.validWork });
+  await insertGrant({
+    id: ids.wrongPrincipalGrant,
+    workId: ids.validWork,
+    personId: ids.nonOwnerPerson,
+  });
+  await insertGrant({ id: ids.wrongWorkGrant, workId: ids.proposedWork });
+  await insertGrant({
+    id: ids.wrongCapabilityGrant,
+    workId: ids.validWork,
+    capability: "workspace.module.observe",
+  });
+  await insertGrant({
+    id: ids.wrongModeGrant,
+    workId: ids.validWork,
+    mode: "observe",
+  });
+  await insertGrant({
+    id: ids.expiredGrant,
+    workId: ids.validWork,
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  await insertGrant({ id: ids.revokedGrant, workId: ids.validWork });
+  await insertGrant({
+    id: ids.badPolicyGrant,
+    workId: ids.validWork,
+    policyId: ids.badPolicy,
+  });
+  await insertGrant({ id: ids.proposedWorkGrant, workId: ids.proposedWork });
+  await insertGrant({
+    id: ids.wrongCustodianGrant,
+    workId: ids.wrongCustodianWork,
+  });
+  await insertGrant({ id: ids.leasedWorkGrant, workId: ids.leasedWork });
+  await insertGrant({ id: ids.workDriftGrant, workId: ids.workDriftWork });
+  await insertGrant({
+    id: ids.policyDriftGrant,
+    workId: ids.policyDriftWork,
+    policyId: ids.policyDriftPolicy,
+  });
+  await insertGrant({ id: ids.grantDriftGrant, workId: ids.grantDriftWork });
+  await insertGrant({ id: ids.rollbackGrant, workId: ids.rollbackWork });
+  await insertGrant({
+    id: ids.receiptRaceGrantA,
+    workId: ids.receiptRaceWorkA,
+    policyId: ids.receiptRacePolicyA,
+    workspaceId: ids.receiptRaceWorkspaceA,
+  });
+  await insertGrant({
+    id: ids.receiptRaceGrantB,
+    workId: ids.receiptRaceWorkB,
+    policyId: ids.receiptRacePolicyB,
+    workspaceId: ids.receiptRaceWorkspaceB,
+  });
+  await admin.query(
+    `insert into public.capability_grant_revocations
+       (installation_id, workspace_id, grant_id, revoked_by_person_id,
+        reason, revoked_at)
+     values ($1, $2, $3, $4, 'Synthetic revoked core-surface selection grant',
+             clock_timestamp())`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      ids.revokedGrant,
+      ids.ownerPerson,
+    ],
+  );
+
+  const emptyPreferences = {
+    defaultCoreSurfaceId: null,
+    coreSurfaces: [],
+  } as const;
+  const activePreferences = {
+    defaultCoreSurfaceId: "command",
+    coreSurfaces: [
+      { id: "command", navigationOrder: 10 },
+      { id: "tasks", navigationOrder: 20 },
+    ],
+  } as const;
+  const emptySurface: WorkspaceCoreSurface =
+    deriveWorkspaceCoreSurface(emptyPreferences);
+  const activeSurface: WorkspaceCoreSurface =
+    deriveWorkspaceCoreSurface(activePreferences);
+  const emptySurfaceHash = await hashWorkspaceCoreSurface(emptySurface);
+  const activeSurfaceHash = await hashWorkspaceCoreSurface(activeSurface);
+  const personalSurfaceBefore = await admin.query<{
+    surface: unknown;
+    receipt_id: string | null;
+    receipt_hash: string | null;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            core_surface_selection_receipt_id::text as receipt_id,
+            core_surface_selection_receipt_hash as receipt_hash
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, otherWorkspaceId],
+  );
+
+  const createSql = `select public.create_workspace_core_surface_selection_approval(
+    $1, $2, $3, $4, $5, $6::text, $7::text, $8::jsonb, $9::jsonb,
+    $10::timestamptz
+  ) as creation`;
+  const applySql = `select public.apply_workspace_core_surface_selection(
+    $1, $2, $3, $4
+  ) as result`;
+  const expiry = (milliseconds = 60 * 60 * 1_000): string =>
+    new Date(Date.now() + milliseconds).toISOString();
+  const signedOwner =
+    (
+      subjectId = ids.ownerAuth,
+      authTime = Math.floor(Date.now() / 1_000),
+      options: Parameters<typeof setWorkspaceStepUpContext>[5] = {},
+      installationId = bootstrap.installationId,
+      workspaceId = ids.workspace,
+    ) =>
+    (client: Client): Promise<void> =>
+      setWorkspaceStepUpContext(
+        client,
+        installationId,
+        workspaceId,
+        subjectId,
+        authTime,
+        options,
+      );
+  const creationValues = (options: {
+    approvalId: string;
+    workId?: string;
+    capabilityGrantId?: string;
+    compiledRegistrySha256?: string;
+    expectedCurrentSurfaceSha256?: string;
+    expectedPredecessorCoreSurfaceSelectionReceipt?: unknown;
+    targetPreferences?: unknown;
+    expiresAt?: string;
+    installationId?: string;
+    workspaceId?: string;
+  }): unknown[] => [
+    options.approvalId,
+    options.installationId ?? bootstrap.installationId,
+    options.workspaceId ?? ids.workspace,
+    options.workId ?? ids.validWork,
+    options.capabilityGrantId ?? ids.goodGrant,
+    options.compiledRegistrySha256 ??
+      workspaceCompiledCoreSurfaceRegistrySha256,
+    options.expectedCurrentSurfaceSha256 ?? emptySurfaceHash,
+    options.expectedPredecessorCoreSurfaceSelectionReceipt === undefined
+      ? null
+      : options.expectedPredecessorCoreSurfaceSelectionReceipt,
+    JSON.stringify(options.targetPreferences ?? activePreferences),
+    options.expiresAt ?? expiry(),
+  ];
+  const createApproval = async (
+    options: Parameters<typeof creationValues>[0],
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<WorkspaceCoreSurfaceSelectionApprovalCreation> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      async (client) => {
+        const result = await client.query<{ creation: unknown }>(
+          createSql,
+          creationValues(options),
+        );
+        return parseWorkspaceCoreSurfaceSelectionApprovalCreation(
+          result.rows[0]?.creation,
+        );
+      },
+    );
+  const denyCreate = (
+    label: string,
+    options: Parameters<typeof creationValues>[0],
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<void> =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      createSql,
+      creationValues(options),
+      "P0001",
+      label,
+    );
+  const applySelection = async (
+    creation: WorkspaceCoreSurfaceSelectionApprovalCreation,
+    receiptId: string,
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<WorkspaceCoreSurfaceSelectionReceipt> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      async (client) => {
+        const result = await client.query<{ result: unknown }>(applySql, [
+          receiptId,
+          creation.approval.approvalId,
+          creation.approval.binding.vortonInstallationId,
+          creation.approval.binding.workspaceId,
+        ]);
+        const bundle = result.rows[0]?.result as
+          { receipt?: unknown } | undefined;
+        return parseWorkspaceCoreSurfaceSelectionReceipt(
+          bundle?.receipt,
+          creation,
+        );
+      },
+    );
+  const denyApply = (
+    label: string,
+    creation: WorkspaceCoreSurfaceSelectionApprovalCreation,
+    receiptId = randomUUID(),
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<void> =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      applySql,
+      [
+        receiptId,
+        creation.approval.approvalId,
+        creation.approval.binding.vortonInstallationId,
+        creation.approval.binding.workspaceId,
+      ],
+      "P0001",
+      label,
+    );
+  const withoutRuntimeContextKey = async (
+    operation: () => Promise<void>,
+  ): Promise<void> => {
+    const key = await admin.query<{
+      role_name: string;
+      secret: Buffer;
+      created_at: Date;
+    }>(
+      `delete from aubos_private.runtime_context_keys
+        where role_name = $1
+        returning role_name::text, secret, created_at`,
+      [bootstrap.runtimeDatabaseRole],
+    );
+    const removedKey = key.rows[0];
+    requireCondition(
+      removedKey,
+      "Synthetic runtime context key was unavailable for missing-key proof",
+    );
+    try {
+      await operation();
+    } finally {
+      await admin.query(
+        `insert into aubos_private.runtime_context_keys
+           (role_name, secret, created_at)
+         values ($1, $2, $3)`,
+        [removedKey.role_name, removedKey.secret, removedKey.created_at],
+      );
+    }
+  };
+
+  const legacySurfaceState = await admin.query<{
+    surface: unknown;
+    surface_hash: string;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            public.vorton_module_lifecycle_hash(
+              public.workspace_core_surface_document($1, $2)
+            ) as surface_hash`,
+    [legacyCoreSurfaceInstallationId, legacyCoreSurfaceWorkspaceId],
+  );
+  const legacySurfaceHash = legacySurfaceState.rows[0]?.surface_hash;
+  requireCondition(
+    legacySurfaceHash,
+    "Legacy core-surface fixture did not expose an exact preimage hash",
+  );
+  const signedLegacyOwner = signedOwner(
+    legacyCoreSurfaceOwnerAuthUserId,
+    Math.floor(Date.now() / 1_000),
+    {},
+    legacyCoreSurfaceInstallationId,
+    legacyCoreSurfaceWorkspaceId,
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyOwner,
+    createSql,
+    [
+      randomUUID(),
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      randomUUID(),
+      randomUUID(),
+      workspaceCompiledCoreSurfaceRegistrySha256,
+      legacySurfaceHash,
+      null,
+      JSON.stringify(activePreferences),
+      expiry(),
+    ],
+    "P0001",
+    "Unreconciled legacy core surface approval",
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyOwner,
+    applySql,
+    [
+      randomUUID(),
+      randomUUID(),
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+    ],
+    "P0001",
+    "Unreconciled legacy core surface application",
+  );
+  await verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(admin);
+
+  // Current presentation attribution belongs to the installation person, not
+  // to mutable workspace membership. Existing revocation-ledger retention is
+  // a separate audit contract, so this fixture deliberately has no revocation.
+  await admin.query(
+    `delete from public.workspace_memberships
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  const unpinnedAttribution = await admin.query<{
+    memberships: string;
+    attributed_rows: string;
+  }>(
+    `select
+       (select count(*)::text from public.workspace_memberships
+         where installation_id = $1 and workspace_id = $2 and person_id = $3)
+         as memberships,
+       (select count(*)::text from public.workspace_module_activations
+         where installation_id = $1 and workspace_id = $2
+           and created_by_person_id = $3) as attributed_rows`,
+    [
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  requireCondition(
+    unpinnedAttribution.rows[0]?.memberships === "0" &&
+      unpinnedAttribution.rows[0]?.attributed_rows === "2",
+    "Current core-surface attribution still pinned workspace membership",
+  );
+  await verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(admin);
+
+  for (const [label, setup] of [
+    [
+      "Unsigned core-surface selection base context",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        baseSignature: "unsigned",
+      }),
+    ],
+    [
+      "Forged core-surface selection base context",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        baseSignature: "forged",
+      }),
+    ],
+    [
+      "Unsigned core-surface selection step-up context",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "unsigned",
+      }),
+    ],
+    [
+      "Forged core-surface selection step-up context",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "forged",
+      }),
+    ],
+    [
+      "AAL1 core-surface selection context",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        aal: "aal1",
+      }),
+    ],
+    [
+      "Stale core-surface selection AAL2",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000) - 601),
+    ],
+    [
+      "Future core-surface selection AAL2",
+      signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000) + 60),
+    ],
+    ["Core-surface selection by non-owner", signedOwner(ids.nonOwnerAuth)],
+    [
+      "Core-surface selection by revoked owner",
+      signedOwner(ids.revokedOwnerAuth),
+    ],
+    [
+      "Core-surface selection by person without membership",
+      signedOwner(ids.noMembershipAuth),
+    ],
+    [
+      "Core-surface selection with wrong signed workspace",
+      signedOwner(
+        ids.ownerAuth,
+        Math.floor(Date.now() / 1_000),
+        {},
+        bootstrap.installationId,
+        ids.outOfBandWorkspace,
+      ),
+    ],
+    [
+      "Core-surface selection with wrong signed installation",
+      signedOwner(
+        ids.ownerAuth,
+        Math.floor(Date.now() / 1_000),
+        {},
+        otherInstallationId,
+        ids.workspace,
+      ),
+    ],
+  ] as const) {
+    await denyCreate(label, { approvalId: randomUUID() }, setup);
+  }
+
+  const nonexistentWorkspaceId = randomUUID();
+  const forgedContext = (workspaceId: string) =>
+    signedOwner(
+      ids.ownerAuth,
+      Math.floor(Date.now() / 1_000),
+      { baseSignature: "forged" },
+      bootstrap.installationId,
+      workspaceId,
+    );
+  for (const [label, workspaceId] of [
+    ["existing workspace create existence oracle", ids.workspace],
+    ["nonexistent workspace create existence oracle", nonexistentWorkspaceId],
+  ] as const) {
+    await expectRuntimeSqlStateAndMessage(
+      runtimeDatabaseUrl,
+      "authenticated",
+      forgedContext(workspaceId),
+      createSql,
+      creationValues({ approvalId: randomUUID(), workspaceId }),
+      "P0001",
+      "Signed recent workspace-person AAL2 is required",
+      label,
+    );
+  }
+  for (const [label, workspaceId] of [
+    ["existing workspace apply existence oracle", ids.workspace],
+    ["nonexistent workspace apply existence oracle", nonexistentWorkspaceId],
+  ] as const) {
+    await expectRuntimeSqlStateAndMessage(
+      runtimeDatabaseUrl,
+      "authenticated",
+      forgedContext(workspaceId),
+      applySql,
+      [randomUUID(), randomUUID(), bootstrap.installationId, workspaceId],
+      "P0001",
+      "Signed recent workspace-person AAL2 is required",
+      label,
+    );
+  }
+
+  for (const [label, workId, capabilityGrantId] of [
+    [
+      "Wrong person core-surface selection grant",
+      ids.validWork,
+      ids.wrongPrincipalGrant,
+    ],
+    [
+      "Wrong Work core-surface selection grant",
+      ids.validWork,
+      ids.wrongWorkGrant,
+    ],
+    [
+      "Wrong core-surface selection capability",
+      ids.validWork,
+      ids.wrongCapabilityGrant,
+    ],
+    ["Wrong core-surface selection mode", ids.validWork, ids.wrongModeGrant],
+    ["Expired core-surface selection grant", ids.validWork, ids.expiredGrant],
+    ["Revoked core-surface selection grant", ids.validWork, ids.revokedGrant],
+    [
+      "Invalid core-surface selection Policy",
+      ids.validWork,
+      ids.badPolicyGrant,
+    ],
+    [
+      "Proposed core-surface selection Work",
+      ids.proposedWork,
+      ids.proposedWorkGrant,
+    ],
+    [
+      "Wrong-custodian core-surface selection Work",
+      ids.wrongCustodianWork,
+      ids.wrongCustodianGrant,
+    ],
+    ["Leased core-surface selection Work", ids.leasedWork, ids.leasedWorkGrant],
+  ] as const) {
+    await denyCreate(label, {
+      approvalId: randomUUID(),
+      workId,
+      capabilityGrantId,
+    });
+  }
+
+  for (const [label, targetPreferences] of [
+    [
+      "Core-surface selection default outside target preferences",
+      { ...activePreferences, defaultCoreSurfaceId: "goals" },
+    ],
+    [
+      "Unordered core-surface selection target preferences",
+      {
+        ...activePreferences,
+        coreSurfaces: [...activePreferences.coreSurfaces].reverse(),
+      },
+    ],
+    [
+      "Duplicate core-surface selection navigation order",
+      {
+        ...activePreferences,
+        coreSurfaces: activePreferences.coreSurfaces.map((surface) => ({
+          ...surface,
+          navigationOrder: 10,
+        })),
+      },
+    ],
+    [
+      "Unsupported core-surface selection identity",
+      {
+        defaultCoreSurfaceId: "finance",
+        coreSurfaces: [{ id: "finance", navigationOrder: 10 }],
+      },
+    ],
+    [
+      "Caller-supplied core-surface label injection",
+      {
+        defaultCoreSurfaceId: "factory",
+        coreSurfaces: [
+          { id: "factory", navigationOrder: 10, label: "Substituted" },
+        ],
+      },
+    ],
+    [
+      "Caller-supplied presentation variant injection",
+      {
+        defaultCoreSurfaceId: "factory",
+        coreSurfaces: [
+          {
+            id: "factory",
+            navigationOrder: 10,
+            presentationVariant: "standard",
+          },
+        ],
+      },
+    ],
+  ] as const) {
+    await denyCreate(label, { approvalId: randomUUID(), targetPreferences });
+  }
+  await denyCreate("Substituted compiled core-surface registry digest", {
+    approvalId: randomUUID(),
+    compiledRegistrySha256: canonicalSha256("substituted-registry"),
+  });
+  await denyCreate("Substituted current core-surface hash", {
+    approvalId: randomUUID(),
+    expectedCurrentSurfaceSha256: activeSurfaceHash,
+  });
+  await denyCreate("Genesis with invented predecessor", {
+    approvalId: randomUUID(),
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: randomUUID(),
+      receiptSha256: canonicalSha256("invented-predecessor"),
+    },
+  });
+  await denyCreate("Core-surface selection with unchanged target surface", {
+    approvalId: randomUUID(),
+    targetPreferences: emptyPreferences,
+  });
+  await denyCreate("Core-surface selection approval identity reused as Work", {
+    approvalId: ids.validWork,
+  });
+  await denyCreate("Core-surface selection approval identity reused as grant", {
+    approvalId: ids.goodGrant,
+  });
+  await denyCreate(
+    "Core-surface selection approval identity reused as Policy",
+    {
+      approvalId: ids.goodPolicy,
+    },
+  );
+  await denyCreate("Core-surface selection Work identity reused as grant", {
+    approvalId: randomUUID(),
+    workId: ids.goodGrant,
+    capabilityGrantId: ids.goodGrant,
+  });
+  const predecessorCollisionApprovalId = randomUUID();
+  await denyCreate(
+    "Core-surface selection predecessor reuses approval identity",
+    {
+      approvalId: predecessorCollisionApprovalId,
+      expectedPredecessorCoreSurfaceSelectionReceipt: {
+        receiptId: predecessorCollisionApprovalId,
+        receiptSha256: canonicalSha256("predecessor-identity-collision"),
+      },
+    },
+  );
+  await denyCreate("Core-surface selection predecessor reuses current hash", {
+    approvalId: randomUUID(),
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: randomUUID(),
+      receiptSha256: emptySurfaceHash,
+    },
+  });
+  await denyCreate("Core-surface selection predecessor reuses target hash", {
+    approvalId: randomUUID(),
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: randomUUID(),
+      receiptSha256: activeSurfaceHash,
+    },
+  });
+
+  await admin.query(
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3)`,
+    [bootstrap.installationId, ids.outOfBandWorkspace, ids.ownerPerson],
+  );
+  await admin.query(
+    `update public.workspaces set default_module_id = 'command'
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.outOfBandWorkspace],
+  );
+  const outOfBandSurface = {
+    defaultModuleId: "command",
+    modules: [activeSurface.modules[0]],
+  };
+  await denyCreate(
+    "Out-of-band module rows retroactively blessed",
+    {
+      approvalId: randomUUID(),
+      installationId: bootstrap.installationId,
+      workspaceId: ids.outOfBandWorkspace,
+      expectedCurrentSurfaceSha256:
+        await hashWorkspaceCoreSurface(outOfBandSurface),
+    },
+    signedOwner(
+      ids.ownerAuth,
+      Math.floor(Date.now() / 1_000),
+      {},
+      bootstrap.installationId,
+      ids.outOfBandWorkspace,
+    ),
+  );
+
+  const tableCountsBefore = await admin.query<{
+    approvals: string;
+    approval_receipts: string;
+    selection_receipts: string;
+    records: string;
+  }>(`select
+    (select count(*)::text from public.workspace_core_surface_selection_approvals)
+      as approvals,
+    (select count(*)::text
+       from public.workspace_core_surface_selection_approval_receipts)
+      as approval_receipts,
+    (select count(*)::text from public.workspace_core_surface_selection_receipts)
+      as selection_receipts,
+    (select count(*)::text from public.records) as records`);
+  await admin.query(`
+    create function public.vorton_test_fail_core_surface_selection_approval_receipt()
+    returns trigger language plpgsql as $$
+    begin
+      raise exception 'Synthetic core-surface selection approval receipt failure';
+    end
+    $$;
+    create trigger vorton_test_fail_core_surface_selection_approval_receipt
+      before insert on public.workspace_core_surface_selection_approval_receipts
+      for each row
+      execute function public.vorton_test_fail_core_surface_selection_approval_receipt();
+  `);
+  try {
+    await denyCreate(
+      "Core-surface selection approval receipt insertion rollback",
+      {
+        approvalId: randomUUID(),
+        expectedPredecessorCoreSurfaceSelectionReceipt: null,
+      },
+    );
+  } finally {
+    await admin.query(`
+      drop trigger vorton_test_fail_core_surface_selection_approval_receipt
+        on public.workspace_core_surface_selection_approval_receipts;
+      drop function public.vorton_test_fail_core_surface_selection_approval_receipt();
+    `);
+  }
+  const countsAfterFailedApproval = await admin.query<{
+    approvals: string;
+    approval_receipts: string;
+    selection_receipts: string;
+    records: string;
+  }>(`select
+    (select count(*)::text from public.workspace_core_surface_selection_approvals)
+      as approvals,
+    (select count(*)::text
+       from public.workspace_core_surface_selection_approval_receipts)
+      as approval_receipts,
+    (select count(*)::text from public.workspace_core_surface_selection_receipts)
+      as selection_receipts,
+    (select count(*)::text from public.records) as records`);
+  requireCondition(
+    canonicalModuleLifecycleJson(countsAfterFailedApproval.rows[0]) ===
+      canonicalModuleLifecycleJson(tableCountsBefore.rows[0]),
+    "Failed core-surface selection approval did not roll back authority atomically",
+  );
+  const mainApprovalId = randomUUID();
+  const mainCreation = await createApproval({
+    approvalId: mainApprovalId,
+    expiresAt: expiry(3_000),
+    // Deliberately use JavaScript null, which node-postgres sends as SQL NULL.
+    expectedPredecessorCoreSurfaceSelectionReceipt: null,
+  });
+  requireCondition(
+    mainCreation.approval.binding.predecessorCoreSurfaceSelectionReceipt ===
+      null &&
+      mainCreation.approval.binding.realm === "organizational" &&
+      mainCreation.approval.ownerPersonId === ids.ownerPerson &&
+      mainCreation.approval.authority.personId === ids.ownerPerson,
+    "Genesis approval did not derive exact owner, realm, or null lineage",
+  );
+  requireCondition(
+    (await hashWorkspaceCoreSurfaceSelectionApprovalCore(
+      mainCreation.approval,
+    )) === mainCreation.approvalReceipt.approvalHash &&
+      (await hashWorkspaceCoreSurfaceSelectionApprovalReceipt(
+        mainCreation.approvalReceipt,
+      )) === mainCreation.approvalReceipt.receiptHash &&
+      (await hashWorkspaceCoreSurface(
+        mainCreation.approval.binding.currentSurface,
+      )) === mainCreation.approval.binding.currentSurfaceSha256 &&
+      (await hashWorkspaceCoreSurface(
+        mainCreation.approval.binding.targetSurface,
+      )) === mainCreation.approval.binding.targetSurfaceSha256,
+    "PostgreSQL core-surface selection approval hashes differ from TypeScript",
+  );
+  const persistedWork = await admin.query<{ snapshot: unknown }>(
+    `select work_snapshot as snapshot
+       from public.workspace_core_surface_selection_approvals
+      where installation_id = $1 and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, ids.workspace, mainApprovalId],
+  );
+  requireCondition(
+    (await hashWorkspaceCoreSurfaceSelectionWorkSnapshot(
+      persistedWork.rows[0]?.snapshot,
+    )) === mainCreation.approval.binding.workSnapshotSha256,
+    "PostgreSQL core-surface selection Work snapshot hash differs from TypeScript",
+  );
+  const tableCountsAfterApproval = await admin.query<{
+    approvals: string;
+    approval_receipts: string;
+    selection_receipts: string;
+    records: string;
+    module_rows: string;
+    default_module_id: string | null;
+    lineage_id: string | null;
+  }>(
+    `select
+      (select count(*)::text from public.workspace_core_surface_selection_approvals)
+        as approvals,
+      (select count(*)::text
+         from public.workspace_core_surface_selection_approval_receipts)
+        as approval_receipts,
+      (select count(*)::text from public.workspace_core_surface_selection_receipts)
+        as selection_receipts,
+      (select count(*)::text from public.records) as records,
+      (select count(*)::text from public.workspace_module_activations
+        where installation_id = $1 and workspace_id = $2) as module_rows,
+      default_module_id,
+      core_surface_selection_receipt_id::text as lineage_id
+     from public.workspaces where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  const approvedCounts = tableCountsAfterApproval.rows[0];
+  requireCondition(
+    Number(approvedCounts?.approvals) ===
+      Number(tableCountsBefore.rows[0]?.approvals) + 1 &&
+      Number(approvedCounts?.approval_receipts) ===
+        Number(tableCountsBefore.rows[0]?.approval_receipts) + 1 &&
+      approvedCounts?.selection_receipts ===
+        tableCountsBefore.rows[0]?.selection_receipts &&
+      Number(approvedCounts?.records) ===
+        Number(tableCountsBefore.rows[0]?.records) + 1 &&
+      approvedCounts?.module_rows === "0" &&
+      approvedCounts.default_module_id === null &&
+      approvedCounts.lineage_id === null,
+    "Activation approval and no-effect receipt were not atomic or no-effect",
+  );
+  const exactApprovalReplay = await createApproval({
+    approvalId: mainApprovalId,
+    expiresAt: mainCreation.approval.expiresAt,
+    expectedPredecessorCoreSurfaceSelectionReceipt: null,
+  });
+  requireCondition(
+    canonicalModuleLifecycleJson(exactApprovalReplay) ===
+      canonicalModuleLifecycleJson(mainCreation),
+    "Exact core-surface selection approval retry drifted",
+  );
+  await denyCreate(
+    "Conflicting immutable core-surface selection approval retry",
+    {
+      approvalId: mainApprovalId,
+      expiresAt: mainCreation.approval.expiresAt,
+      expectedPredecessorCoreSurfaceSelectionReceipt: null,
+      targetPreferences: {
+        defaultCoreSurfaceId: "tasks",
+        coreSurfaces: activePreferences.coreSurfaces,
+      },
+    },
+  );
+
+  const receiptRaceCreationA = await createApproval(
+    {
+      approvalId: randomUUID(),
+      workspaceId: ids.receiptRaceWorkspaceA,
+      workId: ids.receiptRaceWorkA,
+      capabilityGrantId: ids.receiptRaceGrantA,
+      expectedCurrentSurfaceSha256: emptySurfaceHash,
+      expectedPredecessorCoreSurfaceSelectionReceipt: null,
+      targetPreferences: activePreferences,
+    },
+    signedOwner(
+      ids.ownerAuth,
+      Math.floor(Date.now() / 1_000),
+      {},
+      bootstrap.installationId,
+      ids.receiptRaceWorkspaceA,
+    ),
+  );
+  const receiptRaceCreationB = await createApproval(
+    {
+      approvalId: randomUUID(),
+      workspaceId: ids.receiptRaceWorkspaceB,
+      workId: ids.receiptRaceWorkB,
+      capabilityGrantId: ids.receiptRaceGrantB,
+      expectedCurrentSurfaceSha256: emptySurfaceHash,
+      expectedPredecessorCoreSurfaceSelectionReceipt: null,
+      targetPreferences: activePreferences,
+    },
+    signedOwner(
+      ids.ownerAuth,
+      Math.floor(Date.now() / 1_000),
+      {},
+      bootstrap.installationId,
+      ids.receiptRaceWorkspaceB,
+    ),
+  );
+  const receiptRaceSentinels = [randomUUID(), randomUUID()] as const;
+  await admin.query(
+    `insert into public.records
+       (id, installation_id, workspace_id, kind, summary, payload,
+        classification, actor_person_id)
+     values
+       ($1, $3, $4, 'evidence', 'Synthetic receipt race sentinel A.',
+        '{"fixture":"receipt-race-sentinel-a"}'::jsonb, 'synthetic', $6),
+       ($2, $3, $5, 'evidence', 'Synthetic receipt race sentinel B.',
+        '{"fixture":"receipt-race-sentinel-b"}'::jsonb, 'synthetic', $6)`,
+    [
+      receiptRaceSentinels[0],
+      receiptRaceSentinels[1],
+      bootstrap.installationId,
+      ids.receiptRaceWorkspaceA,
+      ids.receiptRaceWorkspaceB,
+      ids.ownerPerson,
+    ],
+  );
+  const sharedCrossWorkspaceReceiptId = randomUUID();
+  await admin.query(`
+    create function public.vorton_test_delay_cross_workspace_receipt_race()
+    returns trigger language plpgsql as $$
+    begin
+      perform pg_sleep(0.25);
+      return new;
+    end
+    $$;
+    create trigger vorton_test_delay_cross_workspace_receipt_race
+      before insert on public.workspace_core_surface_selection_receipts
+      for each row
+      execute function public.vorton_test_delay_cross_workspace_receipt_race();
+  `);
+  let receiptRaceResults: PromiseSettledResult<WorkspaceCoreSurfaceSelectionReceipt>[];
+  try {
+    receiptRaceResults = await Promise.allSettled([
+      applySelection(
+        receiptRaceCreationA,
+        sharedCrossWorkspaceReceiptId,
+        signedOwner(
+          ids.ownerAuth,
+          Math.floor(Date.now() / 1_000),
+          {},
+          bootstrap.installationId,
+          ids.receiptRaceWorkspaceA,
+        ),
+      ),
+      applySelection(
+        receiptRaceCreationB,
+        sharedCrossWorkspaceReceiptId,
+        signedOwner(
+          ids.ownerAuth,
+          Math.floor(Date.now() / 1_000),
+          {},
+          bootstrap.installationId,
+          ids.receiptRaceWorkspaceB,
+        ),
+      ),
+    ]);
+  } finally {
+    await admin.query(`
+      drop trigger vorton_test_delay_cross_workspace_receipt_race
+        on public.workspace_core_surface_selection_receipts;
+      drop function public.vorton_test_delay_cross_workspace_receipt_race();
+    `);
+  }
+  const successfulReceiptRace = receiptRaceResults.filter(
+    (
+      result,
+    ): result is PromiseFulfilledResult<WorkspaceCoreSurfaceSelectionReceipt> =>
+      result.status === "fulfilled",
+  );
+  const rejectedReceiptRace = receiptRaceResults.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  requireCondition(
+    successfulReceiptRace.length === 1 &&
+      rejectedReceiptRace.length === 1 &&
+      (rejectedReceiptRace[0]?.reason as { code?: string } | undefined)
+        ?.code === "P0001",
+    "Cross-workspace receipt identity race did not return one success and one deliberate P0001",
+  );
+  const receiptRaceWinner = successfulReceiptRace[0]?.value;
+  requireCondition(
+    receiptRaceWinner,
+    "Cross-workspace receipt identity race did not return a winning receipt",
+  );
+  const receiptRaceState = await admin.query<{
+    workspace_id: string;
+    surface: unknown;
+    lineage_id: string | null;
+    lineage_hash: string | null;
+    receipt_count: string;
+    sentinel_payload: unknown;
+  }>(
+    `select workspace.id::text as workspace_id,
+            public.workspace_core_surface_document(
+              workspace.installation_id, workspace.id
+            ) as surface,
+            workspace.core_surface_selection_receipt_id::text as lineage_id,
+            workspace.core_surface_selection_receipt_hash as lineage_hash,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = workspace.installation_id
+                and receipt.workspace_id = workspace.id) as receipt_count,
+            (select record.payload
+               from public.records record
+              where record.id = case
+                when workspace.id = $2 then $4::uuid else $5::uuid
+              end) as sentinel_payload
+       from public.workspaces workspace
+      where workspace.installation_id = $1
+        and workspace.id in ($2, $3)
+      order by workspace.id`,
+    [
+      bootstrap.installationId,
+      ids.receiptRaceWorkspaceA,
+      ids.receiptRaceWorkspaceB,
+      receiptRaceSentinels[0],
+      receiptRaceSentinels[1],
+    ],
+  );
+  const winningRaceWorkspaceId = receiptRaceWinner.binding.workspaceId;
+  for (const row of receiptRaceState.rows) {
+    const isWinner = row.workspace_id === winningRaceWorkspaceId;
+    requireCondition(
+      canonicalModuleLifecycleJson(row.surface) ===
+        canonicalModuleLifecycleJson(isWinner ? activeSurface : emptySurface) &&
+        row.lineage_id === (isWinner ? sharedCrossWorkspaceReceiptId : null) &&
+        row.lineage_hash ===
+          (isWinner ? receiptRaceWinner.receiptHash : null) &&
+        row.receipt_count === (isWinner ? "1" : "0") &&
+        canonicalModuleLifecycleJson(row.sentinel_payload) ===
+          canonicalModuleLifecycleJson({
+            fixture:
+              row.workspace_id === ids.receiptRaceWorkspaceA
+                ? "receipt-race-sentinel-a"
+                : "receipt-race-sentinel-b",
+          }),
+      "Cross-workspace receipt identity race did not roll back the loser atomically",
+    );
+  }
+  const receiptRaceIdentityRows = await admin.query<{
+    selection_receipts: string;
+    records: string;
+    record_workspace_id: string | null;
+  }>(
+    `select
+       (select count(*)::text
+          from public.workspace_core_surface_selection_receipts receipt
+         where receipt.receipt_id = $1) as selection_receipts,
+       (select count(*)::text
+          from public.records record
+         where record.id = $1) as records,
+       (select record.workspace_id::text
+          from public.records record
+         where record.id = $1) as record_workspace_id`,
+    [sharedCrossWorkspaceReceiptId],
+  );
+  requireCondition(
+    receiptRaceIdentityRows.rows[0]?.selection_receipts === "1" &&
+      receiptRaceIdentityRows.rows[0]?.records === "1" &&
+      receiptRaceIdentityRows.rows[0]?.record_workspace_id ===
+        winningRaceWorkspaceId,
+    "Cross-workspace receipt identity race did not preserve one winning receipt and Record",
+  );
+
+  const hostileApplyContexts: ReadonlyArray<{
+    label: string;
+    setup: (client: Client) => Promise<void>;
+  }> = [
+    {
+      label: "unsigned base context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        baseSignature: "unsigned",
+      }),
+    },
+    {
+      label: "forged base context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        baseSignature: "forged",
+      }),
+    },
+    {
+      label: "unsigned step-up context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "unsigned",
+      }),
+    },
+    {
+      label: "forged step-up context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "forged",
+      }),
+    },
+    {
+      label: "AAL1 context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000), {
+        aal: "aal1",
+      }),
+    },
+    {
+      label: "stale AAL2 context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000) - 601),
+    },
+    {
+      label: "future AAL2 context",
+      setup: signedOwner(ids.ownerAuth, Math.floor(Date.now() / 1_000) + 60),
+    },
+    {
+      label: "non-owner context",
+      setup: signedOwner(ids.nonOwnerAuth),
+    },
+    {
+      label: "wrong-workspace signed context",
+      setup: signedOwner(
+        ids.ownerAuth,
+        Math.floor(Date.now() / 1_000),
+        {},
+        bootstrap.installationId,
+        ids.outOfBandWorkspace,
+      ),
+    },
+  ];
+  for (const hostile of hostileApplyContexts) {
+    await denyApply(
+      `Core-surface selection apply with ${hostile.label}`,
+      mainCreation,
+      randomUUID(),
+      hostile.setup,
+    );
+  }
+  await withoutRuntimeContextKey(async () => {
+    const workspaceValidators = await inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedOwner(),
+      (client) =>
+        client.query<{
+          legacy_valid: boolean | null;
+          workspace_valid: boolean | null;
+        }>(
+          `select
+             public.aubos_runtime_context_valid(
+               'person', $1::text, $2::text
+             ) as legacy_valid,
+             public.aubos_runtime_context_valid(
+               'person', $1::text, $3::text, $2::text
+             ) as workspace_valid`,
+          [bootstrap.installationId, ids.ownerAuth, ids.workspace],
+        ),
+    );
+    requireCondition(
+      workspaceValidators.rows[0]?.legacy_valid === false &&
+        workspaceValidators.rows[0]?.workspace_valid === false,
+      "Missing runtime key did not make shared workspace validators literal false",
+    );
+    const installationValidator = await inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setSignedInstallationStepUpContext(
+          client,
+          bootstrap.installationId,
+          ids.ownerAuth,
+          Math.floor(Date.now() / 1_000),
+        ),
+      (client) =>
+        client.query<{ valid: boolean | null }>(
+          `select public.vorton_installation_step_up_context_valid(
+             $1::text, $2::text
+           ) as valid`,
+          [bootstrap.installationId, ids.ownerAuth],
+        ),
+    );
+    requireCondition(
+      installationValidator.rows[0]?.valid === false,
+      "Missing runtime key did not make installation validator literal false",
+    );
+    await denyCreate(
+      "Core-surface selection approval with missing runtime key",
+      {
+        approvalId: randomUUID(),
+      },
+    );
+    await denyApply(
+      "Core-surface selection apply with missing runtime key",
+      mainCreation,
+    );
+    await expectRuntimeSqlStateAndMessage(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedOwner(),
+      `select public.create_workspace_membership_revocation_approval(
+         $1, $2, $3, $4, $5::public.person_kind, $6, $7, $8::timestamptz
+       )`,
+      [
+        randomUUID(),
+        bootstrap.installationId,
+        ids.workspace,
+        ids.nonOwnerPerson,
+        "member",
+        ids.validWork,
+        ids.goodGrant,
+        expiry(),
+      ],
+      "P0001",
+      "Signed recent workspace-person AAL2 is required",
+      "Prior workspace authority with missing runtime key",
+    );
+    await expectRuntimeSqlStateAndMessage(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setSignedInstallationStepUpContext(
+          client,
+          bootstrap.installationId,
+          ids.ownerAuth,
+          Math.floor(Date.now() / 1_000),
+        ),
+      `select public.create_release_adoption_approval(
+         $1, $2, $3, $4::jsonb, $5::timestamptz
+       )`,
+      [
+        randomUUID(),
+        bootstrap.installationId,
+        canonicalSha256("missing-key-release-plan"),
+        JSON.stringify({}),
+        expiry(),
+      ],
+      "P0001",
+      "Signed installation-person AAL2 context is required to approve release adoption",
+      "Prior installation authority with missing runtime key",
+    );
+  });
+  const duplicateGenesisCreation = await createApproval({
+    approvalId: randomUUID(),
+    expectedPredecessorCoreSurfaceSelectionReceipt: null,
+  });
+
+  const mainReceiptId = randomUUID();
+  await denyApply(
+    "Core-surface selection receipt reuses approval identity",
+    mainCreation,
+    mainCreation.approval.approvalId,
+  );
+  const [mainReceipt, concurrentMainReceipt] = await Promise.all([
+    applySelection(mainCreation, mainReceiptId),
+    applySelection(mainCreation, mainReceiptId),
+  ]);
+  requireCondition(
+    canonicalModuleLifecycleJson(concurrentMainReceipt) ===
+      canonicalModuleLifecycleJson(mainReceipt) &&
+      (await hashWorkspaceCoreSurfaceSelectionReceipt(mainReceipt)) ===
+        mainReceipt.receiptHash &&
+      mainReceipt.preimageSurfaceSha256 === emptySurfaceHash &&
+      mainReceipt.postimageSurfaceSha256 === activeSurfaceHash &&
+      mainReceipt.predecessorCoreSurfaceSelectionReceipt === null &&
+      mainReceipt.rowCounts.preimageCoreSurfaceRows === 0 &&
+      mainReceipt.rowCounts.deletedCoreSurfaceRows === 0 &&
+      mainReceipt.rowCounts.insertedCoreSurfaceRows === 2 &&
+      mainReceipt.rowCounts.postimageCoreSurfaceRows === 2,
+    "Applied core-surface selection receipt is not canonical or exact",
+  );
+  const installedSurface = await admin.query<{
+    surface: unknown;
+    receipt_id: string | null;
+    receipt_hash: string | null;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            core_surface_selection_receipt_id::text as receipt_id,
+            core_surface_selection_receipt_hash as receipt_hash
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(installedSurface.rows[0]?.surface) ===
+      canonicalModuleLifecycleJson(activeSurface) &&
+      installedSurface.rows[0]?.receipt_id === mainReceipt.receiptId &&
+      installedSurface.rows[0]?.receipt_hash === mainReceipt.receiptHash,
+    "Applied core surface or receipt lineage was not installed exactly",
+  );
+  await denyApply(
+    "Duplicate genesis core-surface selection apply",
+    duplicateGenesisCreation,
+  );
+  await admin.query(
+    `update public.workspaces
+        set default_module_id = null,
+            core_surface_selection_receipt_id = null,
+            core_surface_selection_receipt_hash = null
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  await admin.query(
+    `delete from public.workspace_module_activations
+      where installation_id = $1 and workspace_id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  try {
+    await denyApply(
+      "Pending second genesis after out-of-band reset",
+      duplicateGenesisCreation,
+    );
+    const deniedGenesisState = await admin.query<{
+      surface: unknown;
+      lineage_id: string | null;
+      receipt_count: string;
+    }>(
+      `select public.workspace_core_surface_document($1, $2) as surface,
+              core_surface_selection_receipt_id::text as lineage_id,
+              (select count(*)::text
+                 from public.workspace_core_surface_selection_receipts receipt
+                where receipt.installation_id = $1
+                  and receipt.workspace_id = $2
+                  and receipt.approval_id = $3) as receipt_count
+         from public.workspaces
+        where installation_id = $1 and id = $2`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        duplicateGenesisCreation.approval.approvalId,
+      ],
+    );
+    requireCondition(
+      canonicalModuleLifecycleJson(deniedGenesisState.rows[0]?.surface) ===
+        canonicalModuleLifecycleJson(emptySurface) &&
+        deniedGenesisState.rows[0]?.lineage_id === null &&
+        deniedGenesisState.rows[0]?.receipt_count === "0",
+      "Denied second genesis mutated the reset workspace",
+    );
+  } finally {
+    await admin.query(
+      `insert into public.workspace_module_activations
+         (installation_id, workspace_id, module_id, contract_version, label,
+          navigation_order, presentation_variant, created_by_person_id)
+       values
+         ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3),
+         ($1, $2, 'tasks', 'v1', 'Tasks', 20, 'standard', $3)`,
+      [bootstrap.installationId, ids.workspace, ids.ownerPerson],
+    );
+    await admin.query(
+      `update public.workspaces
+          set default_module_id = 'command',
+              core_surface_selection_receipt_id = $3,
+              core_surface_selection_receipt_hash = $4
+        where installation_id = $1 and id = $2`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        mainReceipt.receiptId,
+        mainReceipt.receiptHash,
+      ],
+    );
+  }
+
+  const projectionLockCreation = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.rollbackWork,
+    capabilityGrantId: ids.rollbackGrant,
+    expectedCurrentSurfaceSha256: activeSurfaceHash,
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: mainReceipt.receiptId,
+      receiptSha256: mainReceipt.receiptHash,
+    },
+    targetPreferences: emptyPreferences,
+  });
+  const projectionWriter = await connect(adminDatabaseUrl);
+  try {
+    await projectionWriter.query("begin");
+    await projectionWriter.query(
+      `update public.workspace_module_activations
+          set label = 'Concurrent unreceipted Tasks drift'
+        where installation_id = $1 and workspace_id = $2
+          and module_id = 'tasks'`,
+      [bootstrap.installationId, ids.workspace],
+    );
+    const serializedApply = denyApply(
+      "Core-surface selection after serialized concurrent preimage drift",
+      projectionLockCreation,
+    );
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+    await projectionWriter.query("commit");
+    await serializedApply;
+    const serializedDriftState = await admin.query<{
+      label: string;
+      receipt_count: string;
+      lineage_id: string | null;
+    }>(
+      `select activation.label,
+              (select count(*)::text
+                 from public.workspace_core_surface_selection_receipts receipt
+                where receipt.installation_id = $1
+                  and receipt.workspace_id = $2
+                  and receipt.approval_id = $3) as receipt_count,
+              workspace.core_surface_selection_receipt_id::text as lineage_id
+         from public.workspace_module_activations activation
+         join public.workspaces workspace
+           on workspace.installation_id = activation.installation_id
+          and workspace.id = activation.workspace_id
+        where activation.installation_id = $1
+          and activation.workspace_id = $2
+          and activation.module_id = 'tasks'`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        projectionLockCreation.approval.approvalId,
+      ],
+    );
+    requireCondition(
+      serializedDriftState.rows[0]?.label ===
+        "Concurrent unreceipted Tasks drift" &&
+        serializedDriftState.rows[0]?.receipt_count === "0" &&
+        serializedDriftState.rows[0]?.lineage_id === mainReceipt.receiptId,
+      "Serialized projection drift was receipted as an approved preimage",
+    );
+  } catch (error) {
+    await projectionWriter.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await projectionWriter.end();
+    await admin.query(
+      `update public.workspace_module_activations set label = 'Tasks'
+        where installation_id = $1 and workspace_id = $2
+          and module_id = 'tasks'`,
+      [bootstrap.installationId, ids.workspace],
+    );
+  }
+  for (const hostile of hostileApplyContexts) {
+    await denyApply(
+      `Core-surface selection replay with ${hostile.label}`,
+      mainCreation,
+      mainReceiptId,
+      hostile.setup,
+    );
+  }
+  await withoutRuntimeContextKey(() =>
+    denyApply(
+      "Core-surface selection replay with missing runtime key",
+      mainCreation,
+      mainReceiptId,
+    ),
+  );
+  await admin.query(
+    `update public.workspace_module_activations set label = 'Drifted Tasks'
+      where installation_id = $1 and workspace_id = $2
+        and module_id = 'tasks'`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  try {
+    await denyApply(
+      "Exact core-surface selection replay after unreceipted module-row drift",
+      mainCreation,
+      mainReceiptId,
+    );
+  } finally {
+    await admin.query(
+      `update public.workspace_module_activations set label = 'Tasks'
+        where installation_id = $1 and workspace_id = $2
+          and module_id = 'tasks'`,
+      [bootstrap.installationId, ids.workspace],
+    );
+  }
+  await admin.query(
+    `update public.workspaces
+        set core_surface_selection_receipt_id = null,
+            core_surface_selection_receipt_hash = null
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  try {
+    await denyApply(
+      "Exact core-surface selection replay after unreceipted lineage-pointer drift",
+      mainCreation,
+      mainReceiptId,
+    );
+  } finally {
+    await admin.query(
+      `update public.workspaces
+          set core_surface_selection_receipt_id = $3,
+              core_surface_selection_receipt_hash = $4
+        where installation_id = $1 and id = $2`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        mainReceipt.receiptId,
+        mainReceipt.receiptHash,
+      ],
+    );
+  }
+  const personalSurfaceAfter = await admin.query<{
+    surface: unknown;
+    receipt_id: string | null;
+    receipt_hash: string | null;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            core_surface_selection_receipt_id::text as receipt_id,
+            core_surface_selection_receipt_hash as receipt_hash
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, otherWorkspaceId],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(personalSurfaceAfter.rows[0]) ===
+      canonicalModuleLifecycleJson(personalSurfaceBefore.rows[0]),
+    "Core-surface selection mutated a foreign workspace",
+  );
+
+  await new Promise((resolveWait) => setTimeout(resolveWait, 3_200));
+  const expiredExactReplay = await applySelection(mainCreation, mainReceiptId);
+  requireCondition(
+    canonicalModuleLifecycleJson(expiredExactReplay) ===
+      canonicalModuleLifecycleJson(mainReceipt),
+    "Exact core-surface selection replay after expiry did not return one receipt",
+  );
+  await denyApply(
+    "Conflicting core-surface selection receipt after authority expiry",
+    mainCreation,
+  );
+
+  const driftCases: Array<{
+    label: string;
+    workId: string;
+    grantId: string;
+    mutate: () => Promise<void>;
+    restore: () => Promise<void>;
+  }> = [
+    {
+      label: "Core-surface selection Work snapshot drift",
+      workId: ids.workDriftWork,
+      grantId: ids.workDriftGrant,
+      mutate: async () => {
+        await admin.query(
+          `update public.work set title = title || ' drift'
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.workDriftWork],
+        );
+      },
+      restore: async () => {
+        await admin.query(
+          `update public.work set title = replace(title, ' drift', '')
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.workDriftWork],
+        );
+      },
+    },
+    {
+      label: "Core-surface selection Policy drift",
+      workId: ids.policyDriftWork,
+      grantId: ids.policyDriftGrant,
+      mutate: async () => {
+        await admin.query(
+          `update public.policies
+              set definition = definition || '{"drift":true}'::jsonb
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.policyDriftPolicy],
+        );
+      },
+      restore: async () => {
+        await admin.query(
+          `update public.policies set definition = definition - 'drift'
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.policyDriftPolicy],
+        );
+      },
+    },
+    {
+      label: "Core-surface selection capability grant drift",
+      workId: ids.grantDriftWork,
+      grantId: ids.grantDriftGrant,
+      mutate: async () => {
+        await admin.query(
+          `update public.capability_grants
+              set expires_at = clock_timestamp() - interval '1 second'
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.grantDriftGrant],
+        );
+      },
+      restore: async () => {
+        await admin.query(
+          `update public.capability_grants set expires_at = null
+            where installation_id = $1 and workspace_id = $2 and id = $3`,
+          [bootstrap.installationId, ids.workspace, ids.grantDriftGrant],
+        );
+      },
+    },
+  ];
+  for (const drift of driftCases) {
+    const creation = await createApproval({
+      approvalId: randomUUID(),
+      workId: drift.workId,
+      capabilityGrantId: drift.grantId,
+      expectedCurrentSurfaceSha256: activeSurfaceHash,
+      expectedPredecessorCoreSurfaceSelectionReceipt: {
+        receiptId: mainReceipt.receiptId,
+        receiptSha256: mainReceipt.receiptHash,
+      },
+      targetPreferences: emptyPreferences,
+    });
+    await drift.mutate();
+    try {
+      await denyApply(drift.label, creation);
+    } finally {
+      await drift.restore();
+    }
+  }
+
+  const rollbackCreation = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.rollbackWork,
+    capabilityGrantId: ids.rollbackGrant,
+    expectedCurrentSurfaceSha256: activeSurfaceHash,
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: mainReceipt.receiptId,
+      receiptSha256: mainReceipt.receiptHash,
+    },
+    targetPreferences: emptyPreferences,
+  });
+  const pendingForkCreation = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.rollbackWork,
+    capabilityGrantId: ids.rollbackGrant,
+    expectedCurrentSurfaceSha256: activeSurfaceHash,
+    expectedPredecessorCoreSurfaceSelectionReceipt: {
+      receiptId: mainReceipt.receiptId,
+      receiptSha256: mainReceipt.receiptHash,
+    },
+    targetPreferences: emptyPreferences,
+  });
+  await denyApply(
+    "Core-surface selection receipt reuses predecessor identity",
+    rollbackCreation,
+    mainReceipt.receiptId,
+  );
+  const unrelatedRecordReceiptId = randomUUID();
+  await admin.query(
+    `insert into public.records
+       (id, installation_id, workspace_id, work_id, kind, summary, payload,
+        classification, actor_person_id)
+     values ($1, $2, $3, $4, 'evidence',
+             'Synthetic unrelated core-surface selection receipt collision.',
+             '{"fixture":"unrelated-receipt-identity"}'::jsonb,
+             'synthetic', $5)`,
+    [
+      unrelatedRecordReceiptId,
+      bootstrap.installationId,
+      ids.workspace,
+      ids.rollbackWork,
+      ids.ownerPerson,
+    ],
+  );
+  const unrelatedRecordCollisionBefore = await admin.query<{
+    surface: unknown;
+    receipt_count: string;
+    lineage_id: string | null;
+    record_payload: unknown;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = $1
+                and receipt.workspace_id = $2
+                and receipt.approval_id = $3) as receipt_count,
+            core_surface_selection_receipt_id::text as lineage_id,
+            (select payload
+               from public.records record
+              where record.installation_id = $1
+                and record.workspace_id = $2
+                and record.id = $4) as record_payload
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      rollbackCreation.approval.approvalId,
+      unrelatedRecordReceiptId,
+    ],
+  );
+  await denyApply(
+    "Core-surface selection receipt identity collides with unrelated Record",
+    rollbackCreation,
+    unrelatedRecordReceiptId,
+  );
+  const unrelatedRecordCollisionAfter = await admin.query<{
+    surface: unknown;
+    receipt_count: string;
+    lineage_id: string | null;
+    record_payload: unknown;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = $1
+                and receipt.workspace_id = $2
+                and receipt.approval_id = $3) as receipt_count,
+            core_surface_selection_receipt_id::text as lineage_id,
+            (select payload
+               from public.records record
+              where record.installation_id = $1
+                and record.workspace_id = $2
+                and record.id = $4) as record_payload
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      rollbackCreation.approval.approvalId,
+      unrelatedRecordReceiptId,
+    ],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(unrelatedRecordCollisionAfter.rows[0]) ===
+      canonicalModuleLifecycleJson(unrelatedRecordCollisionBefore.rows[0]),
+    "Unrelated Record receipt identity collision mutated core-surface selection state",
+  );
+  const foreignRecordReceiptId = randomUUID();
+  await admin.query(
+    `insert into public.records
+       (id, installation_id, workspace_id, kind, summary, payload,
+        classification, actor_person_id)
+     values ($1, $2, $3, 'evidence',
+             'Synthetic foreign-workspace core-surface selection receipt collision.',
+             '{"fixture":"foreign-receipt-identity"}'::jsonb,
+             'synthetic', $4)`,
+    [
+      foreignRecordReceiptId,
+      bootstrap.installationId,
+      ids.outOfBandWorkspace,
+      ids.ownerPerson,
+    ],
+  );
+  const foreignRecordCollisionBefore = await admin.query<{
+    surface: unknown;
+    receipt_count: string;
+    lineage_id: string | null;
+    foreign_record: unknown;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = $1
+                and receipt.workspace_id = $2
+                and receipt.approval_id = $3) as receipt_count,
+            core_surface_selection_receipt_id::text as lineage_id,
+            (select jsonb_build_object(
+                      'installationId', record.installation_id::text,
+                      'workspaceId', record.workspace_id::text,
+                      'payload', record.payload
+                    )
+               from public.records record
+              where record.id = $4) as foreign_record
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      rollbackCreation.approval.approvalId,
+      foreignRecordReceiptId,
+    ],
+  );
+  await denyApply(
+    "Core-surface selection receipt identity collides with foreign-workspace Record",
+    rollbackCreation,
+    foreignRecordReceiptId,
+  );
+  const foreignRecordCollisionAfter = await admin.query<{
+    surface: unknown;
+    receipt_count: string;
+    lineage_id: string | null;
+    foreign_record: unknown;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = $1
+                and receipt.workspace_id = $2
+                and receipt.approval_id = $3) as receipt_count,
+            core_surface_selection_receipt_id::text as lineage_id,
+            (select jsonb_build_object(
+                      'installationId', record.installation_id::text,
+                      'workspaceId', record.workspace_id::text,
+                      'payload', record.payload
+                    )
+               from public.records record
+              where record.id = $4) as foreign_record
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      rollbackCreation.approval.approvalId,
+      foreignRecordReceiptId,
+    ],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(foreignRecordCollisionAfter.rows[0]) ===
+      canonicalModuleLifecycleJson(foreignRecordCollisionBefore.rows[0]),
+    "Foreign-workspace Record receipt identity collision mutated either workspace",
+  );
+  await admin.query(`
+    create function public.vorton_test_fail_core_surface_selection_record_insert()
+    returns trigger language plpgsql as $$
+    begin
+      raise exception 'Synthetic core-surface selection Record insertion failure';
+    end
+    $$;
+    create trigger vorton_test_fail_core_surface_selection_record_insert
+      before insert on public.records
+      for each row
+      when (new.summary = 'Applied workspace core-surface selection')
+      execute function public.vorton_test_fail_core_surface_selection_record_insert();
+  `);
+  try {
+    await denyApply(
+      "Core-surface selection application Record insertion rollback",
+      rollbackCreation,
+    );
+  } finally {
+    await admin.query(`
+      drop trigger vorton_test_fail_core_surface_selection_record_insert
+        on public.records;
+      drop function public.vorton_test_fail_core_surface_selection_record_insert();
+    `);
+  }
+  const failedApplicationState = await admin.query<{
+    surface: unknown;
+    receipt_count: string;
+    lineage_id: string | null;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            (select count(*)::text
+               from public.workspace_core_surface_selection_receipts receipt
+              where receipt.installation_id = $1
+                and receipt.workspace_id = $2
+                and receipt.approval_id = $3) as receipt_count,
+            core_surface_selection_receipt_id::text as lineage_id
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      rollbackCreation.approval.approvalId,
+    ],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(failedApplicationState.rows[0]?.surface) ===
+      canonicalModuleLifecycleJson(activeSurface) &&
+      failedApplicationState.rows[0]?.receipt_count === "0" &&
+      failedApplicationState.rows[0]?.lineage_id === mainReceipt.receiptId,
+    "Failed core-surface selection did not roll back projection, receipt, and lineage atomically",
+  );
+  const conflictingRollbackReceipts = [randomUUID(), randomUUID()] as const;
+  const conflictingRollbackResults = await Promise.allSettled(
+    conflictingRollbackReceipts.map((receiptId) =>
+      applySelection(rollbackCreation, receiptId),
+    ),
+  );
+  const successfulRollbackResults = conflictingRollbackResults.filter(
+    (
+      result,
+    ): result is PromiseFulfilledResult<WorkspaceCoreSurfaceSelectionReceipt> =>
+      result.status === "fulfilled",
+  );
+  const rejectedRollbackResults = conflictingRollbackResults.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  requireCondition(
+    successfulRollbackResults.length === 1 &&
+      rejectedRollbackResults.length === 1 &&
+      (rejectedRollbackResults[0]?.reason as { code?: string } | undefined)
+        ?.code === "P0001",
+    "Conflicting concurrent core-surface selection receipts did not elect exactly one immutable application",
+  );
+  const rollbackReceipt = successfulRollbackResults[0]?.value;
+  requireCondition(
+    rollbackReceipt,
+    "Concurrent core-surface selection did not return the winning receipt",
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(rollbackReceipt.preimageSurface) ===
+      canonicalModuleLifecycleJson(activeSurface) &&
+      canonicalModuleLifecycleJson(rollbackReceipt.postimageSurface) ===
+        canonicalModuleLifecycleJson(emptySurface) &&
+      rollbackReceipt.predecessorCoreSurfaceSelectionReceipt?.receiptId ===
+        mainReceipt.receiptId &&
+      rollbackReceipt.predecessorCoreSurfaceSelectionReceipt?.receiptSha256 ===
+        mainReceipt.receiptHash,
+    "Governed rollback did not restore the exact compiled preimage",
+  );
+  const rollbackState = await admin.query<{
+    surface: unknown;
+    receipt_id: string | null;
+    receipt_hash: string | null;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            core_surface_selection_receipt_id::text as receipt_id,
+            core_surface_selection_receipt_hash as receipt_hash
+       from public.workspaces
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(rollbackState.rows[0]?.surface) ===
+      canonicalModuleLifecycleJson(emptySurface) &&
+      rollbackState.rows[0]?.receipt_id === rollbackReceipt.receiptId &&
+      rollbackState.rows[0]?.receipt_hash === rollbackReceipt.receiptHash,
+    "Governed module-surface rollback did not advance exact lineage",
+  );
+  await admin.query(
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values
+       ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3),
+       ($1, $2, 'tasks', 'v1', 'Tasks', 20, 'standard', $3)`,
+    [bootstrap.installationId, ids.workspace, ids.ownerPerson],
+  );
+  await admin.query(
+    `update public.workspaces
+        set default_module_id = 'command',
+            core_surface_selection_receipt_id = $3,
+            core_surface_selection_receipt_hash = $4
+      where installation_id = $1 and id = $2`,
+    [
+      bootstrap.installationId,
+      ids.workspace,
+      mainReceipt.receiptId,
+      mainReceipt.receiptHash,
+    ],
+  );
+  try {
+    await denyApply(
+      "Exact replay after out-of-band regression to nonterminal receipt",
+      mainCreation,
+      mainReceipt.receiptId,
+    );
+    await denyCreate("Stale core-surface selection lineage fork", {
+      approvalId: randomUUID(),
+      expectedCurrentSurfaceSha256: activeSurfaceHash,
+      expectedPredecessorCoreSurfaceSelectionReceipt: {
+        receiptId: mainReceipt.receiptId,
+        receiptSha256: mainReceipt.receiptHash,
+      },
+      targetPreferences: emptyPreferences,
+    });
+    await denyApply(
+      "Pending core-surface selection fork after out-of-band regression",
+      pendingForkCreation,
+    );
+    const deniedPendingForkState = await admin.query<{
+      surface: unknown;
+      lineage_id: string | null;
+      receipt_count: string;
+    }>(
+      `select public.workspace_core_surface_document($1, $2) as surface,
+              core_surface_selection_receipt_id::text as lineage_id,
+              (select count(*)::text
+                 from public.workspace_core_surface_selection_receipts receipt
+                where receipt.installation_id = $1
+                  and receipt.workspace_id = $2
+                  and receipt.approval_id = $3) as receipt_count
+         from public.workspaces
+        where installation_id = $1 and id = $2`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        pendingForkCreation.approval.approvalId,
+      ],
+    );
+    requireCondition(
+      canonicalModuleLifecycleJson(deniedPendingForkState.rows[0]?.surface) ===
+        canonicalModuleLifecycleJson(activeSurface) &&
+        deniedPendingForkState.rows[0]?.lineage_id === mainReceipt.receiptId &&
+        deniedPendingForkState.rows[0]?.receipt_count === "0",
+      "Denied pending core-surface selection fork mutated regressed state",
+    );
+  } finally {
+    await admin.query(
+      `update public.workspaces
+          set default_module_id = null,
+              core_surface_selection_receipt_id = $3,
+              core_surface_selection_receipt_hash = $4
+        where installation_id = $1 and id = $2`,
+      [
+        bootstrap.installationId,
+        ids.workspace,
+        rollbackReceipt.receiptId,
+        rollbackReceipt.receiptHash,
+      ],
+    );
+    await admin.query(
+      `delete from public.workspace_module_activations
+        where installation_id = $1 and workspace_id = $2`,
+      [bootstrap.installationId, ids.workspace],
+    );
+  }
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    applySql,
+    [
+      mainReceipt.receiptId,
+      rollbackCreation.approval.approvalId,
+      bootstrap.installationId,
+      ids.workspace,
+    ],
+    "P0001",
+    "Cross-paired core-surface selection approval and receipt identities",
+  );
+  const historicalMainReplay = await applySelection(
+    mainCreation,
+    mainReceipt.receiptId,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(historicalMainReplay) ===
+      canonicalModuleLifecycleJson(mainReceipt),
+    "Historical exact core-surface selection replay failed after governed successor",
+  );
+
+  await expectSqlState(
+    admin,
+    `update public.workspace_core_surface_selection_approvals
+        set binding = binding
+      where installation_id = $1 and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, ids.workspace, mainApprovalId],
+    "P0001",
+    "Immutable core-surface selection approval update",
+  );
+  await expectSqlState(
+    admin,
+    `delete from public.workspace_core_surface_selection_approval_receipts
+      where installation_id = $1 and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, ids.workspace, mainApprovalId],
+    "P0001",
+    "Immutable core-surface selection approval receipt delete",
+  );
+  await expectSqlState(
+    admin,
+    `update public.workspace_core_surface_selection_receipts
+        set row_counts = row_counts
+      where installation_id = $1 and workspace_id = $2 and receipt_id = $3`,
+    [bootstrap.installationId, ids.workspace, mainReceipt.receiptId],
+    "P0001",
+    "Immutable core-surface selection application receipt update",
+  );
+
+  await admin.query(
+    `update public.workspace_memberships set kind = 'owner'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, ids.workspace, ids.nonOwnerPerson],
+  );
+  await denyApply(
+    "Core-surface selection replay by a different live owner",
+    rollbackCreation,
+    rollbackReceipt.receiptId,
+    signedOwner(ids.nonOwnerAuth),
+  );
+  await admin.query(
+    `update public.workspace_memberships set kind = 'member'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, ids.workspace, ids.nonOwnerPerson],
+  );
+
+  await admin.query(
+    `update public.workspace_memberships set kind = 'member'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, ids.workspace, ids.ownerPerson],
+  );
+  await denyApply(
+    "Exact core-surface selection replay after owner demotion",
+    rollbackCreation,
+    rollbackReceipt.receiptId,
+  );
+  await admin.query(
+    `update public.workspace_memberships set kind = 'owner'
+      where installation_id = $1 and workspace_id = $2 and person_id = $3`,
+    [bootstrap.installationId, ids.workspace, ids.ownerPerson],
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values ($1, $2, $3, $3,
+             date_trunc('milliseconds', clock_timestamp()))`,
+    [bootstrap.installationId, ids.workspace, ids.ownerPerson],
+  );
+  await denyApply(
+    "Exact core-surface selection replay after owner revocation",
+    rollbackCreation,
+    rollbackReceipt.receiptId,
+  );
+
+  for (const [role, setup] of [
+    ["authenticated", signedOwner(ids.nonOwnerAuth)],
+    [
+      "aubos_worker",
+      (client: Client) =>
+        setSignedContext(
+          client,
+          "worker",
+          bootstrap.installationId,
+          ids.workspace,
+          bootstrap.workerId,
+          randomUUID(),
+        ),
+    ],
+  ] as const) {
+    await expectRuntimeDenied(
+      runtimeDatabaseUrl,
+      role,
+      setup,
+      "select count(*) from public.workspace_core_surface_selection_approvals",
+      [],
+      `${role} direct core-surface selection approval read`,
+    );
+    await expectRuntimeDenied(
+      runtimeDatabaseUrl,
+      role,
+      setup,
+      "insert into public.workspace_core_surface_selection_receipts default values",
+      [],
+      `${role} direct core-surface selection receipt write`,
+    );
+  }
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(ids.nonOwnerAuth),
+    `update public.workspaces set default_module_id = null
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, ids.workspace],
+    "Authenticated direct default-module mutation",
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "aubos_worker",
+    (client) =>
+      setSignedContext(
+        client,
+        "worker",
+        bootstrap.installationId,
+        ids.workspace,
+        bootstrap.workerId,
+        randomUUID(),
+      ),
+    createSql,
+    creationValues({ approvalId: randomUUID() }),
+    "42501",
+    "Worker core-surface selection route",
+  );
+
+  const applicationRecords = await admin.query<{
+    count: string;
+    distinct_payloads: string;
+  }>(
+    `select count(*)::text as count,
+            count(distinct payload)::text as distinct_payloads
+       from public.records
+      where installation_id = $1 and workspace_id = $2
+        and kind = 'receipt'
+        and summary = 'Applied workspace core-surface selection'`,
+    [bootstrap.installationId, ids.workspace],
+  );
+  requireCondition(
+    applicationRecords.rows[0]?.count === "2" &&
+      applicationRecords.rows[0]?.distinct_payloads === "2",
+    "Exact replay created an extra core-surface selection receipt or Record",
+  );
+
+  // A second transaction cannot mutate the workspace while application holds
+  // the workspace row lock. This is the serialization seam for authority and
+  // projection changes.
+  const lockOwner = await connect(adminDatabaseUrl);
+  const lockContender = await connect(adminDatabaseUrl);
+  try {
+    await lockOwner.query("begin");
+    await lockOwner.query(
+      `select 1 from public.workspaces
+        where installation_id = $1 and id = $2 for update`,
+      [bootstrap.installationId, ids.workspace],
+    );
+    await lockContender.query("begin");
+    await lockContender.query("set local lock_timeout = '100ms'");
+    await expectSqlState(
+      lockContender,
+      `update public.workspaces set display_name = display_name
+        where installation_id = $1 and id = $2`,
+      [bootstrap.installationId, ids.workspace],
+      "55P03",
+      "Workspace core-surface selection serialization",
+    );
+    await lockContender.query("rollback");
+    await lockOwner.query("commit");
+  } catch (error) {
+    await lockOwner.query("rollback").catch(() => undefined);
+    await lockContender.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await lockOwner.end();
+    await lockContender.end();
+  }
 }
 
 async function proveWorkspaceMembershipRevocationBoundary(
@@ -7351,6 +10002,12 @@ async function main(): Promise<void> {
       bootstrap,
       ownerPersonId,
     );
+    await proveWorkspaceCoreSurfaceSelectionBoundary(
+      admin,
+      adminDatabaseUrl,
+      runtimeDatabaseUrl,
+      bootstrap,
+    );
     await proveModuleLifecycleApprovalBoundary(
       admin,
       adminDatabaseUrl,
@@ -7406,6 +10063,30 @@ async function main(): Promise<void> {
             workspaceModuleProjectionRuntimeMutationDenied: true,
             workspaceModuleProjectionRlsLiveMembershipBound: true,
             workspaceModuleProjectionForeignAndRevokedAccessDenied: true,
+            workspaceCoreSurfaceSelectionUnsignedAndForgedContextsDenied: true,
+            workspaceCoreSurfaceSelectionTargetExistenceHiddenBeforeContext: true,
+            workspaceCoreSurfaceSelectionMissingRuntimeKeyFailsClosed: true,
+            workspaceCoreSurfaceSelectionLiveOwnerAndRecentAal2Required: true,
+            workspaceCoreSurfaceSelectionApplyAndReplayStepUpRevalidated: true,
+            workspaceCoreSurfaceSelectionWorkPolicyAndGrantBound: true,
+            workspaceCoreSurfaceSelectionCompiledRegistryDerived: true,
+            workspaceCoreSurfaceSelectionSurfaceAndLineageExact: true,
+            workspaceCoreSurfaceSelectionLegacyStateUnchangedAndUnblessed: true,
+            workspaceCoreSurfaceSelectionProjectionAttributionDoesNotPinMembership: true,
+            workspaceCoreSurfaceSelectionApprovalReceiptAndRecordAtomic: true,
+            workspaceCoreSurfaceSelectionHashesCrossLanguageCanonical: true,
+            workspaceCoreSurfaceSelectionAppliedExactlyOnce: true,
+            workspaceCoreSurfaceSelectionConcurrentExactApplyConvergesOnce: true,
+            workspaceCoreSurfaceSelectionConcurrentConflictingApplyDenied: true,
+            workspaceCoreSurfaceSelectionReplayExactAndLiveOwnerBound: true,
+            workspaceCoreSurfaceSelectionExactReplaySurvivesExpiry: true,
+            workspaceCoreSurfaceSelectionHistoricalReplayFollowsLineage: true,
+            workspaceCoreSurfaceSelectionUnreceiptedDriftDenied: true,
+            workspaceCoreSurfaceSelectionLineageTerminalAndLinear: true,
+            workspaceCoreSurfaceSelectionTablesPrivateAndImmutable: true,
+            workspaceCoreSurfaceSelectionAuthorityChangesSerialized: true,
+            workspaceCoreSurfaceSelectionCrossWorkspaceMutationDenied: true,
+            workspaceCoreSurfaceSelectionRollbackRestoresExactPreimage: true,
             contextGatewayBankAuthorityPostgresResolved: true,
             contextGatewayPersonAndWorkerCapabilitiesExplicit: true,
             contextGatewayWorkerCredentialFreshAndLive: true,

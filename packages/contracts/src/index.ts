@@ -7,4 +7,5 @@ export * from "./executive.js";
 export * from "./memory.js";
 export * from "./memory-lineage.js";
 export * from "./workspace-membership-revocation.js";
+export * from "./workspace-core-surface-selection.js";
 export * from "./conversations.js";

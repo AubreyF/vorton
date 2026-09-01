@@ -56,7 +56,7 @@ async function mount() {
     import.meta.env.DEV &&
     new URLSearchParams(window.location.search).has("preview")
   ) {
-    document.title = "FreedOS";
+    document.title = "Vorton Preview";
     const { PreviewRuntime } = await import("./preview-runtime.js");
     content = (
       <PreviewRuntime>

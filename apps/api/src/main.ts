@@ -14,6 +14,7 @@ import { RemoteExecutiveWorkerAdapter } from "./remote-worker.js";
 import { DatabaseExecutiveRequestResolver } from "./request-resolver.js";
 import { createApiServer } from "./server.js";
 import { DatabaseWorkspaceMembershipRevocationAuthority } from "./workspace-membership-revocation.js";
+import { DatabaseWorkspaceCoreSurfaceSelectionAuthority } from "./workspace-core-surface-selection.js";
 
 const env = readApiEnvironment();
 const database = new Database({
@@ -61,6 +62,8 @@ const server = createApiServer({
   moduleLifecycleExecution: new DatabaseModuleLifecycleExecution(database),
   workspaceMembershipRevocationAuthority:
     new DatabaseWorkspaceMembershipRevocationAuthority(database),
+  workspaceCoreSurfaceSelectionAuthority:
+    new DatabaseWorkspaceCoreSurfaceSelectionAuthority(database),
   workerCredentialVerifier: new WorkersService(database),
   release: env.release,
   allowedOrigin: env.allowedOrigin,

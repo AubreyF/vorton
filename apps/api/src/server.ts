@@ -17,6 +17,8 @@ import {
   moduleLifecycleActionConsumeRequestSchema,
   moduleLifecycleActionFinalizeRequestSchema,
   releaseAdoptionApprovalRequestSchema,
+  workspaceCoreSurfaceSelectionApplyRequestSchema,
+  workspaceCoreSurfaceSelectionApprovalRequestSchema,
   workspaceMembershipRevocationApplyRequestSchema,
   workspaceMembershipRevocationApprovalRequestSchema,
   workspaceCreationApprovalRequestSchema,
@@ -67,6 +69,14 @@ import {
   type DatabaseWorkspaceMembershipRevocationAuthority,
 } from "./workspace-membership-revocation.js";
 import {
+  WorkspaceCoreSurfaceSelectionConflictError,
+  WorkspaceCoreSurfaceSelectionForbiddenError,
+  WorkspaceCoreSurfaceSelectionInputError,
+  WorkspaceCoreSurfaceSelectionIntegrityError,
+  requireWorkspaceCoreSurfaceSelectionRecentAal2,
+  type DatabaseWorkspaceCoreSurfaceSelectionAuthority,
+} from "./workspace-core-surface-selection.js";
+import {
   ExecutiveRequestInputError,
   ExecutiveRequestResolutionError,
   parseProposalInput,
@@ -90,6 +100,7 @@ export interface ApiServerDependencies {
   moduleLifecycleAuthority: DatabaseModuleLifecycleAuthority;
   moduleLifecycleExecution: DatabaseModuleLifecycleExecution;
   workspaceMembershipRevocationAuthority: DatabaseWorkspaceMembershipRevocationAuthority;
+  workspaceCoreSurfaceSelectionAuthority: DatabaseWorkspaceCoreSurfaceSelectionAuthority;
   workerCredentialVerifier: WorkerCredentialVerifier;
   release: string;
   allowedOrigin: string;
@@ -414,6 +425,88 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         send(
           200,
           await dependencies.workspaceMembershipRevocationAuthority.apply(
+            installationId,
+            workspaceId,
+            approvalId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const coreSurfaceSelectionApprovalRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/core-surface-selection-approvals$/,
+      );
+      if (
+        request.method === "POST" &&
+        coreSurfaceSelectionApprovalRoute?.[1] &&
+        coreSurfaceSelectionApprovalRoute[2]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireWorkspaceCoreSurfaceSelectionRecentAal2(identity);
+        const installationId = coreSurfaceSelectionApprovalRoute[1];
+        const workspaceId = coreSurfaceSelectionApprovalRoute[2];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface selection path identifiers must be canonical UUIDs",
+          );
+        }
+        const exactRequest =
+          workspaceCoreSurfaceSelectionApprovalRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          201,
+          await dependencies.workspaceCoreSurfaceSelectionAuthority.approve(
+            installationId,
+            workspaceId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const coreSurfaceSelectionApplyRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/core-surface-selection-approvals\/([^/]+)\/execute$/,
+      );
+      if (
+        request.method === "POST" &&
+        coreSurfaceSelectionApplyRoute?.[1] &&
+        coreSurfaceSelectionApplyRoute[2] &&
+        coreSurfaceSelectionApplyRoute[3]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireWorkspaceCoreSurfaceSelectionRecentAal2(identity);
+        const installationId = coreSurfaceSelectionApplyRoute[1];
+        const workspaceId = coreSurfaceSelectionApplyRoute[2];
+        const approvalId = coreSurfaceSelectionApplyRoute[3];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId) ||
+          !uuidPattern.test(approvalId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface selection path identifiers must be canonical UUIDs",
+          );
+        }
+        const exactRequest =
+          workspaceCoreSurfaceSelectionApplyRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          200,
+          await dependencies.workspaceCoreSurfaceSelectionAuthority.apply(
             installationId,
             workspaceId,
             approvalId,
@@ -951,6 +1044,60 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         return;
       }
       if (error instanceof WorkspaceMembershipRevocationIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceCoreSurfaceSelectionInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceCoreSurfaceSelectionForbiddenError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceCoreSurfaceSelectionConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "workspace_core_surface_selection_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceCoreSurfaceSelectionIntegrityError) {
         json(
           response,
           500,

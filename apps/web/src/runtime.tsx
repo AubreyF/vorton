@@ -50,6 +50,12 @@ export interface RuntimeWorkspace {
       presentationVariant: string;
     }>;
   };
+  coreSurfaceState:
+    "unconfigured" | "selected" | "upgrade-required" | "invalid";
+  coreSurfaceSelectionReceipt: {
+    receiptId: string;
+    receiptSha256: string;
+  } | null;
   realm: "personal" | "organizational";
   personKind: "owner" | "member";
   workItems: Array<{
