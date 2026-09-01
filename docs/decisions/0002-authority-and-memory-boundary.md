@@ -1,6 +1,13 @@
 # ADR 0002: Authority and memory boundary
 
-Status: Accepted
+Status: Superseded in part by ADR 0007
+
+The Postgres authority and derived-memory boundary remains accepted. ADR 0007
+supersedes the requirement that personal and organizational product identities
+must use separate physical installations. One installation may now host
+logically isolated personal and organizational workspaces. Each workspace keeps
+its own membership, realm, memory bank, source namespace, credential binding,
+storage namespace, retrieval route, and audit trail.
 
 ## Decision
 

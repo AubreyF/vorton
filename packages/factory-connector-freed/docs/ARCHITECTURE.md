@@ -1,15 +1,27 @@
 # Architecture
 
-Status: approved target, implementation in progress
+Status: transitional FreedOS implementation, target governed by ADR 0007
+
+This document records the current FreedOS activation path and the operational
+behavior inherited from AubOS Factory. The approved product destination is one
+first-party Vorton installation module named Factory. Factory owns its claims,
+custody, checkpoints, handoffs, recovery, publication coordination, and
+execution receipts under workspace-scoped Vorton authority. There is no
+permanent external Factory mechanism. References below to Freed task authority,
+commands, files, or brokers describe compatibility mechanics that must migrate
+without losing their proven safety properties.
 
 ## Control flow
 
-GitHub Issues are the only backlog. One active authority coordinator polls the
+GitHub Issues are the visible software queue for the current FreedOS activation.
+One active Factory coordinator polls the
 selected repository and grants task-scoped custody to eligible workers. The
 coordinator may run on Linux while Linux, macOS, and later enrolled worker
 hosts execute tickets concurrently. Vorton Factory supplies the policy that decides
 whether an issue may enter execution, which host can run it, and what the
-resulting worker may publish. Freed remains authoritative for task execution.
+resulting worker may publish. During transition, the current Freed task
+projection supplies compatibility state. In the approved destination, the
+Factory module is authoritative for execution custody.
 
 The normal path is:
 
@@ -24,7 +36,12 @@ The normal path is:
 
 ## State and authority
 
-GitHub is the shared coordination ledger and complete operator-visible queue. Freed's active task manifest is the execution authority. Neither Symphony's memory nor Vorton Factory's local files can grant execution.
+GitHub is the current operator-visible repository queue. During transition,
+Freed's active task manifest carries the compatibility claim projection. It is
+not a separate permanent Factory authority. Neither Symphony memory nor
+host-local Factory files can grant execution. The target authority is the exact
+workspace-scoped Factory claim admitted through Vorton Work, Policy,
+capabilities, approvals, and Records.
 
 Vorton Factory keeps small host-local journals for idempotency, quota observations, candidate finalization, validation, review, publication, and checkpoint transfer. These files answer whether a host already performed an operation after a crash. They are not a queue and cannot create work. The Symphony boundary writes one append-only receipt for each exact Freed claim before it admits launch. Exclusive publication lets only one concurrent process admit that claim. A later reconciled claim receives a different receipt without deleting history. Each executor also keeps immutable content-addressed handoff manifests and one atomic pointer per workspace. The pointer identifies which exact claim currently owns that workspace. It cannot create a claim or replace a Freed authority receipt.
 
@@ -93,7 +110,11 @@ These remain an auditable patch series against the pin. Vorton Factory will not 
 
 ## Host topology
 
-Linux owns the one active coordinator, canonical Freed authority state, GitHub App broker, quota ledger, reconciliation, and shared encrypted checkpoint storage. It also appears to Symphony as an SSH worker for generic development.
+In the transitional profile, Linux owns the active coordinator, Freed
+compatibility state, GitHub App broker, quota ledger, reconciliation, and
+shared encrypted checkpoint storage. It also appears to Symphony as an SSH
+worker for generic development. Final claim authority moves to the
+workspace-scoped Factory module rather than remaining in that host-local state.
 
 The Mac appears as a second SSH worker with the `macos` capability. It owns its local Codex authentication, native toolchain, worktrees, and installed-test state. Turning it off removes only macOS capacity. Generic Linux work continues.
 
@@ -136,7 +157,15 @@ At startup, Vorton Factory reconciles open issues, lifecycle comments, Freed tas
 
 Every unpublished terminal candidate can be captured as an encrypted, content-addressed Git state archive. At 24 hours offline, portable work may move to a compatible host after the old command is fenced, the custody epoch advances, and the destination verifies the exact restored state. Linux cannot satisfy a macOS-only validation requirement.
 
-The coordinator-side transfer planner now turns fresh host evidence plus one verified checkpoint storage receipt into the exact next-epoch claim-transfer request and restore requirement. It rejects missing destination roots, stale destinations, incompatible lanes, bad signatures, wrong source hosts, mismatched claims or epochs, and impossible checkpoint time order. Freed's future `claim-transfer` response remains the authority boundary. A plan alone cannot fence the source or activate the destination.
+The coordinator-side transfer planner turns fresh host evidence plus one
+verified checkpoint storage receipt into the exact next-epoch claim-transfer
+request and restore requirement. It rejects missing destination roots, stale
+destinations, incompatible lanes, bad signatures, wrong source hosts,
+mismatched claims or epochs, and impossible checkpoint time order. During the
+compatibility phase, the supported Freed `claim-transfer` response records the
+transition. The target Factory module admits the same transition through
+Vorton authority. A plan alone cannot fence the source or activate the
+destination.
 
 ## Security and publication
 

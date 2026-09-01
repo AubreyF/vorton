@@ -2,6 +2,12 @@
 
 Vorton Factory moves unpublished Git state, not worktree directories, credentials, or running agent processes.
 
+This document records the custody behavior inherited by the first FreedOS
+activation. In the approved architecture, these claims, epochs, checkpoints,
+transfers, and receipts belong to the workspace-scoped Factory module. Freed
+task commands below are transitional compatibility operations, not an external
+Factory authority to preserve indefinitely.
+
 ## Capture
 
 A terminal or interrupted worker candidate is captured from a trusted host journal. The archive binds:
@@ -25,7 +31,15 @@ Candidate finalization, capture, remote storage, and coordinator acknowledgement
 
 After 24 hours without a source heartbeat, Vorton Factory may transfer only portable work to a compatible online host.
 
-The coordinator now derives the transfer deterministically. It recomputes source and destination heartbeat freshness, requires the exact current claim, verifies the checkpoint edge's Ed25519 storage receipt, checks claim, repository, issue, source host, custody epoch, and time order, advances exactly one epoch, and emits both the proposed Freed claim-transfer request and destination restore requirement. This plan carries no authority. The transfer remains blocked until Freed accepts that exact request through its supported claim command.
+The coordinator derives the transfer deterministically. It recomputes source
+and destination heartbeat freshness, requires the exact current claim, verifies
+the checkpoint edge's Ed25519 storage receipt, checks claim, repository, issue,
+source host, custody epoch, and time order, advances exactly one epoch, and
+emits both the proposed transitional Freed claim-transfer request and
+destination restore requirement. This plan carries no authority. During the
+compatibility phase, the transfer remains blocked until the supported Freed
+command records that exact request. The target Factory module performs the same
+transition through Vorton authority.
 
 The transfer sequence is:
 

@@ -2,71 +2,212 @@
 
 ## Design goal
 
-A Vorton installation is one governed system that can span many hosts, providers, and worker types. The control plane stays online in the cloud. Workers connect outward, advertise capabilities, lease Work, and return evidence. Provider credentials remain on the worker host or in its dedicated credential boundary.
+Vorton is a governed operating system for people and organizations. One
+installation can span hosts, providers, and worker types and can contain many
+logically isolated workspaces. An installation is one infrastructure trust,
+release, scaling, and catastrophic-recovery boundary. A workspace is the
+product identity, membership, authority, data, module-activation, memory,
+storage, secret-binding, budget, and audit boundary.
 
-Vorton is the product and release identity. FreedOS and AubOS are installation identities. The interface derives its name, branding, enabled modules, and organization-specific behavior from installation configuration while sharing the same Vorton product source.
-
-### Legacy protocol identifiers
-
-Releases through 0.3.2 were published under the former upstream name. Their manifests, OCI references, migration files, PostgreSQL role names, private schema, and transaction context keys remain byte-for-byte historical contracts. Current Vorton code may use those persisted identifiers behind a compatibility boundary until a tested forward migration replaces them. They are not product branding and must not be rewritten in place.
-
-New package scopes, CLI commands, environment variables, installation manifests, release images, and public documentation use Vorton. The first Vorton release must prove an upgrade from the exact 0.3.2 FreedOS state before the compatibility identifiers can be retired.
+The flagship installation initially contains FreedOS and AubOS cloud. The
+installation has a neutral identity and canonical Vorton origin. The selected
+workspace supplies the signed-in product identity. Branded entry links may
+request a workspace, but the server always resolves live PostgreSQL membership.
 
 ```text
-Human and agent-facing clients
-             |
-      Vorton control plane
-             |
-  Postgres authority and events
-             |
-     worker coordination
-       /      |       \
-    Fly     Linux     macOS
-  workers   workers   workers
+People and worker clients
+          |
+   neutral Vorton origin
+          |
+  authentication and shell
+          |
+  workspace membership check
+          |
+  workspace module projection
+          |
+  +-------+----------------+
+  |                        |
+FreedOS                 AubOS cloud
+  |                        |
+Factory, Goals,          Vorton modules and
+Executive Council        private AubOS modules
+          \                /
+           Vorton kernel
+          /      |       \
+     Postgres  brokers  worker pool
 ```
+
+An installation administrator ultimately controls its physical resources. A
+workspace whose owners require protection from that administrator needs a
+separate installation. Product-level installation authority does not otherwise
+grant workspace content access. Emergency access requires an explicit,
+time-bound, recently authenticated break-glass path and an immutable receipt.
+
+## Legacy protocol identifiers
+
+Releases through 0.3.2 were published under the former upstream name. Their
+manifests, OCI references, migration files, PostgreSQL role names, schemas, and
+transaction-context keys remain historical contracts. They are not current
+product architecture and must not be rewritten in place. A tested forward
+migration replaces them.
+
+## Identity and authority
+
+Supabase Auth establishes one installation-scoped person identity. Explicit
+`workspace_memberships` determine which workspaces that person may enter.
+Authentication proves identity only. Policy, capabilities, approvals, and Work
+determine action authority in the selected workspace.
+
+Every workspace-owned request, row, object, job, event, cache key, log,
+receipt, export, backup, and deletion operation carries
+`vortonInstallationId` and `workspaceId`. Missing, stale, foreign, inferred, or
+revoked scope fails closed. Sensitive actions require recent AAL2 when Policy
+declares it.
+
+Roles are versioned skills describing how to work. They grant no authority.
+Provider identities and identifiers are separately named and never substitute
+for Vorton identity.
 
 ## Kernel
 
-The kernel owns People, Workers, Roles, Work, Policy, and Records. Modules use these contracts rather than creating independent identity systems, queues, approval stores, or organizational ledgers.
+The kernel owns People, Workers, Roles, Work, Policy, Records, approvals,
+receipts, capability grants, workspace membership, and the transactional event
+outbox. Modules use these services instead of creating independent identity,
+authority, queue, approval, or audit systems.
 
-Roles are skill files. A role may describe jurisdiction, inputs, outputs, methods, review standards, and escalation rules. Policy and explicit Work grant capabilities. Loading a CEO role does not make a worker sovereign, however much the prompt may enjoy the hat.
+Asynchronous work uses at-least-once delivery, immutable event identity,
+idempotent consumers, expected-version checks, bounded retry and replay, and
+visible dead-letter state.
 
-## Control plane
+## Installation modules
 
-The web control plane runs on Fly.io. It provides one view of goals, open Work, decisions, approvals, memory provenance, conversations, costs, worker health, and Factory tickets. It uses Supabase Auth and Postgres. Realtime updates drive operational views.
+Product domains are installation modules. Vorton core owns the shell, module
+catalog and loader, design system and existing themes, API gateway, service
+brokers, and lifecycle authority.
 
-The first release uses one frontier worker route. Provider and runtime adapters remain explicit so later workers can use different frontier providers, local models, or containerized research environments without changing kernel authority.
+A module is admitted once as an immutable installation artifact and activated
+separately in each workspace. The selected workspace's PostgreSQL projection
+determines routes, navigation, commands, search surfaces, and default module.
+Direct navigation to an inactive or foreign module fails closed.
 
-## Data boundaries
+The module release binds:
 
-Postgres stores canonical runtime state. Every decision and approval is append-only, attributable, time-bound where appropriate, and superseded explicitly. Object storage holds large source artifacts. Hindsight receives admitted memory material and derived reflections through a Context Gateway.
+- exact identity, version, publisher, digest, and Vorton SDK compatibility;
+- browser UI and server artifacts;
+- routes, navigation, commands, and interface slots;
+- capabilities, service calls, network destinations, and secret references;
+- database schema and migrations;
+- jobs, tools, plugins, and skills; and
+- backup, recovery, deletion, upgrade, and rollback behavior.
 
-Hindsight cannot grant authority. Retrieved text is untrusted context. The gateway preserves source identity, citations, classification, admission state, consolidation lineage, and deletion propagation.
+UI artifacts lazy load through authenticated, content-addressed, same-origin
+paths. Workspace switching cancels active requests and changes all client cache
+and persistence namespaces. UI presence never grants server authority.
 
-Role-based memory filtering is a future enforcement layer. The first release includes classification fields and interfaces but does not claim that role memory boundaries are enforced.
+Module backends are independently versioned without requiring one permanent
+service per module. A shared module host supervises module processes. A shared
+worker pool runs queued jobs. Each process receives a signed, expiring
+workspace context and narrow broker APIs, not ambient installation-wide
+database or secret credentials. Dedicated services are exceptional profiles
+for workloads that justify their cost or isolation.
 
-## Modules
+Factory and Goals begin behind a narrow internal module contract while still
+compiled with Vorton. Independent remote artifacts follow after the
+higher-priority Factory and Council milestones.
 
-- Command Bridge presents the conversational entry point.
-- Opportunities tracks possibilities that may merit investigation or promotion.
-- Goals tracks desired outcomes and their evidence.
-- Tasks is the personal label and view over kernel Work.
-- Tools lets an installation define and preview its own tools.
-- Admin manages people, access, policies, conversations, integrations, and observed deployment state. Its Conversations area ingests provider-neutral transcript revisions from adapters such as Google Meet and Omi.
-- Factory coordinates software production through kernel Work and external repository connectors.
+## Modules, plugins, tools, and skills
 
-The upstream Tools module starts empty. It ships scaffolding and one uninstalled, offline example named Moonbase Triage. No personal tools, data, configuration, or assets are copied into Vorton.
+- A module is a coherent product domain with interface, records, workflows,
+  and lifecycle.
+- A plugin is executable integration or extension code used by Vorton or a
+  module.
+- A tool is a typed callable operation exposed through Vorton authority.
+- A skill is versioned instruction and reference material for a worker.
 
-Finance is not a built-in Vorton module. An installation may add a separately governed Finance module later without changing the kernel or weakening approval rules.
+A module may ship plugins, tools, and skills. Installing or loading any of them
+grants no authority. Third-party plugin interfaces are outside the current
+scope.
 
-## Factory boundary
+## Data
 
-Factory is a first-party module, not a separate organizational system. GitHub Issues may remain the canonical human software queue while Postgres records organizational Work, approvals, worker state, and receipts. A connector projects and reconciles between them without creating a second software-task authority.
+Postgres stores authoritative runtime and module state. Large or source-faithful
+artifacts live in encrypted object storage. Secret values live in dedicated
+secret boundaries and appear in records only as typed references. Hindsight
+stores derived memory behind the Context Gateway and can never grant authority.
 
-The active Freed Linux pilot remains the launch authority for its first ticket. Vorton consumes its read-only status first. Factory integration cannot delay or replace that pilot.
+External systems remain authoritative for facts their connector contract
+names. Vorton stores attributable observations, normalized state, decisions,
+and provenance rather than silently declaring every imported value canonical.
 
-## Deployment
+Role-based memory filtering remains future scaffolding and is not an MVP
+security claim.
 
-Supabase provides Postgres, Auth, Row Level Security, Realtime, Queues, and object storage. Fly.io hosts the web control plane, APIs, coordinators, workers, and Hindsight. A separate Vercel deployment is not required for the first release.
+## Factory
 
-Each personal or organizational installation gets isolated Supabase, Fly, storage, secrets, and Hindsight resources. Multi-tenant software may come later, after the isolated-installation model has proven its security contract.
+Factory is Vorton's first-party software-factory module. The current AubOS
+Factory implementation becomes this module. Any workspace may activate it;
+FreedOS is the first priority.
+
+Factory owns dispatch claims, custody epochs, checkpoints, handoffs, stale
+claim reconciliation, recovery, publication coordination, and execution
+receipts under kernel Work, Policy, capabilities, approvals, and Records.
+There is no permanent external Factory mechanism.
+
+GitHub remains external repository infrastructure. Its connector observes and,
+when governed, changes repository facts such as issues, branches, commits, pull
+requests, reviews, and checks. A GitHub App installation identifier is not a
+Vorton installation identifier.
+
+FreedOS receives read-only operational visibility first, followed immediately
+by governed execution. Historical pilot names and receipts remain compatibility
+evidence while their behavior migrates into the module.
+
+## Goals and Executive Council
+
+Goals is a first-party module owning immutable goal versions and the current
+projection of intent, success criteria, hierarchy, owner, milestones, evidence,
+state, cadence, supersession, and retirement.
+
+Executive Council is a separate module using the Goals service plus kernel Work
+and Records. It may automatically apply bounded, reversible updates to
+evidence, progress, confidence, health, blockers, review dates, milestones, and
+tactics inside an already approved goal. Every update creates a new goal
+version with an exact diff and provenance.
+
+Changing fundamental intent, materially changing success criteria, changing
+the owner, spending, making external commitments, retiring a goal, promoting
+Work into external execution, or weakening Policy requires the authority named
+by workspace Policy.
+
+Council deliberation uses explicitly admitted workspace evidence. The first
+goal-management milestone does not depend on production Hindsight. A shared
+ChatGPT authentication cache may process explicitly admitted confidential
+material from AubOS and FreedOS only through isolated ephemeral sessions and
+workspace-scoped egress Policy, classification, budgets, logs, and receipts.
+
+## Deployment, upgrades, and recovery
+
+Supabase supplies Postgres, Auth, RLS, Realtime, Queues, and object storage.
+Fly hosts the shell, API, shared module runtime, workers, and Hindsight. Sharing
+a service never means sharing its workspace namespace.
+
+Core and module upgrades are separate operations. Shared database migrations
+are rehearsed in an ephemeral staging installation and use expand-first and
+contract-later sequencing. A shared release requires an all-workspace backup,
+identity-preservation verification, and isolated recovery proof.
+
+Whole-installation point-in-time restoration is reserved for catastrophic
+failure because it rewinds every workspace. Ordinary recovery restores a
+workspace or module logical backup into an isolated namespace before any
+production change.
+
+## Current implementation status
+
+The approved architecture is ahead of the current release. Existing 0.3.x
+installation manifests, deployment profiles, validators, and Factory connector
+contracts still encode parts of the former one-realm installation and external
+Factory model. Current main provides governed workspace selection and a
+PostgreSQL-derived projection over statically compiled module definitions. It
+does not yet provide the installation catalog, signed independent artifacts,
+lazy interface loader, supervised module runtime, or module upgrade lifecycle.
+No source commit alone is release, deployment, or migration authority.

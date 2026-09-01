@@ -55,9 +55,51 @@ Each contribution is durable before the next model call begins. The API advances
 
 The full protocol uses eleven serialized model calls because the private subscription worker owns one authentication cache. Parallel calls against that cache are forbidden. A partial run remains visible and resumable. Synthesis is withheld until all ten prerequisite contributions exist.
 
-The final synthesis has `authority: none`. It cannot create a Decision, Approval, capability grant, new Work item, tool call, publication, or external effect. The owner reviews it through the existing executive workflow and supplies any later authority explicitly.
+The final synthesis itself has `authority: none`. It cannot create a Decision,
+Approval, capability grant, tool call, publication, or external effect. A
+separate Goals-module application path may consume the completed Council run
+under workspace Policy and apply only the bounded updates described below.
 
 The default private-pilot route uses the Codex CLI with owner-delegated ChatGPT subscription authentication. Provider identity, configured model, billing boundary, host, and capabilities remain visible on every run. The OpenAI Responses API remains an optional usage-billed adapter for installations that select it explicitly. Neither provider becomes a new authority source.
+
+## Long-term goals
+
+Goals is a first-party installation module. It owns immutable goal versions,
+the current-version pointer, hierarchy, owner, intent, success criteria,
+horizon, milestones, review cadence, evidence, state, supersession, and
+retirement. Council is a separate module that consumes the Goals service and
+kernel Work and Records.
+
+Each organizational workspace runs its own Council. There is no cross-workspace
+Council or shared goal context in the MVP.
+
+Workspace Policy may authorize the Council application path to apply these
+bounded, reversible changes without a person approving each update:
+
+- reconcile evidence and freshness;
+- assess progress, confidence, health, and blockers;
+- change the next review date;
+- add, revise, complete, or remove milestones inside the approved goal;
+- reorder tactics inside an approved strategy; and
+- create proposed Work and recommended next actions.
+
+The bounded path may not change fundamental intent, materially change success
+criteria, change the accountable owner, approve spending, make an external
+commitment, retire or delete a goal, promote proposed Work into externally
+effective execution, or weaken Policy. Those transitions require the authority
+declared by workspace Policy.
+
+Every automatic update creates an immutable goal version that binds the prior
+version, exact diff, evidence, rationale, Council run, Policy decision, actor,
+and time. Expected-version checks prevent one Council run from overwriting a
+newer person or Council update.
+
+The first goal-management milestone uses explicitly admitted evidence Records
+and does not depend on production Hindsight recall. A shared ChatGPT
+authentication cache may process explicitly admitted confidential material
+from AubOS and FreedOS only through isolated ephemeral sessions. Prompt
+construction, model egress Policy, classification, budgets, logs, and receipts
+remain workspace scoped.
 
 ## Wave 2 implementation
 

@@ -1,6 +1,13 @@
 # Delivery phases
 
-Status: Phase 2 is complete. Phase 3 is in progress around the approved task-scoped Freed authority extension and one real runtime-neutral pilot issue.
+Status: historical and transitional FreedOS implementation ledger
+
+Phase checkmarks record evidence completed for the AubOS Factory implementation
+lineage and its first FreedOS activation. They do not prove the final
+workspace-scoped Vorton module boundary. ADR 0007 supersedes the external
+authority framing: Factory becomes the first-party Vorton module, FreedOS
+receives read-only visibility first, and governed execution follows after the
+claim, custody, recovery, and receipt path moves under Vorton authority.
 
 ## Phase 0: architecture and threat model
 

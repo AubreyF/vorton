@@ -4,7 +4,9 @@ This roadmap separates the durable product direction from the work currently und
 
 ## Long-term direction
 
-Vorton is intended to become a modular operating system for a person or organization. Each installation should coordinate people, AI workers, knowledge, software, tools, and infrastructure without surrendering control to one model provider or execution host.
+Vorton is intended to become a modular operating system for people and
+organizations. Each installation is one infrastructure trust domain containing
+one or more logically isolated workspaces.
 
 The mature system should provide:
 
@@ -14,27 +16,67 @@ The mature system should provide:
 - portable roles expressed as skill files that workers can inherit;
 - workers distributed across cloud services, local machines, and isolated environments;
 - cited memory with consolidation, contradiction handling, review, and selective forgetting;
-- Factory as the software-production module of the same operating system;
+- Factory as the first-party software-production module for every workspace
+  where it is activated;
+- independently released installation modules activated per workspace;
 - installation-owned modules, tools, integrations, and workflows; and
 - deterministic installation, upgrades, rollback, and recovery.
 
-Vorton should eventually adopt an OpenClaude- and Paperclip-inspired plugin architecture. Typed manifests, immutable distribution, quarantined imports, isolated workers, and explicit capability gates should let integrations and optional modules extend Vorton without weakening kernel authority or requiring permanent source forks. Plugins install into an installation, but activation and every runtime resource remain workspace scoped. Any plugin contract that cannot carry both `vortonInstallationId` and `workspaceId` fails closed. External provider identifiers such as `githubAppInstallationId` remain separately typed and grant no Vorton authority.
+Vorton separates modules, plugins, tools, and skills. Modules are coherent
+product domains. Plugins are executable integrations used by core or a module.
+Tools are typed callable operations. Skills are instructions and references
+that grant no authority. Immutable distribution, supervised execution, and
+explicit capability gates let installations extend Vorton without permanent
+source forks. Third-party plugin interfaces are outside the current scope.
 
 ## Work in progress
 
-### First live installation
+### 1. FreedOS Factory visibility
 
-- [ ] Complete and verify the isolated deployment of the control plane, API, workers, database, storage, and memory service.
-- [ ] Validate sign-in, authorization, Work creation, worker dispatch, receipts, and review as one complete flow.
-- [ ] Run a real retain, consolidation, retrieval, and citation canary.
-- [ ] Prove application, configuration, and database recovery during an upgrade.
+- [ ] Bind every Factory envelope and persisted object to the exact Vorton
+      installation and FreedOS workspace.
+- [ ] Display real tickets, Work, workers, claims, custody, pull requests,
+      checks, blockers, freshness, and recovery state.
+- [ ] Preserve GitHub repository facts without treating it as another Factory
+      control plane.
+- [ ] Prove phone and desktop workspace selection and cross-workspace denial.
 
-### Factory pilot
+### 2. FreedOS Factory governed execution
 
-- [ ] Display live tickets, workers, claims, pull requests, checks, blockers, and recovery state.
-- [ ] Reconcile external ticket state with Vorton Work without inventing a second queue.
-- [ ] Validate the read-only connector before approving authority-changing operations.
-- [ ] Generalize proven connector behavior without adding pilot-specific policy to the kernel.
+- [ ] Move the existing AubOS Factory claim, custody, checkpoint, handoff,
+      recovery, and publication behavior behind Vorton module authority.
+- [ ] Require exact Work, Policy, capability, idempotent admission, conflict
+      denial, and immutable execution receipts.
+- [ ] Provide workspace and installation emergency stops.
+- [ ] Prove response-loss replay, stale-custody recovery, handoff, and rollback.
+
+### 3. Organizational goals and Executive Council
+
+- [ ] Deliver immutable long-term goal versions in the Goals module.
+- [ ] Let each organizational workspace run an isolated Executive Council over
+      explicitly admitted evidence.
+- [ ] Apply bounded updates to evidence, progress, health, review dates,
+      milestones, tactics, and proposed Work.
+- [ ] Require governed authority for intent, material success criteria,
+      ownership, spending, external commitments, retirement, deletion, and
+      externally effective execution.
+
+### 4. Independently upgradable installation modules
+
+- [ ] Publish the Module SDK, immutable release manifest, installation catalog,
+      and workspace activation contract.
+- [ ] Lazy load exact UI artifacts through authenticated same-origin paths.
+- [ ] Run custom logic in a shared supervised module host and worker pool.
+- [ ] Prove module backup, schema expansion, staged activation, rollback, and
+      data-preserving deactivation.
+
+### 5. AubOS cloud migration
+
+- [ ] Create the empty AubOS cloud workspace only after release adoption and
+      workspace-birth authority are accepted.
+- [ ] Migrate real data one module at a time, beginning with Tasks.
+- [ ] Keep AubOS local usable until each module is accepted and cut over.
+- [ ] Populate no synthetic records in the production AubOS workspace.
 
 ### Release hardening
 
@@ -58,7 +100,8 @@ Memory delivery is intentionally narrow. Production Hindsight recall, retain, co
 - PostgreSQL authority projections for workspace-scoped memory banks and admitted source material, plus a test-only in-memory Context Gateway mutation harness.
 - Google Meet and Omi adapter foundations for high-volume conversation ingestion.
 - Worker registration, capability advertisement, leasing, status, dispatch, and evidence contracts.
-- A read-only Factory connector boundary for external software queues and execution systems.
+- A transitional read-only Factory connector boundary and imported AubOS
+  Factory implementation lineage. This is not the final authority model.
 - Deterministic initialization, content-addressed upgrades, conflict detection, and exact rollback.
 - Immutable release manifests, digest-pinned images, checksums, registry evidence, and software bills of materials.
 
@@ -83,17 +126,20 @@ Memory delivery is intentionally narrow. Production Hindsight recall, retain, co
 
 - More frontier providers, local model runtimes, and specialized diagnostic workers.
 - Containerized research and operational workers beyond software development.
-- Complete Admin, including Conversations, plus Tasks, Goals, Opportunities, Command Bridge, Tools, and Factory.
-- Support installation-owned optional modules, including a separately governed Finance module when an installation actually needs one.
+- Complete Admin, Conversations, Tasks, Goals, Opportunities, Command Bridge,
+  Tools, Factory, and Executive Council as first-party installation modules.
+- Support installation-owned modules, including private AubOS Finance.
 - Rich transcript backfills, raw media workflows, and additional conversation providers.
-- A signed module and tool registry with immutable versions, permission review, workspace-specific activation, and revocation, followed by a managed deployment model once isolated installations prove the security contract.
+- A signed module and tool registry with immutable versions, permission review,
+  workspace-specific activation, and revocation.
 - Brokered plugin effects, short-lived secret handles, recent AAL2 step-up for dangerous actions, and receipts that bind plugin version, installation, workspace, Work, and capability authority.
 
 ## Rules that do not move
 
 - Memory supplies context but never grants authority.
 - Roles describe how to work. Policy and explicit Work determine what a worker may do.
-- Factory uses kernel Work and Records rather than creating a separate organizational ledger.
+- Factory is a Vorton module and uses kernel Work and Records rather than
+  creating a separate organizational ledger or external Factory authority.
 - External systems retain authority wherever a connector contract says they do.
 - Provider identity proves identity only. PostgreSQL membership and Policy determine workspace and plugin authority.
 - Plugins never infer a workspace or cross workspace boundaries through caches, jobs, credentials, filesystem paths, event subscriptions, logs, receipts, or exports.

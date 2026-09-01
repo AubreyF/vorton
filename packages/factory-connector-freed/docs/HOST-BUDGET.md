@@ -2,6 +2,12 @@
 
 Verified on 2026-08-13. Prices exclude tax and may exclude IPv4, backup, or object-storage charges.
 
+This budget covers the transitional native host for the first FreedOS Factory
+activation. It is not a per-module cost estimate and does not imply that every
+Factory activation or installation module receives an always-on server. The
+approved Vorton module architecture defaults to a shared supervised module
+runtime and worker pool.
+
 ## Recommendation
 
 Start on a Hetzner CX43 in Falkenstein or Helsinki with 8 shared x86 vCPUs, 16 GB RAM, and 160 GB local storage. The current post-adjustment price is $18.49 per month before extras. Use a persistent backup target and private Tailscale access.

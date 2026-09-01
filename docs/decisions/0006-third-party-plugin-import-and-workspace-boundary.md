@@ -1,38 +1,81 @@
-# ADR 0006: Third-party plugin import and workspace boundary
+# ADR 0006: Plugin, skill, tool, and workspace boundary
 
 Status: Proposed
 
 ## Context
 
-Vorton intends to support OpenClaude- and Paperclip-inspired plugins without importing their ambient host authority assumptions. A plugin may contain instructions, reference files, scripts, tools, connectors, jobs, or user interface extensions. Installation of an artifact and permission to use it are separate decisions.
+Vorton draws useful extensibility ideas from Paperclip and OpenClaw without
+implying affiliation, endorsement, or code derivation. Their concepts do not
+become one undifferentiated package type inside Vorton.
 
-Vorton authenticates a person at the installation level. Live PostgreSQL `workspace_memberships` determine which workspaces that person may enter. Provider identity proves identity only. It grants no workspace membership, plugin activation, capability, or authority.
+ADR 0007 defines installation modules as coherent product domains with
+interface, records, workflows, and lifecycle. This decision covers the related
+but distinct plugin, tool, and skill boundaries. Third-party plugin interfaces
+are outside the current scope.
 
-The transitional Freed connector already uses `installationId` for a GitHub App installation. That external provider identifier is not a Vorton organizational installation. The single pilot connector predates the multi-workspace contract and does not prove workspace isolation.
+Vorton authenticates a person at the installation level. Live PostgreSQL
+`workspace_memberships` determine which workspaces that person may enter.
+Provider identity proves identity only. It grants no module activation, plugin
+activation, capability, approval, or Work.
 
 ## Decision
 
-Vorton may store a signed or content-addressed plugin artifact in an installation-scoped catalog. Each activation and all configuration, capability grants, secrets, storage, jobs, memory access, worker actions, events, logs, receipts, exports, and audit records are workspace scoped. A future installation-level component requires a separate, narrow contract and cannot reuse workspace authority by implication.
+A plugin is executable integration or extension code used by Vorton or a
+module. A tool is a typed callable operation exposed through Vorton authority.
+A skill is versioned instruction and reference material for a worker. Roles are
+skills. A module may ship or depend on plugins, tools, and skills, but every
+artifact retains a separate identity, version, activation state, and receipt
+chain.
 
-Every plugin runtime request and durable plugin record must carry both `vortonInstallationId` and `workspaceId`. The trusted dispatcher resolves those identifiers from authenticated server state and current PostgreSQL membership. External provider identifiers use separate types and names such as `githubAppInstallationId`. They never substitute for Vorton tenancy or grant Vorton authority. The plugin cannot choose, infer, remember, or override the active workspace. A plugin contract that cannot represent both Vorton identifiers, or that overloads them with a provider identifier, is incompatible and must fail closed.
+Installing, activating, or loading an artifact grants no authority. A skill
+cannot install executable dependencies, activate a tool, obtain a credential,
+create workspace membership, or widen a worker capability. An imported package
+that contains executable code enters the plugin review path even when it also
+contains a `SKILL.md` file.
 
-Roles describe competence and grant no plugin authority. A plugin receives only the capabilities assigned to the current Work in the named workspace. Admission and every privileged transition check live workspace membership and revocation state. Dangerous actions require an explicit capability and recent AAL2 step-up authentication when Policy requires it. Workspace-specific identity federation may resolve to the same installation-scoped person, but federation never creates workspace membership.
+Vorton may store signed or content-addressed plugin artifacts in an
+installation-scoped catalog. Plugin activation, configuration, capabilities,
+secrets, storage, jobs, memory access, worker actions, events, logs, receipts,
+exports, and audit records remain workspace scoped.
 
-Third-party bundles enter quarantine as immutable versions with source, digest, license, files, requested capabilities, and analyzer findings. Instructions and read-only resources may run in recommendation-only mode. Scripts, installers, tools, connectors, and browser or network behavior require reviewed runtime adapters.
+Every plugin runtime request and durable plugin record carries both
+`vortonInstallationId` and `workspaceId`. The trusted dispatcher resolves those
+identifiers from authenticated server state and live PostgreSQL membership.
+External identifiers use separately named fields such as
+`githubAppInstallationId`. They never substitute for Vorton scope or grant
+Vorton authority.
 
-Plugin code runs outside the Vorton host in an ephemeral isolated worker with no ambient credentials, database access, memory access, network, host filesystem, shared cache, or event subscription. Vorton supplies selected inputs and an empty output boundary. External effects pass through typed brokers that check the installation, workspace, Work, Policy, capability grant, approval, destination, and limits. Brokers use short-lived secret handles rather than exposing provider credentials to plugin code.
+Executable plugin code runs in a supervised process or worker with no ambient
+database credential, secret store, host filesystem, shared cache, event
+subscription, or unrestricted network. Vorton supplies selected inputs and
+narrow broker APIs. External effects pass through typed brokers that check the
+installation, workspace, Work, Policy, capability grant, approval, destination,
+and limits. Brokers use short-lived secret handles rather than exposing
+provider credentials.
 
-Workspace scope must survive every asynchronous boundary. Cache keys, job payloads, queues, filesystem paths, object keys, event topics, logs, receipts, exports, and cleanup operations include and validate both identifiers. Missing, stale, mismatched, or unauthorized scope blocks the operation.
+Workspace scope survives every asynchronous boundary. Cache keys, job
+payloads, queues, filesystem paths, object keys, event topics, logs, receipts,
+exports, retries, and cleanup operations include and validate both Vorton
+identifiers. Missing, stale, mismatched, inferred, or revoked scope blocks the
+operation.
 
-The control plane presents three modes: Advise, Draft, and Act. Imported plugins start in Advise. Activation shows the exact workspace, data classes, connectors, destinations, and effects requested. Updates create new immutable versions and require review when permissions change. Receipts show the plugin version, workspace, inputs, broker decisions, outputs, and external effects.
+Third-party bundles enter quarantine as immutable versions with source,
+digest, license, files, requested capabilities, and analyzer findings.
+Instructions and read-only resources may be reviewed without activating
+executable code. Scripts, installers, connectors, jobs, browser behavior, and
+network behavior require reviewed runtime adapters. Static and semantic
+analysis informs review but cannot authorize activation.
 
 ## Consequences
 
-- Installing a plugin does not activate it in any workspace.
-- Switching workspaces requires a live membership check and produces no inherited plugin authority.
-- A shared credential, cache, job runner, or event bus must preserve Vorton installation and workspace scope at every read and write.
-- Provider installation identifiers remain separately typed and grant no Vorton workspace authority.
-- The Freed pilot connector is transitional compatibility, not evidence that the plugin contract enforces multi-workspace isolation.
-- Static and semantic scanners inform review but cannot authorize activation or execution.
-- Revoking an activation or capability stops future use without deleting historical receipts.
-- Installation-level plugins remain unsupported until a separate contract defines their narrow authority and isolation requirements.
+- A module, plugin, tool, and skill cannot be reinterpreted as another artifact
+  type merely to bypass its review boundary.
+- Installing an artifact does not activate it in any workspace.
+- Switching workspaces requires live membership and inherits no module,
+  plugin, tool, or skill authority from the prior workspace.
+- Shared credentials, caches, workers, queues, and event buses preserve exact
+  installation and workspace scope at every read and write.
+- Revoking activation or capability stops future use without deleting
+  historical receipts.
+- Third-party plugin interfaces remain unsupported until a later decision
+  defines their isolation and user-experience contract.

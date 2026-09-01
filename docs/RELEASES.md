@@ -1,6 +1,12 @@
 # Immutable releases
 
-An Vorton release has three immutable identities:
+## Release classes
+
+Vorton core releases and installation-module releases are separate lifecycle
+objects. The checked-in schema-v2 workflow below implements the current 0.3.x
+whole-core release. It does not yet implement independently released modules.
+
+A Vorton core release has three immutable identities:
 
 1. The source commit contains runtime code, Dockerfiles, migrations, and managed templates.
 2. GHCR stores the `control-plane`, `web`, and `worker` images built from that source. The image workflow records their registry digests and attaches BuildKit provenance and SBOM attestations to each image index.
@@ -8,7 +14,58 @@ An Vorton release has three immutable identities:
 
 Hindsight is an upstream installation dependency. Vorton does not build it or include it in the first-party image set.
 
-## Build the images
+An installation-module release is admitted to one installation catalog and
+activated separately in each workspace. Admission does not activate the module
+and grants no capability. One immutable module manifest binds:
+
+- module identity, version, publisher, signature, and complete digest;
+- Vorton Module SDK compatibility;
+- browser UI and server artifacts;
+- jobs, routes, navigation, commands, and interface slots;
+- requested capabilities, brokers, network destinations, and secret
+  references;
+- schema version and database migrations;
+- storage classes, tools, plugins, and skills; and
+- backup, recovery, deletion, upgrade, and rollback rules.
+
+UI artifacts load through authenticated, content-addressed, same-origin paths.
+Server artifacts run in the shared supervised module host, and background work
+runs in the shared worker pool unless a dedicated execution profile is
+separately approved. A module upgrade does not rebuild the Vorton shell or
+allocate permanent infrastructure merely because a new module exists.
+
+Current main provides governed workspace selection and a PostgreSQL-derived
+projection over statically compiled module definitions. It does not provide an
+installation catalog, signed module artifacts, a lazy artifact loader,
+independent backend runtime, or module upgrade lifecycle. Those remain target
+architecture and release blockers.
+
+## Shared-installation release gate
+
+A core release affects every workspace in the installation. Before adoption it
+must:
+
+1. rehearse migrations and rollback in an ephemeral staging installation;
+2. verify an all-workspace backup outside the primary failure boundary;
+3. use expand-first and contract-later schema evolution;
+4. preserve every workspace identity, membership, realm, module activation,
+   memory bank, storage namespace, and secret binding;
+5. prove cross-workspace denial after migration;
+6. restore the backup into an isolated namespace and verify counts, hashes, and
+   provenance; and
+7. bind the plan, approval, apply, verification, replay, and rollback receipts
+   to the exact release object.
+
+Whole-installation point-in-time recovery is reserved for catastrophic failure
+because it rewinds every workspace. Ordinary recovery uses workspace and
+module logical backups and performs an isolated restore first.
+
+A module release follows the same principles at module scope. The installation
+maintains one current schema head for each module. Staged workspace activation
+is permitted only while every active runtime remains compatible with that
+schema. Deactivating or removing code never deletes module data.
+
+## Build the current core images
 
 The source commit must be on the repository's default branch and must contain:
 
@@ -43,7 +100,7 @@ gh run download "$run_id" \
 jq . "$artifact_dir/image-digests.json"
 ```
 
-## Prepare the manifest commit
+## Prepare the current core manifest commit
 
 Return to the exact clean source checkout. The preparation command refuses a source other than `HEAD`, a dirty worktree, mutable image tags, image repositories outside the selected GitHub owner's canonical `vorton-control-plane`, `vorton-web`, and `vorton-worker` packages, duplicate image names, missing templates, invalid protocol versions, and a CLI version that differs from `packages/cli/package.json`. It derives the current migration head and managed-file digests from the source commit's Git tree.
 

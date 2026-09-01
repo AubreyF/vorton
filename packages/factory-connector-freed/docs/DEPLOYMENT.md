@@ -1,10 +1,21 @@
 # Deployment contract
 
-Status: native disabled-by-default installer and authority broker source, writer disabled
+Status: transitional native FreedOS profile, writer disabled
 
-FreedOS Factory is the Freed-specific deployment of the reusable Vorton Factory platform. Operator-facing service descriptions and GitHub App identities use FreedOS Factory. Stable package names, protocol names, service accounts, and filesystem paths remain Vorton Factory so another repository deployment does not require a fork of the platform.
+FreedOS Factory is the first workspace activation of Vorton's first-party
+Factory installation module. The current native profile preserves the AubOS
+Factory implementation lineage while it migrates into the shared Vorton
+runtime. It is not an external Factory service and does not define a permanent
+one-host deployment per module.
 
-## Pilot topology
+Operator-facing service descriptions and GitHub App identities use FreedOS
+Factory. Stable package names, protocol names, service accounts, and filesystem
+paths remain transitional Vorton Factory identities until a bounded migration
+can preserve their signatures, hashes, replay keys, and receipts. Another
+workspace activation must use the same module contract without inheriting
+FreedOS paths, credentials, repository identities, or authority.
+
+## Transitional pilot topology
 
 - One always-on Ubuntu 24.04 or Debian 13 Linux host
 - One pinned Symphony executable under `/opt/vorton-factory/symphony/<patch-digest>/<commit>`

@@ -1,6 +1,13 @@
 # ADR 0001: Product and repository boundary
 
-Status: Accepted
+Status: Superseded in part by ADR 0007
+
+ADR 0007 supersedes this decision wherever it describes FreedOS and AubOS as
+separate installations, assigns extensions to one organization-owned
+installation repository, or treats branding as installation identity. The
+upstream product boundary, privacy rules, and prohibition on long-lived core
+forks remain accepted. The historical text below is preserved as the decision
+that governed releases through 0.3.x.
 
 ## Decision
 

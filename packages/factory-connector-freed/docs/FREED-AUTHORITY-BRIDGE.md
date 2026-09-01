@@ -1,6 +1,12 @@
-# Freed authority bridge
+# Transitional Freed state bridge
 
 Status: Freed commands published for review; Vorton Factory broker binary implemented but not installed
+
+This file documents the current compatibility path between the Factory module
+and authority state stored by the Freed application. It is not a separate
+permanent Factory mechanism. ADR 0007 makes Factory itself responsible for
+workspace-scoped claims, custody, recovery, and receipts. Migration must
+preserve the behavior proved here before the compatibility bridge can retire.
 
 ## Purpose
 
@@ -8,7 +14,7 @@ GitHub makes an issue schedulable. It does not grant permission to alter Freed. 
 
 The bridge translates one admitted Vorton Factory dispatch into a short Freed control-plane transaction. It never edits `current-tasks.json`, lease files, or control events directly.
 
-## Approved authority model
+## Transitional pilot authority model
 
 The initial pilot reuses Freed's reviewed `freed-nightly-runner` actor and
 `nightly-writer` trusted-launcher lease. Vorton Factory does not create another actor
@@ -134,12 +140,14 @@ outcome evidence, and soak contracts remain independent.
 
 ## Linux authority broker
 
-Linux eventually owns the one canonical Freed authority state root. The
-root-owned `factory-coordinator` binary invokes a checksum-pinned Freed control
-runtime locally and returns narrowly scoped receipts. On Linux it reads
-root-owned profiles from `/etc/vorton-factory/freed-broker-profiles`. The initial Mac
-profile lives under `/Library/Application Support/Vorton Factory/freed-broker-profiles`.
-Workers never receive the coordinator lease or filesystem access.
+In the transitional profile, Linux owns the canonical Freed compatibility
+state root. The root-owned `factory-coordinator` binary invokes a
+checksum-pinned Freed control runtime locally and returns narrowly scoped
+receipts. On Linux it reads root-owned profiles from
+`/etc/vorton-factory/freed-broker-profiles`. The initial Mac profile lives under
+`/Library/Application Support/Vorton Factory/freed-broker-profiles`. Workers
+never receive the coordinator lease or filesystem access. Final Factory claim
+authority moves into Vorton before this bridge retires.
 
 The broker allowlist is limited to:
 

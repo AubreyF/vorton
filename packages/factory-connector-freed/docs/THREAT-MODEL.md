@@ -1,5 +1,15 @@
 # Threat model
 
+## Architecture status
+
+This threat model records the current FreedOS compatibility deployment and the
+safety behavior inherited from AubOS Factory. The approved target makes Factory
+a first-party Vorton installation module for any workspace where it is
+activated. Claims, custody, checkpoints, recovery, and receipts move under
+workspace-scoped Vorton authority. References below to Freed task authority or
+the Freed broker name transitional storage and command boundaries, not a
+permanent external Factory mechanism.
+
 ## Protected assets
 
 - repository source and unpublished work
@@ -9,12 +19,17 @@
 - one-current-owner custody
 - provider, owner-review, publication, release, and deployment boundaries
 - checkpoint confidentiality and integrity
+- Vorton installation and workspace isolation
 
 ## Trust boundaries
 
 The Linux coordinator, authority broker, checkpoint edge, Linux worker, and Mac worker are separate processes and may use separate operating-system users. GitHub and the Codex service are external systems. Issue prose and repository code are untrusted worker inputs.
 
-Symphony may schedule only after Vorton Factory admission. Vorton Factory may admit only after GitHub and Freed authority agree. Neither local journal state nor Symphony memory can create authority.
+Symphony may schedule only after Vorton Factory admission. During transition,
+Factory admits only after GitHub repository evidence and the Freed
+compatibility projection agree. Neither local journal state nor Symphony
+memory can create authority. The target admission binds the exact Vorton
+installation, workspace, Work, capability, Factory claim, and custody epoch.
 
 ## Principal threats and controls
 

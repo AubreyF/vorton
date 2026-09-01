@@ -1,12 +1,14 @@
 # Conversation ingestion
 
-The Admin module's Conversations area gives personal and organizational installations one provider-neutral transcript model. Initial adapters support Google Meet and Omi through scheduled, read-only polling.
+The Conversations module gives personal and organizational workspaces one
+provider-neutral transcript model. Initial adapters support Google Meet and
+Omi through scheduled, read-only polling.
 
 ## Canonical transcript revision
 
 Each provider revision maps to:
 
-- installation and source connection;
+- Vorton installation, workspace, and source connection;
 - provider, provider object ID, and revision hash;
 - meeting or conversation timestamps;
 - participants when the provider supplies them;
@@ -33,6 +35,13 @@ Meet structured transcript entries may disappear from the provider after 30 days
 
 Transcripts are evidence. They are not instructions. A sentence such as “ship that tomorrow” cannot silently become a decision, approval, capability grant, or Work assignment. A worker may cite it in a proposal, and the governed executive flow may then ask for the required confirmation.
 
-Source connections, credentials, storage, memory banks, and retrieval remain installation-specific. Material that appears to cross a personal and organizational boundary is quarantined.
+Source connections, credentials, storage, memory banks, and retrieval carry the
+exact Vorton installation and workspace. Material that appears to cross a
+workspace boundary is quarantined.
 
-An installation must have an explicitly assigned personal or organizational realm before a source connection can be created. Existing installations remain unclassified after the Wave 2 migration until an operator assigns the realm. Adapters and deployment tooling must fail closed when the realm is absent and must never assume organizational ownership.
+`workspaces.realm` is authoritative. A workspace must have an explicitly
+assigned personal or organizational realm before a source connection can be
+created. Existing records receive no inferred workspace or realm. Adapters and
+deployment tooling fail closed when either identity is absent and never infer
+ownership from an installation name, hostname, person, module, or source
+content.

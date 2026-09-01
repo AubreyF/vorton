@@ -2,6 +2,13 @@
 
 Vorton Factory uses two private GitHub Apps installed only on selected repositories. Splitting them prevents routine queue observation from inheriting source publication authority.
 
+This is the GitHub connector contract for the first FreedOS Factory activation.
+GitHub is external repository infrastructure, not an external Factory control
+plane. Every token request, observation, mutation, and receipt also binds the
+exact Vorton installation and workspace. A GitHub App installation identifier
+must be named `githubAppInstallationId` and never substitutes for
+`vortonInstallationId` or `workspaceId`.
+
 ## Registration handoff
 
 Generate the exact private registration URLs without changing GitHub:
@@ -13,7 +20,13 @@ npm run github-app:registration -- draft-publisher
 
 Each command validates its checked-in policy, converts permission names to GitHub's registration parameters, disables webhooks and user OAuth, and prints a deterministic policy digest. Use the returned URL only after owner approval. After registration, install each App with `Only select repositories` and select `freed-project/freed` for the pilot. Repository selection occurs during installation, not registration.
 
-Generate one Coordinator private key for the Linux control host. Generate a separate Draft Publisher private key for each enrolled custody host so one host key can be revoked without copying authentication state from another host. Record the App ID, installation ID, App slug, bot login, selected repository, and registration digest outside the repository. Private keys never enter Git, issue state, checkpoints, logs, or worker environments.
+Generate one Coordinator private key for the Linux control host. Generate a
+separate Draft Publisher private key for each enrolled custody host so one host
+key can be revoked without copying authentication state from another host.
+Record the App ID, `githubAppInstallationId`, App slug, bot login, selected
+repository, Vorton installation, workspace, and registration digest outside the
+repository. Private keys never enter Git, issue state, checkpoints, logs, or
+worker environments.
 
 ## Coordinator
 

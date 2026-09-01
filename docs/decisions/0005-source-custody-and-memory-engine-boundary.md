@@ -23,7 +23,7 @@ Before sensitive or production use, Vorton must prove a complete export and isol
 - Omi remains a valuable conversation and future capture provider, but it is not Vorton's canonical memory authority.
 - gBrain and MemPalace remain design references and evaluation comparators rather than required runtime dependencies.
 - Exact episodic recall, semantic consolidation, temporal reasoning, entity linking, contradiction detection, and narrative or spatial views can evolve without creating a second authority ledger.
-- Cross-source identity must preserve provider aliases while using installation-scoped Vorton identities for people, projects, episodes, and artifacts.
+- Cross-source identity must preserve provider aliases while binding Vorton identities for people, projects, episodes, and artifacts to the exact installation and workspace.
 - Derived memories should record the engine, model or extractor version, confidence where meaningful, effective time, and supporting source revisions.
 - Broad retention does not imply broad access. Realm, classification, participant, workspace, purpose, and Policy constraints apply before retrieval context is assembled.
 - External action authority remains separate from memory richness. Remembering a request does not authorize executing it.

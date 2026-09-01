@@ -1,40 +1,79 @@
 # Factory module
 
-Factory coordinates software work through the Vorton kernel. It does not create a sibling platform, member model, memory system, or organizational ledger.
+Factory is Vorton's first-party software-factory module. The current AubOS
+Factory implementation becomes this module. Factory may be activated in any
+workspace, with FreedOS as the first priority.
 
-## Authority split
+Factory is not a connector to a permanent external Factory control plane. Its
+dispatch, custody, checkpoint, handoff, recovery, publication, and execution
+machinery belongs inside the module under Vorton authority.
 
-GitHub Issues may remain the canonical human queue for software tickets. Repository-specific claim, lease, validation, draft publication, and recovery machinery remains authoritative for execution where the connector declares it.
+## Authority
 
-Vorton owns organizational intent, Policy, decisions, approvals, Work relationships, worker inventory, executive recommendations, cross-module memory, and the control-plane view. The Factory connector reconciles those records with the software queue and execution system.
+Vorton owns organizational intent, Policy, decisions, approvals, Work,
+capabilities, worker admission, Records, receipts, and outcomes. Factory owns
+software-execution state through those kernel contracts, including:
 
-For each linked ticket, the connector records:
+- dispatch candidates and qualification;
+- claim identity and custody epoch;
+- worker and host custody;
+- conflict domains and branch ownership;
+- checkpoints and handoffs;
+- stale-claim reconciliation;
+- execution, verification, and recovery;
+- draft and final publication coordination; and
+- complete execution and outcome receipts.
 
-- installation Work ID and repository ticket ID;
-- which system owns each state transition;
-- current claim or lease witness;
-- worker, host, provider, and model;
-- branch, pull request, exact source head, and checks;
-- publication authority and draft or ready state;
-- receipts, blockers, recovery state, and final outcome; and
-- last successful reconciliation cursor.
+GitHub remains external repository infrastructure. It may remain authoritative
+for issue content and state, commits, branches, pull requests, reviews, and
+checks. The connector preserves those facts and changes them only through
+declared Factory capabilities. A GitHub App installation identifier is
+separately named and never grants Vorton authority.
 
-Conflicting claims fail closed and appear in the control plane. The connector never resolves an authority conflict by choosing the freshest timestamp.
+Every Factory envelope, row, object, job, event, cache key, host path, and
+receipt carries `vortonInstallationId` and `workspaceId`. Worker custody is
+bound to the same tuple, exact Work, capability, claim, and epoch. Missing,
+foreign, stale, duplicate, or conflicting custody fails closed.
 
-## Freed pilot
+## FreedOS delivery
 
-The existing Freed Linux pilot remains the sole launch lane for its first ticket. Its GitHub Issues, task claims, lease machinery, provider policy, and draft publication are the current Freed adapter and compatibility boundary.
+The first usable milestone is real read-only Factory visibility inside the
+FreedOS workspace. It displays:
 
-Initial FreedOS integration is read-only. It displays open tickets, worker activity, claims, draft pull requests, checks, blockers, and recovery state. It does not create a new queue, change live authority, contact providers, or publish code.
+- software tickets and their authoritative source;
+- Vorton Work reconciliation;
+- workers, hosts, claims, leases, and custody;
+- branches, pull requests, reviews, and checks;
+- blockers, freshness, and contradictions; and
+- checkpoint, recovery, and completion state.
 
-Later write integration requires an explicit connector contract and separate owner approval for each authority-changing operation.
+Read-only visibility makes no external change. It is followed immediately by
+governed execution. Initial write operations require explicit Work,
+capability, applicable Policy, idempotent admission, conflict denial, and
+immutable receipts.
 
-## Imported implementation
+Factory supplies both workspace and installation emergency stops. A stop
+blocks new admissions and lease renewal without deleting worktrees, evidence,
+or recovery state. Credential revocation and destructive cleanup remain
+separate governed actions.
 
-The governed execution implementation now lives in `packages/factory-connector-freed`. It is a sanitized snapshot of `AubreyF/aubtown` commit `014b786c8bf6b51a3ed265b4e36773afff0f5d59`, which is also the release installed on Nova Prime.
+## Implementation lineage
 
-The import preserves admission, routing, quota, custody, checkpoint, validation, review, reconciliation, and draft publication behavior. It excludes Git history, reports, dependency directories, build output, credentials, OAuth caches, host state, worktrees, and mutable runtime journals.
+`packages/factory-connector-freed` is the current transitional package name for
+a sanitized import of the AubOS Factory implementation lineage. Its historical
+names, receipts, and compatibility contracts remain immutable evidence. The
+package is migration material for Vorton Factory, not the final product
+boundary and not a permanent external authority.
 
-The connector remains Freed-specific because its broker, workspace manager, claim readers, readiness gates, and lifecycle reconciliation depend on Freed's authority model. Provider-neutral extraction can proceed behind the existing Factory contracts without weakening the pilot boundary.
+Factory adopts a narrow installation-module interface before the remote module
+catalog is complete. It may remain compiled with Vorton for the first FreedOS
+milestones. This avoids delaying Factory while preserving the path to an
+independently upgradable module.
 
-The Vorton and imported AubTown repositories currently declare no public software license. Their source is visible, but downstream reuse is not licensed until the owner selects one.
+## Current status
+
+The committed release still exposes a transitional read-only connector
+boundary and lacks the complete shared-workspace execution contract. This
+document states the accepted destination. It does not claim that governed
+execution, workspace activation, emergency stops, or independent Factory
+upgrades are already delivered.

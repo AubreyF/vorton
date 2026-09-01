@@ -1,8 +1,23 @@
 # Installation and upstream updates
 
-Organizations own a private installation repository. They configure Vorton without copying or editing the upstream kernel.
+One Vorton installation is a physical deployment and infrastructure trust
+domain containing one or more logically isolated workspaces. The flagship
+installation contains FreedOS and AubOS cloud. A private flagship configuration
+repository should hold nonsecret desired state, exact Vorton release locks,
+installed module locks, deployment topology, secret references, and recovery
+instructions. Its final repository name is not yet chosen.
 
-## Repository contract
+Workspace repositories do not control the shared deployment. They own
+workspace configuration, Policy, acceptance, and private module source where
+applicable. Public and private modules publish immutable artifacts to the
+installation catalog and activate separately per workspace. See
+[Installation modules](MODULES.md).
+
+The remainder of this document records the current 0.3.x installation updater
+and its historical repository contract. It remains necessary for verified
+forward migration, but it is not the approved final topology.
+
+## Legacy 0.3.x repository contract
 
 ```text
 my-organization/
@@ -43,7 +58,7 @@ The updater may modify Vorton-managed host adapters, the lock file, the desired 
 
 The CLI rejects path traversal and symbolic-link escapes. A plan cannot expand updater ownership by declaring a different class in its payload.
 
-## Initial adoption
+## Legacy initial adoption
 
 ```bash
 archive_root=/absolute/path/to/unpacked-release
@@ -68,7 +83,7 @@ Planning writes only the content-addressed local plan under `.vorton/plans/`. Re
 
 Apply preflights every action before changing installation files. Its content-addressed journal records each completed action and makes an unchanged retry idempotent. A changed preimage stops the entire apply before the first installation write.
 
-## Updates
+## Legacy whole-release updates
 
 ```bash
 next_archive_root=/absolute/path/to/unpacked-next-release
@@ -96,9 +111,22 @@ Merging the update pull request authorizes deployment in the first release. Open
 
 Database changes use expand and contract. Schema expansion precedes application rollout. Destructive cleanup occurs only in a later release after old workers are gone.
 
-## Rollback
+The target architecture separates Vorton core upgrades from module upgrades.
+Core database changes require an all-workspace backup and staging rehearsal.
+Module upgrades bind one exact module release, create a module-scoped backup,
+apply backward-compatible schema expansion, activate the version per workspace,
+and retain the prior artifact for rollback. A module update does not rebuild the
+Vorton shell.
+
+## Legacy rollback and target recovery
 
 Configuration rollback reverts the installation commit. Application rollback redeploys the prior recorded image digest. Database recovery uses forward repair or explicit backup restoration. An image rollback never pretends to reverse organizational data.
+
+Whole-installation point-in-time restoration rewinds every workspace and is
+reserved for catastrophic recovery. Ordinary recovery restores a workspace or
+module logical backup into an isolated namespace, verifies counts, hashes,
+identity, and cross-workspace denial, and requires separate authority before
+any production replacement.
 
 Before an update is committed, a local receipt may restore only exact updater-owned files whose postimages are unchanged. Vorton never uses broad checkout or clean operations as rollback.
 
@@ -112,11 +140,16 @@ Organizations that modify Vorton core become distributors. They maintain a separ
 
 Fly configuration remains installation-owned. Vorton owns only the first-party image fields that bind those files to the release lock. A later deployment operation must consume the exact lock, verify backup readiness, serialize migrations, deploy digest-pinned images, verify health, and record observed identity in Postgres. Application rollback selects an earlier image digest. Database recovery remains a separate forward repair or explicitly authorized restoration.
 
-## Installation scaffold
+## Legacy installation scaffold
 
 The schema-v2 installation templates create four Fly service configurations for the API, web application, worker, and Hindsight. First-party images are exact release-manifest references. Hindsight uses its separate upstream digest and the deterministic worker ID `<installation-name>-memory`, which always satisfies its minimum length. Environment configuration names Supabase, Postgres, provider, and Hindsight settings without embedding secret values. Postgres remains authoritative for decisions, approvals, Policy, Work, receipts, and outcomes. Hindsight stores derived memory and grants no authority.
 
-The Tools catalog starts empty. Moonbase Triage appears only as an uninstalled synthetic example. Factory starts in read-only mode and leaves repository execution authority in the existing external system. The scaffold contains no people, account IDs, endpoints, secret values, personal tools, or private data.
+The Tools catalog starts empty. Moonbase Triage appears only as an uninstalled
+synthetic example. The historical scaffold starts Factory in read-only mode and
+describes execution as external. ADR 0007 supersedes that destination: the
+current AubOS Factory becomes Vorton's Factory module, first visible read-only
+in FreedOS and then enabled for governed execution. The legacy scaffold and
+validator remain unchanged until a governed forward migration replaces them.
 
 The scaffold also creates `tests/acceptance/validate-installation.rb` and a pinned GitHub Actions workflow. The validator uses only Ruby's standard library. It checks release identity, digest-pinned images, exact Fly image mappings, the absence of Dockerfile builds, managed-file hashes, memory authority, read-only Factory mode, and the blank installed Tools catalog without downloading an unpublished CLI or a moving package version.
 
