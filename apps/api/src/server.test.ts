@@ -13,11 +13,17 @@ import {
   ModuleLifecycleAuthorityInputError,
   ModuleLifecycleAuthorityIntegrityError,
 } from "./module-lifecycle-authority.js";
+import {
+  WorkspaceMembershipRevocationConflictError,
+  WorkspaceMembershipRevocationForbiddenError,
+  WorkspaceMembershipRevocationInputError,
+  WorkspaceMembershipRevocationIntegrityError,
+} from "./workspace-membership-revocation.js";
 import { createApiServer } from "./server.js";
 
 const installationId = "7fae0c60-6682-41ec-b231-26bbaf7fde8e";
 const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
+const authUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"; // gitleaks:allow
 const personId = "7fb46f09-3894-4c24-933c-77c7a403341c";
 const workerId = "b5611dc4-07e4-4388-a7d0-ddf7bb452499";
 const credentialId = "ae24e48d-19b0-4e8f-8e06-6194bacf1ae1";
@@ -99,6 +105,14 @@ async function runtime(
     request: unknown;
     worker: unknown;
   }> = [];
+  const workspaceMembershipRevocationCalls: Array<{
+    operation: "approve" | "apply";
+    installationId: string;
+    workspaceId: string;
+    approvalId?: string;
+    request: unknown;
+    identity: AuthenticatedIdentity;
+  }> = [];
   const councilState = {
     protocol: "vorton.executive-council.v1",
     installationId,
@@ -141,6 +155,18 @@ async function runtime(
                       id: workspaceId,
                       slug: "synthetic-workspace",
                       displayName: "Synthetic workspace",
+                      moduleSurface: {
+                        defaultModuleId: "command",
+                        modules: [
+                          {
+                            id: "command",
+                            contractVersion: "v1",
+                            label: "Command Bridge",
+                            navigationOrder: 10,
+                            presentationVariant: "standard",
+                          },
+                        ],
+                      },
                       realm: "organizational" as const,
                       personKind: "owner" as const,
                       workItems: [
@@ -401,6 +427,81 @@ async function runtime(
         };
       },
     } as never,
+    workspaceMembershipRevocationAuthority: {
+      approve: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        request: { approvalId: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        if (request.approvalId === "66666666-6666-4666-8666-666666666666") {
+          throw new WorkspaceMembershipRevocationInputError(
+            "The workspace membership revocation request is invalid",
+          );
+        }
+        if (request.approvalId === "77777777-7777-4777-8777-777777777777") {
+          throw new WorkspaceMembershipRevocationForbiddenError(
+            "Live workspace owner authority is required",
+          );
+        }
+        if (request.approvalId === "88888888-8888-4888-8888-888888888888") {
+          throw new WorkspaceMembershipRevocationConflictError(
+            "The request conflicts with immutable workspace membership authority",
+          );
+        }
+        if (request.approvalId === "99999999-9999-4999-8999-999999999999") {
+          throw new WorkspaceMembershipRevocationIntegrityError(
+            "sensitive malformed membership revocation detail",
+          );
+        }
+        workspaceMembershipRevocationCalls.push({
+          operation: "approve",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract: "vorton.workspace-membership-revocation-approval.v1",
+            approvalId: request.approvalId,
+          },
+          approvalReceipt: {
+            contract:
+              "vorton.workspace-membership-revocation-approval-receipt.v1",
+          },
+        };
+      },
+      apply: async (
+        resolvedInstallationId: string,
+        resolvedWorkspaceId: string,
+        approvalId: string,
+        request: unknown,
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        workspaceMembershipRevocationCalls.push({
+          operation: "apply",
+          installationId: resolvedInstallationId,
+          workspaceId: resolvedWorkspaceId,
+          approvalId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract: "vorton.workspace-membership-revocation-approval.v1",
+            approvalId,
+          },
+          approvalReceipt: {
+            contract:
+              "vorton.workspace-membership-revocation-approval-receipt.v1",
+          },
+          receipt: {
+            contract: "vorton.workspace-membership-revocation-receipt.v1",
+          },
+        };
+      },
+    } as never,
     release: "synthetic-test",
     allowedOrigin: "https://control.vorton.example",
   });
@@ -415,6 +516,7 @@ async function runtime(
     installationAuthorityCalls,
     moduleLifecycleAuthorityCalls,
     moduleLifecycleExecutionCalls,
+    workspaceMembershipRevocationCalls,
   };
 }
 
@@ -456,6 +558,28 @@ function moduleLifecycleApproval(
     },
     expiresAt: "2026-08-31T12:00:00.000Z",
   };
+}
+
+const membershipTargetPersonId = "12121212-1212-4212-8212-121212121212";
+const membershipCapabilityGrantId = "13131313-1313-4313-8313-131313131313";
+const membershipApprovalId = "a4141414-1414-4414-8414-141414141414";
+const membershipReceiptId = "15151515-1515-4515-8515-151515151515";
+
+function workspaceMembershipRevocationApproval(
+  approvalId = membershipApprovalId,
+) {
+  return {
+    approvalId,
+    targetPersonId: membershipTargetPersonId,
+    expectedTargetKind: "member" as const,
+    workId,
+    capabilityGrantId: membershipCapabilityGrantId,
+    expiresAt: "2026-09-01T12:00:00.000Z",
+  };
+}
+
+function workspaceMembershipRevocationApply() {
+  return { receiptId: membershipReceiptId };
 }
 
 const lifecycleApprovalId = "55555555-5555-4555-8555-555555555555";
@@ -840,6 +964,162 @@ describe("control-plane API", () => {
       });
       expect(response.status).toBe(status);
       await expect(response.json()).resolves.toMatchObject({ error: { code } });
+    }
+  });
+
+  it("routes strict same-person membership approval and execution requests", async () => {
+    const { baseUrl, workspaceMembershipRevocationCalls } = await runtime();
+    const baseRoute = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/membership-revocation-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const approvalRequest = workspaceMembershipRevocationApproval();
+    const approvalResponse = await fetch(baseRoute, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(approvalRequest),
+    });
+    expect(approvalResponse.status).toBe(201);
+    expect(approvalResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(approvalResponse.json()).resolves.toMatchObject({
+      approval: {
+        contract: "vorton.workspace-membership-revocation-approval.v1",
+        approvalId: membershipApprovalId,
+      },
+      approvalReceipt: {
+        contract: "vorton.workspace-membership-revocation-approval-receipt.v1",
+      },
+    });
+
+    const applyRequest = workspaceMembershipRevocationApply();
+    const applyResponse = await fetch(
+      `${baseRoute}/${membershipApprovalId}/execute`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(applyRequest),
+      },
+    );
+    expect(applyResponse.status).toBe(200);
+    expect(applyResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(applyResponse.json()).resolves.toMatchObject({
+      receipt: {
+        contract: "vorton.workspace-membership-revocation-receipt.v1",
+      },
+    });
+    expect(workspaceMembershipRevocationCalls).toEqual([
+      {
+        operation: "approve",
+        installationId,
+        workspaceId,
+        request: approvalRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+      {
+        operation: "apply",
+        installationId,
+        workspaceId,
+        approvalId: membershipApprovalId,
+        request: applyRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+    ]);
+  });
+
+  it("rejects stale identity, claimed identity, and malformed membership revocation paths", async () => {
+    const stale = await runtime({
+      authUserId,
+      aal: "aal2",
+      authTime: Math.floor(Date.now() / 1_000) - 11 * 60,
+    });
+    const route = `${stale.baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/membership-revocation-approvals`;
+    const staleResponse = await fetch(route, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer verified-by-fixture",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(workspaceMembershipRevocationApproval()),
+    });
+    expect(staleResponse.status).toBe(403);
+    expect(stale.workspaceMembershipRevocationCalls).toEqual([]);
+
+    const current = await runtime();
+    const claimedResponse = await fetch(
+      `${current.baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/membership-revocation-approvals`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          ...workspaceMembershipRevocationApproval(),
+          authUserId: crypto.randomUUID(),
+        }),
+      },
+    );
+    expect(claimedResponse.status).toBe(400);
+
+    for (const path of [
+      `/v1/installations/not-a-uuid/workspaces/${workspaceId}/membership-revocation-approvals`,
+      `/v1/installations/${installationId}/workspaces/${workspaceId}/membership-revocation-approvals/${membershipApprovalId.toUpperCase()}/execute`,
+    ]) {
+      const response = await fetch(`${current.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer verified-by-fixture",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(
+          path.endsWith("/execute")
+            ? workspaceMembershipRevocationApply()
+            : workspaceMembershipRevocationApproval(),
+        ),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(current.workspaceMembershipRevocationCalls).toEqual([]);
+  });
+
+  it("maps membership revocation authority failures without leaking integrity details", async () => {
+    const { baseUrl } = await runtime();
+    const route = `${baseUrl}/v1/installations/${installationId}/workspaces/${workspaceId}/membership-revocation-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const cases = [
+      ["66666666-6666-4666-8666-666666666666", 400, "invalid_request"],
+      ["77777777-7777-4777-8777-777777777777", 403, "forbidden"],
+      [
+        "88888888-8888-4888-8888-888888888888",
+        409,
+        "workspace_membership_revocation_conflict",
+      ],
+      ["99999999-9999-4999-8999-999999999999", 500, "internal_error"],
+    ] as const;
+    for (const [approvalId, status, code] of cases) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(workspaceMembershipRevocationApproval(approvalId)),
+      });
+      expect(response.status).toBe(status);
+      const payload = JSON.stringify(await response.json());
+      expect(payload).toContain(code);
+      expect(payload).not.toContain("sensitive malformed");
     }
   });
 

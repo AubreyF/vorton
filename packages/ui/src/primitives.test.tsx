@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Badge, EmptyState, StatusDot } from "./primitives.js";
+import { Badge, EmptyState, Mark, StatusDot } from "./primitives.js";
 
 describe("control-plane primitives", () => {
   it("renders status tone and accessible empty-state guidance", () => {
@@ -17,5 +17,12 @@ describe("control-plane primitives", () => {
     expect(
       renderToStaticMarkup(<Badge tone="blue">Observe only</Badge>),
     ).toContain("Observe only");
+  });
+
+  it("uses the neutral Vorton identity in the reusable mark", () => {
+    const html = renderToStaticMarkup(<Mark />);
+    expect(html).toContain('aria-label="Vorton"');
+    expect(html).toContain(">VORTON<");
+    expect(html).not.toContain(">AUB<");
   });
 });

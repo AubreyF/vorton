@@ -50,8 +50,19 @@ interface InstallationRow {
   workspace_id: string;
   workspace_slug: string;
   workspace_display_name: string;
+  workspace_default_module_id: string | null;
   workspace_realm: "personal" | "organizational";
   person_kind: "owner" | "member";
+}
+
+interface BootstrapModuleRow {
+  installation_id: string;
+  workspace_id: string;
+  module_id: string;
+  contract_version: string;
+  label: string;
+  navigation_order: number;
+  presentation_variant: string;
 }
 
 interface BootstrapWorkRow {
@@ -102,6 +113,16 @@ export interface RuntimeBootstrap {
       id: string;
       slug: string;
       displayName: string;
+      moduleSurface: {
+        defaultModuleId: string | null;
+        modules: Array<{
+          id: string;
+          contractVersion: string;
+          label: string;
+          navigationOrder: number;
+          presentationVariant: string;
+        }>;
+      };
       realm: "personal" | "organizational";
       personKind: "owner" | "member";
       workItems: Array<{
@@ -151,6 +172,7 @@ export class DatabaseExecutiveRequestResolver {
                   workspace.id as workspace_id,
                   workspace.slug as workspace_slug,
                   workspace.display_name as workspace_display_name,
+                  workspace.default_module_id as workspace_default_module_id,
                   workspace.realm as workspace_realm,
                   membership.kind as person_kind
            from public.people person
@@ -170,6 +192,17 @@ export class DatabaseExecutiveRequestResolver {
           ...new Set(installations.rows.map((row) => row.installation_id)),
         ];
         if (installationIds.length === 0) return { installations: [] };
+        const modules = await transaction.query<BootstrapModuleRow>(
+          `select activation.installation_id, activation.workspace_id,
+                  activation.module_id, activation.contract_version,
+                  activation.label, activation.navigation_order,
+                  activation.presentation_variant
+             from public.workspace_module_activations activation
+            where activation.installation_id = any($1::uuid[])
+            order by activation.installation_id, activation.workspace_id,
+                     activation.navigation_order, activation.module_id`,
+          [installationIds],
+        );
         const workItems = await transaction.query<BootstrapWorkRow>(
           `select work.installation_id, work.workspace_id, work.id, work.title, work.requested_outcome,
                   work.acceptance_criteria, work.state, work.priority,
@@ -264,6 +297,22 @@ export class DatabaseExecutiveRequestResolver {
                   id: workspace.workspace_id,
                   slug: workspace.workspace_slug,
                   displayName: workspace.workspace_display_name,
+                  moduleSurface: {
+                    defaultModuleId: workspace.workspace_default_module_id,
+                    modules: modules.rows
+                      .filter(
+                        (module) =>
+                          module.installation_id === installationId &&
+                          module.workspace_id === workspace.workspace_id,
+                      )
+                      .map((module) => ({
+                        id: module.module_id,
+                        contractVersion: module.contract_version,
+                        label: module.label,
+                        navigationOrder: module.navigation_order,
+                        presentationVariant: module.presentation_variant,
+                      })),
+                  },
                   realm: workspace.workspace_realm,
                   personKind: workspace.person_kind,
                   workItems: workItems.rows

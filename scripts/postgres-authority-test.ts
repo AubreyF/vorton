@@ -22,13 +22,21 @@ import {
   hashModuleLifecycleApprovalReceipt,
   hashModuleLifecycleActionCommand,
   hashModuleLifecycleActionReceipt,
+  hashWorkspaceMembershipRevocationApprovalCore,
+  hashWorkspaceMembershipRevocationApprovalReceipt,
+  hashWorkspaceMembershipRevocationReceipt,
+  hashWorkspaceMembershipRevocationWorkSnapshot,
   moduleLifecycleCanonicalSha256,
   parseModuleLifecycleActionCommandCreation,
   parseModuleLifecycleActionCompletion,
   parseModuleLifecycleApprovalCreation,
+  parseWorkspaceMembershipRevocationApprovalCreation,
+  parseWorkspaceMembershipRevocationReceipt,
   type ExecutiveWorkerJobRequest,
   type ModuleLifecycleActionCompletion,
   type ModuleLifecycleApprovalCreation,
+  type WorkspaceMembershipRevocationApprovalCreation,
+  type WorkspaceMembershipRevocationReceipt,
 } from "@vorton/contracts";
 import { Database } from "@vorton/database";
 import type { ExecutiveWorkerProvider } from "@vorton/workers";
@@ -47,7 +55,7 @@ const runtimeRole = "aubos_runtime";
 const runtimePassword = "synthetic-runtime-password-original-0001";
 const replayPassword = "synthetic-runtime-password-replay-000002";
 const contextSecret = "synthetic-context-signing-secret-000001";
-const ownerAuthUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5";
+const ownerAuthUserId = "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"; // gitleaks:allow
 const otherInstallationId = "36bb264a-668f-45a6-8da0-6e5cad3fc026";
 const otherWorkspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const otherWorkId = "02fb4603-57f1-4a04-a6f6-2d473af03f7b";
@@ -2940,6 +2948,1624 @@ async function proveWorkspaceMemoryBankIdentity(
   );
 }
 
+async function proveWorkspaceModuleProjectionBoundary(
+  admin: Client,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  const personalInitial = await admin.query<{
+    activation_count: string;
+    default_module_id: string | null;
+  }>(
+    `select workspace.default_module_id,
+            (select count(*)::text
+               from public.workspace_module_activations activation
+              where activation.installation_id = workspace.installation_id
+                and activation.workspace_id = workspace.id)
+              as activation_count
+       from public.workspaces workspace
+      where workspace.installation_id = $1 and workspace.id = $2`,
+    [bootstrap.installationId, otherWorkspaceId],
+  );
+  requireCondition(
+    personalInitial.rows[0]?.activation_count === "0" &&
+      personalInitial.rows[0]?.default_module_id === null,
+    "Unconfigured personal workspace inferred a module or default",
+  );
+
+  await admin.query(
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values
+       ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3),
+       ($1, $2, 'factory', 'v1', 'Factory', 20, 'freed-read-only', $3)`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+  );
+  await admin.query(
+    `update public.workspaces set default_module_id = 'command'
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  await expectConstraintViolation(
+    admin,
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values ($1, $2, 'finance', 'v1', 'Finance', 30, 'standard', $3)`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+    "workspace_module_activations_supported_tuple",
+    "Unsupported workspace module tuple",
+  );
+  await expectSqlState(
+    admin,
+    `update public.workspaces set default_module_id = 'tasks'
+      where installation_id = $1 and id = $2`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+    "23503",
+    "Workspace default without an activation",
+  );
+
+  const signedOwner = (client: Client): Promise<void> =>
+    setSignedContext(
+      client,
+      "person",
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ownerAuthUserId,
+    );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner,
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values ($1, $2, 'tasks', 'v1', 'Tasks', 30, 'standard', $3)`,
+    [bootstrap.installationId, bootstrap.workspaceId, ownerPersonId],
+    "Authenticated workspace module insertion",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner,
+    `update public.workspace_module_activations set label = 'Substituted'
+      where installation_id = $1 and workspace_id = $2
+        and module_id = 'command'`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+    "Authenticated workspace module update",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner,
+    `delete from public.workspace_module_activations
+      where installation_id = $1 and workspace_id = $2
+        and module_id = 'factory'`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+    "Authenticated workspace module deletion",
+  );
+
+  await admin.query(
+    `insert into public.workspace_module_activations
+       (installation_id, workspace_id, module_id, contract_version, label,
+        navigation_order, presentation_variant, created_by_person_id)
+     values ($1, $2, 'command', 'v1', 'Legacy Command', 10, 'standard', $3)`,
+    [legacyInstallationId, legacyWorkspaceId, legacyOwnerPersonId],
+  );
+
+  const readProjection = async (
+    installationId: string,
+    workspaceId: string,
+    subjectId: string,
+  ): Promise<{
+    activations: Array<{
+      installation_id: string;
+      workspace_id: string;
+      module_id: string;
+      contract_version: string;
+      label: string;
+      navigation_order: number;
+      presentation_variant: string;
+    }>;
+    defaultModuleId: string | null;
+    workspaceVisible: boolean;
+  }> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setSignedContext(
+          client,
+          "person",
+          installationId,
+          workspaceId,
+          subjectId,
+        ),
+      async (client) => {
+        const activations = await client.query<{
+          installation_id: string;
+          workspace_id: string;
+          module_id: string;
+          contract_version: string;
+          label: string;
+          navigation_order: number;
+          presentation_variant: string;
+        }>(
+          `select installation_id::text, workspace_id::text, module_id,
+                  contract_version, label, navigation_order,
+                  presentation_variant
+             from public.workspace_module_activations
+            order by navigation_order, module_id`,
+        );
+        const workspace = await client.query<{
+          default_module_id: string | null;
+        }>(
+          `select default_module_id from public.workspaces
+            where installation_id = $1 and id = $2`,
+          [installationId, workspaceId],
+        );
+        return {
+          activations: activations.rows,
+          defaultModuleId: workspace.rows[0]?.default_module_id ?? null,
+          workspaceVisible: workspace.rowCount === 1,
+        };
+      },
+    );
+
+  const organizationalProjection = await readProjection(
+    bootstrap.installationId,
+    bootstrap.workspaceId,
+    ownerAuthUserId,
+  );
+  requireCondition(
+    organizationalProjection.workspaceVisible &&
+      organizationalProjection.defaultModuleId === "command" &&
+      canonicalModuleLifecycleJson(organizationalProjection.activations) ===
+        canonicalModuleLifecycleJson([
+          {
+            installation_id: bootstrap.installationId,
+            workspace_id: bootstrap.workspaceId,
+            module_id: "command",
+            contract_version: "v1",
+            label: "Command Bridge",
+            navigation_order: 10,
+            presentation_variant: "standard",
+          },
+          {
+            installation_id: bootstrap.installationId,
+            workspace_id: bootstrap.workspaceId,
+            module_id: "factory",
+            contract_version: "v1",
+            label: "Factory",
+            navigation_order: 20,
+            presentation_variant: "freed-read-only",
+          },
+        ]),
+    "Organizational workspace module projection drifted from exact tuples",
+  );
+  const personalProjection = await readProjection(
+    bootstrap.installationId,
+    otherWorkspaceId,
+    ownerAuthUserId,
+  );
+  requireCondition(
+    personalProjection.workspaceVisible &&
+      personalProjection.defaultModuleId === null &&
+      personalProjection.activations.length === 0,
+    "Personal workspace projected an unactivated or foreign module",
+  );
+
+  const legacyProjection = await readProjection(
+    legacyInstallationId,
+    legacyWorkspaceId,
+    legacyOwnerAuthUserId,
+  );
+  requireCondition(
+    legacyProjection.workspaceVisible &&
+      legacyProjection.activations.length === 1 &&
+      legacyProjection.activations[0]?.installation_id ===
+        legacyInstallationId &&
+      legacyProjection.activations[0]?.workspace_id === legacyWorkspaceId,
+    "Live foreign workspace member could not read its exact module row",
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values ($1, $2, $3, $3,
+             date_trunc('milliseconds', clock_timestamp()))`,
+    [legacyInstallationId, legacyWorkspaceId, legacyOwnerPersonId],
+  );
+  const revokedLegacyProjection = await readProjection(
+    legacyInstallationId,
+    legacyWorkspaceId,
+    legacyOwnerAuthUserId,
+  );
+  requireCondition(
+    !revokedLegacyProjection.workspaceVisible &&
+      revokedLegacyProjection.activations.length === 0,
+    "Revoked workspace member retained module projection access",
+  );
+}
+
+async function proveWorkspaceMembershipRevocationBoundary(
+  admin: Client,
+  adminDatabaseUrl: string,
+  runtimeDatabaseUrl: string,
+  bootstrap: BootstrapResult,
+  ownerPersonId: string,
+): Promise<void> {
+  const ids = {
+    noMembershipAuth: randomUUID(),
+    noMembershipPerson: randomUUID(),
+    nonOwnerAuth: randomUUID(),
+    nonOwnerPerson: randomUUID(),
+    revokedOwnerAuth: randomUUID(),
+    revokedOwnerPerson: randomUUID(),
+    secondOwnerAuth: randomUUID(),
+    secondOwnerPerson: randomUUID(),
+    targetAuth: randomUUID(),
+    targetPerson: randomUUID(),
+    revokedTargetAuth: randomUUID(),
+    revokedTargetPerson: randomUUID(),
+    externalTargetAuth: randomUUID(),
+    externalTargetPerson: randomUUID(),
+    finalOwnerWorkspace: randomUUID(),
+    validWork: randomUUID(),
+    otherWork: randomUUID(),
+    proposedWork: randomUUID(),
+    wrongCustodianWork: randomUUID(),
+    leasedWork: randomUUID(),
+    snapshotDriftWork: randomUUID(),
+    policyDriftWork: randomUUID(),
+    grantExpiryDriftWork: randomUUID(),
+    grantRevocationDriftWork: randomUUID(),
+    goodPolicy: randomUUID(),
+    badPolicy: randomUUID(),
+    policyDriftPolicy: randomUUID(),
+    goodGrant: randomUUID(),
+    wrongPrincipalGrant: randomUUID(),
+    wrongWorkGrant: randomUUID(),
+    wrongCapabilityGrant: randomUUID(),
+    wrongModeGrant: randomUUID(),
+    expiredGrant: randomUUID(),
+    revokedGrant: randomUUID(),
+    badPolicyGrant: randomUUID(),
+    proposedWorkGrant: randomUUID(),
+    wrongCustodianGrant: randomUUID(),
+    leasedWorkGrant: randomUUID(),
+    snapshotDriftGrant: randomUUID(),
+    policyDriftGrant: randomUUID(),
+    grantExpiryDriftGrant: randomUUID(),
+    grantRevocationDriftGrant: randomUUID(),
+    memoryRetrieveGrant: randomUUID(),
+  };
+
+  await admin.query(
+    `insert into auth.users (id, email) values
+       ($1, 'revocation-no-membership@synthetic.invalid'),
+       ($2, 'revocation-non-owner@synthetic.invalid'),
+       ($3, 'revocation-revoked-owner@synthetic.invalid'),
+       ($4, 'revocation-second-owner@synthetic.invalid'),
+       ($5, 'revocation-target@synthetic.invalid'),
+       ($6, 'revocation-revoked-target@synthetic.invalid'),
+       ($7, 'revocation-external-target@synthetic.invalid')`,
+    [
+      ids.noMembershipAuth,
+      ids.nonOwnerAuth,
+      ids.revokedOwnerAuth,
+      ids.secondOwnerAuth,
+      ids.targetAuth,
+      ids.revokedTargetAuth,
+      ids.externalTargetAuth,
+    ],
+  );
+  await admin.query(
+    `insert into public.people
+       (id, installation_id, auth_user_id, display_name, kind)
+     values
+       ($1, $15, $2, 'Synthetic revocation person without membership', 'member'),
+       ($3, $15, $4, 'Synthetic revocation non-owner', 'member'),
+       ($5, $15, $6, 'Synthetic revoked revocation owner', 'owner'),
+       ($7, $15, $8, 'Synthetic second revocation owner', 'owner'),
+       ($9, $15, $10, 'Synthetic revocation target', 'member'),
+       ($11, $15, $12, 'Synthetic revoked revocation target', 'member'),
+       ($13, $15, $14, 'Synthetic externally revoked target', 'member')`,
+    [
+      ids.noMembershipPerson,
+      ids.noMembershipAuth,
+      ids.nonOwnerPerson,
+      ids.nonOwnerAuth,
+      ids.revokedOwnerPerson,
+      ids.revokedOwnerAuth,
+      ids.secondOwnerPerson,
+      ids.secondOwnerAuth,
+      ids.targetPerson,
+      ids.targetAuth,
+      ids.revokedTargetPerson,
+      ids.revokedTargetAuth,
+      ids.externalTargetPerson,
+      ids.externalTargetAuth,
+      bootstrap.installationId,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values
+       ($1, $2, $3, 'member'),
+       ($1, $2, $4, 'owner'),
+       ($1, $2, $5, 'owner'),
+       ($1, $2, $6, 'member'),
+       ($1, $2, $7, 'member'),
+       ($1, $2, $8, 'member')`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.nonOwnerPerson,
+      ids.revokedOwnerPerson,
+      ids.secondOwnerPerson,
+      ids.targetPerson,
+      ids.revokedTargetPerson,
+      ids.externalTargetPerson,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspaces
+       (id, installation_id, slug, display_name, realm, created_by_person_id)
+     values ($1, $2, $3, 'Synthetic final-owner boundary',
+             'organizational', $4)`,
+    [
+      ids.finalOwnerWorkspace,
+      bootstrap.installationId,
+      `final-owner-${ids.finalOwnerWorkspace.slice(0, 8)}`,
+      ids.secondOwnerPerson,
+    ],
+  );
+  await admin.query(
+    `insert into public.workspace_memberships
+       (installation_id, workspace_id, person_id, kind)
+     values ($1, $2, $3, 'owner')`,
+    [bootstrap.installationId, ids.finalOwnerWorkspace, ids.secondOwnerPerson],
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values
+       ($1, $2, $3, $5, date_trunc('milliseconds', clock_timestamp())),
+       ($1, $2, $4, $5, date_trunc('milliseconds', clock_timestamp()))`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.revokedOwnerPerson,
+      ids.revokedTargetPerson,
+      ownerPersonId,
+    ],
+  );
+
+  const insertWork = async (
+    id: string,
+    state: "proposed" | "ready" | "leased",
+    custodianPersonId: string | null,
+    custodianWorkerId: string | null = null,
+  ): Promise<void> => {
+    await admin.query(
+      `insert into public.work
+         (id, installation_id, workspace_id, title, requested_outcome,
+          acceptance_criteria, state, priority, requested_by_person_id,
+          custodian_person_id, custodian_worker_id, lease_expires_at,
+          created_at, updated_at)
+       values
+         ($1, $2, $3, $4, $5, $6::jsonb, $7::public.work_state, 90, $8, $9, $10,
+          case when $7::text = 'leased'
+               then clock_timestamp() + interval '1 hour'
+               else null end,
+          '2026-08-31T17:30:00.123456Z'::timestamptz,
+          '2026-08-31T17:45:00.654321Z'::timestamptz)`,
+      [
+        id,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        `Govern membership revocation ${id.slice(0, 8)}`,
+        "Remove one exact membership while preserving an owner",
+        JSON.stringify([
+          "Use the exact workspace scoped grant",
+          "Leave every foreign workspace untouched",
+        ]),
+        state,
+        ownerPersonId,
+        custodianPersonId,
+        custodianWorkerId,
+      ],
+    );
+  };
+  await insertWork(ids.validWork, "ready", ownerPersonId);
+  await insertWork(ids.otherWork, "ready", ownerPersonId);
+  await insertWork(ids.proposedWork, "proposed", ownerPersonId);
+  await insertWork(ids.wrongCustodianWork, "ready", ids.targetPerson);
+  await insertWork(ids.leasedWork, "leased", null, bootstrap.workerId);
+  await insertWork(ids.snapshotDriftWork, "ready", ownerPersonId);
+  await insertWork(ids.policyDriftWork, "ready", ownerPersonId);
+  await insertWork(ids.grantExpiryDriftWork, "ready", ownerPersonId);
+  await insertWork(ids.grantRevocationDriftWork, "ready", ownerPersonId);
+
+  const goodPolicyDefinition = {
+    version: 1,
+    capability: "workspace.membership.revoke",
+    rule: "exact-ready-work",
+  };
+  const policyDriftDefinition = {
+    version: 1,
+    capability: "workspace.membership.revoke",
+    rule: "drift-test",
+  };
+  await admin.query(
+    `insert into public.policies
+       (id, installation_id, workspace_id, name, version, definition,
+        content_sha256, created_by_person_id)
+     values
+       ($1, $4, $5, 'Synthetic membership revocation', 1, $6::jsonb, $7, $8),
+       ($2, $4, $5, 'Synthetic invalid membership revocation', 1, $6::jsonb,
+        $9, $8),
+       ($3, $4, $5, 'Synthetic drifting membership revocation', 1,
+        $10::jsonb, $11, $8)`,
+    [
+      ids.goodPolicy,
+      ids.badPolicy,
+      ids.policyDriftPolicy,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      JSON.stringify(goodPolicyDefinition),
+      canonicalSha256(goodPolicyDefinition).slice("sha256:".length),
+      ownerPersonId,
+      "0".repeat(64),
+      JSON.stringify(policyDriftDefinition),
+      canonicalSha256(policyDriftDefinition).slice("sha256:".length),
+    ],
+  );
+
+  const insertGrant = async (options: {
+    id: string;
+    workId: string | null;
+    policyId?: string;
+    personId?: string;
+    capability?: string;
+    mode?: "observe" | "modify";
+    expiresAt?: string | null;
+  }): Promise<void> => {
+    await admin.query(
+      `insert into public.capability_grants
+         (id, installation_id, workspace_id, policy_id, principal_kind,
+          person_id, worker_id, capability, mode, work_id, expires_at,
+          granted_by_person_id, granted_at)
+       values
+         ($1, $2, $3, $4, 'person', $5, null, $6, $7, $8,
+          $9::timestamptz, $10, clock_timestamp() - interval '2 hours')`,
+      [
+        options.id,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        options.policyId ?? ids.goodPolicy,
+        options.personId ?? ownerPersonId,
+        options.capability ?? "workspace.membership.revoke",
+        options.mode ?? "modify",
+        options.workId,
+        options.expiresAt ?? null,
+        ownerPersonId,
+      ],
+    );
+  };
+  await insertGrant({ id: ids.goodGrant, workId: ids.validWork });
+  await insertGrant({
+    id: ids.wrongPrincipalGrant,
+    workId: ids.validWork,
+    personId: ids.targetPerson,
+  });
+  await insertGrant({ id: ids.wrongWorkGrant, workId: ids.otherWork });
+  await insertGrant({
+    id: ids.wrongCapabilityGrant,
+    workId: ids.validWork,
+    capability: "workspace.membership.invite",
+  });
+  await insertGrant({
+    id: ids.wrongModeGrant,
+    workId: ids.validWork,
+    mode: "observe",
+  });
+  await insertGrant({
+    id: ids.expiredGrant,
+    workId: ids.validWork,
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  await insertGrant({ id: ids.revokedGrant, workId: ids.validWork });
+  await insertGrant({
+    id: ids.badPolicyGrant,
+    workId: ids.validWork,
+    policyId: ids.badPolicy,
+  });
+  await insertGrant({ id: ids.proposedWorkGrant, workId: ids.proposedWork });
+  await insertGrant({
+    id: ids.wrongCustodianGrant,
+    workId: ids.wrongCustodianWork,
+  });
+  await insertGrant({ id: ids.leasedWorkGrant, workId: ids.leasedWork });
+  await insertGrant({
+    id: ids.snapshotDriftGrant,
+    workId: ids.snapshotDriftWork,
+  });
+  await insertGrant({
+    id: ids.policyDriftGrant,
+    workId: ids.policyDriftWork,
+    policyId: ids.policyDriftPolicy,
+  });
+  await insertGrant({
+    id: ids.grantExpiryDriftGrant,
+    workId: ids.grantExpiryDriftWork,
+  });
+  await insertGrant({
+    id: ids.grantRevocationDriftGrant,
+    workId: ids.grantRevocationDriftWork,
+  });
+  await insertGrant({
+    id: ids.memoryRetrieveGrant,
+    workId: null,
+    personId: ids.targetPerson,
+    capability: "memory.retrieve",
+    mode: "observe",
+  });
+  await admin.query(
+    `insert into public.capability_grant_revocations
+       (installation_id, workspace_id, grant_id, revoked_by_person_id,
+        reason, revoked_at)
+     values ($1, $2, $3, $4, 'Synthetic revoked grant', clock_timestamp())`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.revokedGrant,
+      ownerPersonId,
+    ],
+  );
+
+  const approvalSql = `select public.create_workspace_membership_revocation_approval(
+    $1, $2, $3, $4, $5::public.person_kind, $6, $7, $8::timestamptz
+  ) as creation`;
+  const applySql = `select public.apply_workspace_membership_revocation(
+    $1, $2, $3, $4
+  ) as result`;
+  const expiry = (): string =>
+    new Date(Date.now() + 60 * 60 * 1_000).toISOString();
+  const signedOwner =
+    (
+      subjectId = ownerAuthUserId,
+      authTime = Math.floor(Date.now() / 1_000),
+      options: Parameters<typeof setWorkspaceStepUpContext>[5] = {},
+    ) =>
+    (client: Client): Promise<void> =>
+      setWorkspaceStepUpContext(
+        client,
+        bootstrap.installationId,
+        bootstrap.workspaceId,
+        subjectId,
+        authTime,
+        options,
+      );
+  const approvalValues = (options: {
+    approvalId: string;
+    targetPersonId?: string;
+    expectedTargetKind?: "owner" | "member";
+    workId?: string;
+    capabilityGrantId?: string;
+    expiresAt?: string;
+    installationId?: string;
+    workspaceId?: string;
+  }): unknown[] => [
+    options.approvalId,
+    options.installationId ?? bootstrap.installationId,
+    options.workspaceId ?? bootstrap.workspaceId,
+    options.targetPersonId ?? ids.targetPerson,
+    options.expectedTargetKind ?? "member",
+    options.workId ?? ids.validWork,
+    options.capabilityGrantId ?? ids.goodGrant,
+    options.expiresAt ?? expiry(),
+  ];
+  const createApproval = async (
+    options: Parameters<typeof approvalValues>[0],
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<WorkspaceMembershipRevocationApprovalCreation> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      async (client) => {
+        const result = await client.query<{ creation: unknown }>(
+          approvalSql,
+          approvalValues(options),
+        );
+        return parseWorkspaceMembershipRevocationApprovalCreation(
+          result.rows[0]?.creation,
+        );
+      },
+    );
+  const denyApproval = (
+    label: string,
+    options: Parameters<typeof approvalValues>[0],
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<void> =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      approvalSql,
+      approvalValues(options),
+      "P0001",
+      label,
+    );
+  const denyApply = (
+    label: string,
+    approvalId: string,
+    receiptId = randomUUID(),
+    setup: (client: Client) => Promise<void> = signedOwner(),
+  ): Promise<void> =>
+    expectRuntimeSqlState(
+      runtimeDatabaseUrl,
+      "authenticated",
+      setup,
+      applySql,
+      [receiptId, approvalId, bootstrap.installationId, bootstrap.workspaceId],
+      "P0001",
+      label,
+    );
+
+  const defaultApproval = (): Parameters<typeof approvalValues>[0] => ({
+    approvalId: randomUUID(),
+  });
+  for (const [label, setup] of [
+    [
+      "Unsigned revocation base context",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000), {
+        baseSignature: "unsigned",
+      }),
+    ],
+    [
+      "Forged revocation base context",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000), {
+        baseSignature: "forged",
+      }),
+    ],
+    [
+      "Unsigned revocation step-up context",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "unsigned",
+      }),
+    ],
+    [
+      "Forged revocation step-up context",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000), {
+        stepUpSignature: "forged",
+      }),
+    ],
+    [
+      "Future revocation AAL2",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000) + 60),
+    ],
+    [
+      "Stale revocation AAL2",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000) - 601),
+    ],
+    [
+      "AAL1 revocation context",
+      signedOwner(ownerAuthUserId, Math.floor(Date.now() / 1_000), {
+        aal: "aal1",
+      }),
+    ],
+  ] as const) {
+    await denyApproval(label, defaultApproval(), setup);
+  }
+  await denyApproval(
+    "Wrong-installation signed revocation context",
+    defaultApproval(),
+    (client) =>
+      setWorkspaceStepUpContext(
+        client,
+        otherInstallationId,
+        bootstrap.workspaceId,
+        ownerAuthUserId,
+        Math.floor(Date.now() / 1_000),
+      ),
+  );
+  await denyApproval(
+    "Wrong-workspace signed revocation context",
+    defaultApproval(),
+    (client) =>
+      setWorkspaceStepUpContext(
+        client,
+        bootstrap.installationId,
+        otherWorkspaceId,
+        ownerAuthUserId,
+        Math.floor(Date.now() / 1_000),
+      ),
+  );
+  await denyApproval(
+    "Unknown signed revocation subject",
+    defaultApproval(),
+    signedOwner(randomUUID()),
+  );
+  await denyApproval(
+    "Revocation subject without membership",
+    defaultApproval(),
+    signedOwner(ids.noMembershipAuth),
+  );
+  await denyApproval(
+    "Non-owner revocation actor",
+    defaultApproval(),
+    signedOwner(ids.nonOwnerAuth),
+  );
+  await denyApproval(
+    "Revoked revocation actor",
+    defaultApproval(),
+    signedOwner(ids.revokedOwnerAuth),
+  );
+  await denyApproval("Self revocation", {
+    approvalId: randomUUID(),
+    targetPersonId: ownerPersonId,
+    expectedTargetKind: "owner",
+  });
+  await denyApproval("Missing revocation target", {
+    approvalId: randomUUID(),
+    targetPersonId: randomUUID(),
+  });
+  await denyApproval("Revoked revocation target", {
+    approvalId: randomUUID(),
+    targetPersonId: ids.revokedTargetPerson,
+  });
+  await denyApproval("Revocation target kind substitution", {
+    approvalId: randomUUID(),
+    expectedTargetKind: "owner",
+  });
+  await denyApproval("Wrong revocation installation path", {
+    approvalId: randomUUID(),
+    installationId: otherInstallationId,
+  });
+  await denyApproval("Wrong revocation workspace path", {
+    approvalId: randomUUID(),
+    workspaceId: otherWorkspaceId,
+  });
+  for (const [label, workId, capabilityGrantId] of [
+    ["Revocation Work is not ready", ids.proposedWork, ids.proposedWorkGrant],
+    [
+      "Revocation Work has the wrong custodian",
+      ids.wrongCustodianWork,
+      ids.wrongCustodianGrant,
+    ],
+    ["Revocation Work has a worker lease", ids.leasedWork, ids.leasedWorkGrant],
+  ] as const) {
+    await denyApproval(label, {
+      approvalId: randomUUID(),
+      workId,
+      capabilityGrantId,
+    });
+  }
+  for (const [label, capabilityGrantId] of [
+    ["Revocation grant has the wrong principal", ids.wrongPrincipalGrant],
+    ["Revocation grant has the wrong Work", ids.wrongWorkGrant],
+    ["Revocation grant has the wrong capability", ids.wrongCapabilityGrant],
+    ["Revocation grant has the wrong mode", ids.wrongModeGrant],
+    ["Revocation grant is expired", ids.expiredGrant],
+    ["Revocation grant is revoked", ids.revokedGrant],
+    ["Revocation Policy digest is invalid", ids.badPolicyGrant],
+  ] as const) {
+    await denyApproval(label, {
+      approvalId: randomUUID(),
+      capabilityGrantId,
+    });
+  }
+
+  const fixedWorkVector = {
+    id: "10000000-0000-4000-8000-000000000005",
+    vortonInstallationId: "10000000-0000-4000-8000-000000000001",
+    workspaceId: "10000000-0000-4000-8000-000000000002",
+    title: "Revoke one synthetic membership",
+    requestedOutcome: "Remove one exact membership while preserving an owner",
+    acceptanceCriteria: [
+      "Use the exact workspace scoped grant",
+      "Leave every foreign workspace untouched",
+    ],
+    state: "ready" as const,
+    priority: 90,
+    parentWorkId: null,
+    requestedByPersonId: "10000000-0000-4000-8000-000000000006",
+    custodianPersonId: "10000000-0000-4000-8000-000000000003",
+    custodianWorkerId: null,
+    leaseExpiresAt: null,
+    createdAt: "2026-08-31T17:30:00.123456Z",
+    updatedAt: "2026-08-31T17:45:00.654321Z",
+  };
+  const fixedWorkHash =
+    "sha256:4aa0bf8ea6f823480aecb0446160e5faccdd53b0c46b7018bd05ccde7b9b1e4b";
+  requireCondition(
+    (await hashWorkspaceMembershipRevocationWorkSnapshot(fixedWorkVector)) ===
+      fixedWorkHash,
+    "TypeScript workspace revocation Work vector changed",
+  );
+  const fixedSqlVector = await admin.query<{ digest: string }>(
+    "select public.vorton_module_lifecycle_hash($1::jsonb) as digest",
+    [JSON.stringify(fixedWorkVector)],
+  );
+  requireCondition(
+    fixedSqlVector.rows[0]?.digest === fixedWorkHash,
+    "PostgreSQL and TypeScript workspace revocation Work vectors diverged",
+  );
+
+  for (const role of ["anon", "authenticated", "aubos_worker"] as const) {
+    for (const table of [
+      "workspace_membership_revocation_approvals",
+      "workspace_membership_revocation_approval_receipts",
+      "workspace_membership_revocation_receipts",
+    ]) {
+      await expectRuntimeDenied(
+        runtimeDatabaseUrl,
+        role,
+        async () => undefined,
+        `select count(*) from public.${table}`,
+        [],
+        `${role} direct ${table} read`,
+      );
+      await expectRuntimeDenied(
+        runtimeDatabaseUrl,
+        role,
+        async () => undefined,
+        `insert into public.${table} default values`,
+        [],
+        `${role} direct ${table} write`,
+      );
+    }
+  }
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    `select public.workspace_membership_revocation_work_snapshot(
+       candidate
+     ) from public.work candidate
+       where candidate.installation_id = $1
+         and candidate.workspace_id = $2 and candidate.id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ids.validWork],
+    "Authenticated revocation hash helper execution",
+  );
+  await expectRuntimeDenied(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    "select public.revoke_workspace_membership($1, $2, $3)",
+    [bootstrap.installationId, bootstrap.workspaceId, ids.targetPerson],
+    "Authenticated hostile-proof revocation helper execution",
+  );
+
+  const actorLockApprovalId = randomUUID();
+  const actorLockExpiry = expiry();
+  const approvalClient = await connect(runtimeDatabaseUrl);
+  const actorRevocationClient = await connect(adminDatabaseUrl);
+  let actorLockCreation: WorkspaceMembershipRevocationApprovalCreation;
+  try {
+    await approvalClient.query("begin");
+    await setWorkspaceStepUpContext(
+      approvalClient,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ownerAuthUserId,
+      Math.floor(Date.now() / 1_000),
+    );
+    await approvalClient.query("set local role authenticated");
+    const approvalResult = await approvalClient.query<{ creation: unknown }>(
+      approvalSql,
+      approvalValues({
+        approvalId: actorLockApprovalId,
+        expiresAt: actorLockExpiry,
+      }),
+    );
+    actorLockCreation =
+      await parseWorkspaceMembershipRevocationApprovalCreation(
+        approvalResult.rows[0]?.creation,
+      );
+
+    await actorRevocationClient.query("begin");
+    let actorRevocationSettled = false;
+    const actorRevocation = actorRevocationClient
+      .query(
+        `insert into public.workspace_membership_revocations
+           (installation_id, workspace_id, person_id, revoked_by_person_id,
+            revoked_at)
+         values ($1, $2, $3, $4,
+                 date_trunc('milliseconds', clock_timestamp()))`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ownerPersonId,
+          ids.secondOwnerPerson,
+        ],
+      )
+      .finally(() => {
+        actorRevocationSettled = true;
+      });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    requireCondition(
+      !actorRevocationSettled,
+      "Revocation approval did not hold the actor membership row",
+    );
+    await approvalClient.query("commit");
+    await actorRevocation;
+    await actorRevocationClient.query("rollback");
+  } catch (error) {
+    await approvalClient.query("rollback").catch(() => undefined);
+    await actorRevocationClient.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await approvalClient.end();
+    await actorRevocationClient.end();
+  }
+
+  requireCondition(
+    (await hashWorkspaceMembershipRevocationApprovalCore(
+      actorLockCreation.approval,
+    )) === actorLockCreation.approvalReceipt.approvalHash,
+    "PostgreSQL revocation approval hash differs from TypeScript",
+  );
+  requireCondition(
+    (await hashWorkspaceMembershipRevocationApprovalReceipt(
+      actorLockCreation.approvalReceipt,
+    )) === actorLockCreation.approvalReceipt.receiptHash,
+    "PostgreSQL revocation approval receipt hash differs from TypeScript",
+  );
+  requireCondition(
+    actorLockCreation.approval.approvalReceiptId ===
+      actorLockCreation.approvalReceipt.receiptId &&
+      actorLockCreation.approval.approvalReceiptSha256 ===
+        actorLockCreation.approvalReceipt.receiptHash &&
+      actorLockCreation.approvalReceipt.effects.approvalCreated &&
+      !actorLockCreation.approvalReceipt.effects.approvalConsumed &&
+      !actorLockCreation.approvalReceipt.effects.targetMembershipRevoked &&
+      !actorLockCreation.approvalReceipt.effects.targetMembershipMutated,
+    "Atomic revocation approval receipt is detached or claims an effect",
+  );
+  const persistedApproval = await admin.query<{
+    approval_hash: string;
+    approval_record_id: string;
+    approval_receipt_id: string;
+    approval_receipt_hash: string;
+    record_kind: string;
+    record_summary: string;
+    record_payload: unknown;
+    ledger_count: string;
+    execution_receipt_count: string;
+  }>(
+    `select approval.approval_hash,
+            approval.approval_record_id::text,
+            receipt.receipt_id::text as approval_receipt_id,
+            receipt.receipt_hash as approval_receipt_hash,
+            record.kind::text as record_kind,
+            record.summary as record_summary,
+            record.payload as record_payload,
+            (select count(*)::text
+               from public.workspace_membership_revocations revocation
+              where revocation.installation_id = approval.installation_id
+                and revocation.workspace_id = approval.workspace_id
+                and revocation.person_id = approval.target_person_id)
+              as ledger_count,
+            (select count(*)::text
+               from public.workspace_membership_revocation_receipts execution
+              where execution.installation_id = approval.installation_id
+                and execution.workspace_id = approval.workspace_id
+                and execution.approval_id = approval.approval_id)
+              as execution_receipt_count
+       from public.workspace_membership_revocation_approvals approval
+       join public.workspace_membership_revocation_approval_receipts receipt
+         on receipt.installation_id = approval.installation_id
+        and receipt.workspace_id = approval.workspace_id
+        and receipt.approval_id = approval.approval_id
+       join public.records record
+         on record.installation_id = approval.installation_id
+        and record.workspace_id = approval.workspace_id
+        and record.id = approval.approval_record_id
+      where approval.installation_id = $1
+        and approval.workspace_id = $2
+        and approval.approval_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, actorLockApprovalId],
+  );
+  const storedApproval = persistedApproval.rows[0];
+  requireCondition(
+    storedApproval?.approval_hash ===
+      actorLockCreation.approvalReceipt.approvalHash &&
+      storedApproval.approval_record_id ===
+        actorLockCreation.approval.approvalRecordId &&
+      storedApproval.approval_receipt_id ===
+        actorLockCreation.approvalReceipt.receiptId &&
+      storedApproval.approval_receipt_hash ===
+        actorLockCreation.approvalReceipt.receiptHash &&
+      storedApproval.record_kind === "approval" &&
+      storedApproval.record_summary ===
+        "Approved workspace membership revocation" &&
+      canonicalModuleLifecycleJson(storedApproval.record_payload) ===
+        canonicalModuleLifecycleJson(actorLockCreation.approval) &&
+      storedApproval.ledger_count === "0" &&
+      storedApproval.execution_receipt_count === "0",
+    "Revocation approval, no-effect receipt, and Record were not atomic",
+  );
+  const actorLockReplay = await createApproval({
+    approvalId: actorLockApprovalId,
+    expiresAt: actorLockExpiry,
+  });
+  requireCondition(
+    canonicalModuleLifecycleJson(actorLockReplay) ===
+      canonicalModuleLifecycleJson(actorLockCreation),
+    "Exact revocation approval replay changed immutable authority",
+  );
+  await denyApproval("Conflicting revocation approval replay", {
+    approvalId: actorLockApprovalId,
+    targetPersonId: ids.externalTargetPerson,
+    expiresAt: actorLockExpiry,
+  });
+
+  const snapshotDriftApproval = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.snapshotDriftWork,
+    capabilityGrantId: ids.snapshotDriftGrant,
+  });
+  await admin.query(
+    `update public.work
+        set title = title || ' drift',
+            updated_at = updated_at + interval '1 microsecond'
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, ids.snapshotDriftWork],
+  );
+  await denyApply(
+    "Revocation Work snapshot drift",
+    snapshotDriftApproval.approval.approvalId,
+  );
+
+  const policyDriftApproval = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.policyDriftWork,
+    capabilityGrantId: ids.policyDriftGrant,
+  });
+  const changedPolicy = {
+    ...policyDriftDefinition,
+    rule: "changed-after-approval",
+  };
+  await admin.query(
+    `update public.policies
+        set definition = $1::jsonb, content_sha256 = $2
+      where installation_id = $3 and workspace_id = $4 and id = $5`,
+    [
+      JSON.stringify(changedPolicy),
+      canonicalSha256(changedPolicy).slice("sha256:".length),
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.policyDriftPolicy,
+    ],
+  );
+  await denyApply(
+    "Revocation Policy drift after approval",
+    policyDriftApproval.approval.approvalId,
+  );
+
+  const grantExpiryApproval = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.grantExpiryDriftWork,
+    capabilityGrantId: ids.grantExpiryDriftGrant,
+  });
+  await admin.query(
+    `update public.capability_grants
+        set expires_at = clock_timestamp() - interval '1 second'
+      where installation_id = $1 and workspace_id = $2 and id = $3`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.grantExpiryDriftGrant,
+    ],
+  );
+  await denyApply(
+    "Revocation grant expiry after approval",
+    grantExpiryApproval.approval.approvalId,
+  );
+
+  const grantRevocationApproval = await createApproval({
+    approvalId: randomUUID(),
+    workId: ids.grantRevocationDriftWork,
+    capabilityGrantId: ids.grantRevocationDriftGrant,
+  });
+  await admin.query(
+    `insert into public.capability_grant_revocations
+       (installation_id, workspace_id, grant_id, revoked_by_person_id,
+        reason, revoked_at)
+     values ($1, $2, $3, $4, 'Synthetic post-approval revocation',
+             clock_timestamp())`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.grantRevocationDriftGrant,
+      ownerPersonId,
+    ],
+  );
+  await denyApply(
+    "Revocation grant revocation after approval",
+    grantRevocationApproval.approval.approvalId,
+  );
+
+  const externalConflictApproval = await createApproval({
+    approvalId: randomUUID(),
+    targetPersonId: ids.externalTargetPerson,
+  });
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values ($1, $2, $3, $4,
+             date_trunc('milliseconds', clock_timestamp()))`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.externalTargetPerson,
+      ownerPersonId,
+    ],
+  );
+  await denyApply(
+    "External administrator revocation without product receipt",
+    externalConflictApproval.approval.approvalId,
+  );
+  const externalConflictState = await admin.query<{
+    execution_count: string;
+    ledger_count: string;
+  }>(
+    `select
+       (select count(*)::text
+          from public.workspace_membership_revocation_receipts receipt
+         where receipt.installation_id = $1
+           and receipt.workspace_id = $2
+           and receipt.approval_id = $3) as execution_count,
+       (select count(*)::text
+          from public.workspace_membership_revocations revocation
+         where revocation.installation_id = $1
+           and revocation.workspace_id = $2
+           and revocation.person_id = $4) as ledger_count`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      externalConflictApproval.approval.approvalId,
+      ids.externalTargetPerson,
+    ],
+  );
+  requireCondition(
+    externalConflictState.rows[0]?.execution_count === "0" &&
+      externalConflictState.rows[0]?.ledger_count === "1",
+    "External revocation was incorrectly blessed with a product receipt",
+  );
+
+  const crossWorkspaceState = async (): Promise<unknown> =>
+    (
+      await admin.query<{ state: unknown }>(
+        `select jsonb_build_object(
+          'memberships', (select count(*)
+            from public.workspace_memberships where installation_id = $1
+              and workspace_id = $2),
+          'revocations', (select count(*)
+            from public.workspace_membership_revocations
+           where installation_id = $1 and workspace_id = $2),
+          'work', (select count(*) from public.work
+            where installation_id = $1 and workspace_id = $2),
+          'records', (select count(*) from public.records
+            where installation_id = $1 and workspace_id = $2),
+          'grants', (select count(*) from public.capability_grants
+            where installation_id = $1 and workspace_id = $2)
+        ) as state`,
+        [bootstrap.installationId, otherWorkspaceId],
+      )
+    ).rows[0]?.state;
+  const foreignWorkspaceBefore = await crossWorkspaceState();
+
+  const targetAuthority = async (): Promise<{
+    contextPersonId: string | null;
+    memoryCount: string;
+  }> =>
+    inRuntimeTransaction(
+      runtimeDatabaseUrl,
+      "authenticated",
+      (client) =>
+        setSignedContext(
+          client,
+          "person",
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ids.targetAuth,
+        ),
+      async (client) => {
+        const result = await client.query<{
+          context_person_id: string | null;
+          memory_count: string;
+        }>(
+          `select
+             public.current_workspace_person_id($1, $2)::text
+               as context_person_id,
+             (select count(*)::text
+                from public.resolve_context_gateway_memory_bank(
+                  $1, $2, 'retrieve', null
+                )) as memory_count`,
+          [bootstrap.installationId, bootstrap.workspaceId],
+        );
+        return {
+          contextPersonId: result.rows[0]?.context_person_id ?? null,
+          memoryCount: result.rows[0]?.memory_count ?? "missing",
+        };
+      },
+    );
+  const targetAuthorityBefore = await targetAuthority();
+  requireCondition(
+    targetAuthorityBefore.contextPersonId === ids.targetPerson &&
+      targetAuthorityBefore.memoryCount === "1",
+    "Live target did not hold its synthetic bootstrap and Context Gateway authority",
+  );
+
+  const mainApprovalId = randomUUID();
+  const mainApproval = await createApproval({ approvalId: mainApprovalId });
+  const mainReceiptId = randomUUID();
+  const applyClient = await connect(runtimeDatabaseUrl);
+  const grantRevocationClient = await connect(adminDatabaseUrl);
+  let mainResult: unknown;
+  try {
+    await applyClient.query("begin");
+    await setWorkspaceStepUpContext(
+      applyClient,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ownerAuthUserId,
+      Math.floor(Date.now() / 1_000),
+    );
+    await applyClient.query("set local role authenticated");
+    const application = await applyClient.query<{ result: unknown }>(applySql, [
+      mainReceiptId,
+      mainApprovalId,
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+    ]);
+    mainResult = application.rows[0]?.result;
+
+    await grantRevocationClient.query("begin");
+    let grantRevocationSettled = false;
+    const grantRevocation = grantRevocationClient
+      .query(
+        `insert into public.capability_grant_revocations
+           (installation_id, workspace_id, grant_id, revoked_by_person_id,
+            reason, revoked_at)
+         values ($1, $2, $3, $4,
+                 'Synthetic concurrent revocation', clock_timestamp())`,
+        [
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+          ids.goodGrant,
+          ids.secondOwnerPerson,
+        ],
+      )
+      .finally(() => {
+        grantRevocationSettled = true;
+      });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    requireCondition(
+      !grantRevocationSettled,
+      "Revocation apply did not hold the capability grant row",
+    );
+    await applyClient.query("commit");
+    await grantRevocation;
+    await grantRevocationClient.query("rollback");
+  } catch (error) {
+    await applyClient.query("rollback").catch(() => undefined);
+    await grantRevocationClient.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await applyClient.end();
+    await grantRevocationClient.end();
+  }
+
+  requireCondition(
+    mainResult && typeof mainResult === "object",
+    "Revocation apply did not return its authority bundle",
+  );
+  const mainBundle = mainResult as Record<string, unknown>;
+  const parsedMainCreation =
+    await parseWorkspaceMembershipRevocationApprovalCreation({
+      approval: mainBundle.approval,
+      approvalReceipt: mainBundle.approvalReceipt,
+    });
+  const mainReceipt: WorkspaceMembershipRevocationReceipt =
+    await parseWorkspaceMembershipRevocationReceipt(
+      mainBundle.receipt,
+      parsedMainCreation,
+    );
+  requireCondition(
+    canonicalModuleLifecycleJson(parsedMainCreation) ===
+      canonicalModuleLifecycleJson(mainApproval),
+    "Revocation apply returned detached approval authority",
+  );
+  requireCondition(
+    (await hashWorkspaceMembershipRevocationReceipt(mainReceipt)) ===
+      mainReceipt.receiptHash &&
+      mainReceipt.approvalConsumptionCount === 1 &&
+      mainReceipt.effects.targetMembershipRevoked &&
+      !mainReceipt.effects.workMutated &&
+      !mainReceipt.effects.policyMutated &&
+      !mainReceipt.effects.capabilityGrantMutated,
+    "PostgreSQL revocation execution receipt differs from TypeScript or claims foreign effects",
+  );
+
+  const persistedApplication = await admin.query<{
+    ledger_count: string;
+    receipt_count: string;
+    record_count: string;
+    person_count: string;
+    ledger_id: string;
+    record_payload: unknown;
+    record_kind: string;
+    record_summary: string;
+    work_snapshot_hash: string;
+  }>(
+    `select
+       (select count(*)::text
+          from public.workspace_membership_revocations revocation
+         where revocation.installation_id = $1
+           and revocation.workspace_id = $2
+           and revocation.person_id = $3) as ledger_count,
+       (select count(*)::text
+          from public.workspace_membership_revocation_receipts receipt
+         where receipt.installation_id = $1
+           and receipt.workspace_id = $2
+           and receipt.approval_id = $4) as receipt_count,
+       (select count(*)::text from public.records record
+         where record.installation_id = $1 and record.workspace_id = $2
+           and record.id = $5) as record_count,
+       (select count(*)::text from public.people person
+         where person.installation_id = $1 and person.id = $3) as person_count,
+       revocation.id::text as ledger_id,
+       record.payload as record_payload,
+       record.kind::text as record_kind,
+       record.summary as record_summary,
+       approval.work_snapshot_hash
+      from public.workspace_membership_revocations revocation
+      join public.workspace_membership_revocation_receipts receipt
+        on receipt.membership_revocation_id = revocation.id
+      join public.workspace_membership_revocation_approvals approval
+        on approval.installation_id = receipt.installation_id
+       and approval.workspace_id = receipt.workspace_id
+       and approval.approval_id = receipt.approval_id
+      join public.records record
+        on record.installation_id = receipt.installation_id
+       and record.workspace_id = receipt.workspace_id
+       and record.id = receipt.receipt_id
+     where revocation.installation_id = $1 and revocation.workspace_id = $2
+       and revocation.person_id = $3 and receipt.approval_id = $4`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ids.targetPerson,
+      mainApprovalId,
+      mainReceiptId,
+    ],
+  );
+  const storedApplication = persistedApplication.rows[0];
+  requireCondition(
+    storedApplication?.ledger_count === "1" &&
+      storedApplication.receipt_count === "1" &&
+      storedApplication.record_count === "1" &&
+      storedApplication.person_count === "1" &&
+      storedApplication.ledger_id === mainReceipt.membershipRevocationId &&
+      storedApplication.record_kind === "receipt" &&
+      storedApplication.record_summary ===
+        "Applied workspace membership revocation" &&
+      canonicalModuleLifecycleJson(storedApplication.record_payload) ===
+        canonicalModuleLifecycleJson(mainReceipt) &&
+      storedApplication.work_snapshot_hash ===
+        mainApproval.approval.binding.workSnapshotSha256,
+    "Membership revocation ledger, receipt, and Record were not one exact atomic effect",
+  );
+
+  const replayResult = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    async (client) =>
+      (
+        await client.query<{ result: unknown }>(applySql, [
+          mainReceiptId,
+          mainApprovalId,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+        ])
+      ).rows[0]?.result,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(replayResult) ===
+      canonicalModuleLifecycleJson(mainResult),
+    "Exact revocation replay did not return the immutable bundle",
+  );
+  await denyApply(
+    "Conflicting revocation receipt replay",
+    mainApprovalId,
+    randomUUID(),
+  );
+
+  const expiringApprovalId = randomUUID();
+  const expiringReceiptId = randomUUID();
+  const expiringApprovalExpiresAt = new Date(Date.now() + 5_000).toISOString();
+  await createApproval({
+    approvalId: expiringApprovalId,
+    targetPersonId: ids.nonOwnerPerson,
+    expiresAt: expiringApprovalExpiresAt,
+  });
+  const expiringResult = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    async (client) =>
+      (
+        await client.query<{ result: unknown }>(applySql, [
+          expiringReceiptId,
+          expiringApprovalId,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+        ])
+      ).rows[0]?.result,
+  );
+  const expiryWaitMilliseconds = Math.max(
+    0,
+    Date.parse(expiringApprovalExpiresAt) - Date.now() + 150,
+  );
+  await new Promise((resolveDelay) =>
+    setTimeout(resolveDelay, expiryWaitMilliseconds),
+  );
+  requireCondition(
+    Date.now() > Date.parse(expiringApprovalExpiresAt),
+    "Bounded revocation replay test did not cross approval expiry",
+  );
+  const expiredReplayResult = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedOwner(),
+    async (client) =>
+      (
+        await client.query<{ result: unknown }>(applySql, [
+          expiringReceiptId,
+          expiringApprovalId,
+          bootstrap.installationId,
+          bootstrap.workspaceId,
+        ])
+      ).rows[0]?.result,
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(expiredReplayResult) ===
+      canonicalModuleLifecycleJson(expiringResult),
+    "Exact completed revocation replay changed after approval expiry",
+  );
+  await denyApply(
+    "Conflicting revocation receipt after approval expiry",
+    expiringApprovalId,
+    randomUUID(),
+  );
+
+  await expectSqlState(
+    admin,
+    `update public.workspace_membership_revocation_approvals
+        set binding = binding where installation_id = $1
+          and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, mainApprovalId],
+    "P0001",
+    "Immutable membership revocation approval update",
+  );
+  await expectSqlState(
+    admin,
+    `delete from public.workspace_membership_revocation_approval_receipts
+      where installation_id = $1 and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, mainApprovalId],
+    "P0001",
+    "Immutable membership revocation approval receipt delete",
+  );
+  await expectSqlState(
+    admin,
+    `update public.workspace_membership_revocation_receipts
+        set effects = effects where installation_id = $1
+          and workspace_id = $2 and approval_id = $3`,
+    [bootstrap.installationId, bootstrap.workspaceId, mainApprovalId],
+    "P0001",
+    "Immutable membership revocation execution receipt update",
+  );
+
+  const targetAuthorityAfter = await targetAuthority();
+  requireCondition(
+    targetAuthorityAfter.contextPersonId === null &&
+      targetAuthorityAfter.memoryCount === "0",
+    "Revoked target retained bootstrap or Context Gateway authority",
+  );
+
+  const liveOwnerCountBeforeActorRevocation = await admin.query<{
+    count: string;
+  }>(
+    `select count(*)::text as count
+       from public.workspace_memberships membership
+      where membership.installation_id = $1 and membership.workspace_id = $2
+        and membership.kind = 'owner'
+        and public.workspace_membership_is_live(
+          membership.installation_id, membership.workspace_id,
+          membership.person_id
+        )`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  await admin.query(
+    `insert into public.workspace_membership_revocations
+       (installation_id, workspace_id, person_id, revoked_by_person_id,
+        revoked_at)
+     values ($1, $2, $3, $4,
+             date_trunc('milliseconds', clock_timestamp()))`,
+    [
+      bootstrap.installationId,
+      bootstrap.workspaceId,
+      ownerPersonId,
+      ids.secondOwnerPerson,
+    ],
+  );
+  await denyApply(
+    "Exact revocation replay by a revoked original owner",
+    mainApprovalId,
+    mainReceiptId,
+  );
+  const remainingOwnerCount = await admin.query<{ count: string }>(
+    `select count(*)::text as count
+       from public.workspace_memberships membership
+      where membership.installation_id = $1 and membership.workspace_id = $2
+        and membership.kind = 'owner'
+        and public.workspace_membership_is_live(
+          membership.installation_id, membership.workspace_id,
+          membership.person_id
+        )`,
+    [bootstrap.installationId, bootstrap.workspaceId],
+  );
+  requireCondition(
+    Number(remainingOwnerCount.rows[0]?.count) ===
+      Number(liveOwnerCountBeforeActorRevocation.rows[0]?.count) - 1 &&
+      Number(remainingOwnerCount.rows[0]?.count) >= 1,
+    "Synthetic revocation proof did not preserve live owner continuity",
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    (client) =>
+      setWorkspaceStepUpContext(
+        client,
+        bootstrap.installationId,
+        ids.finalOwnerWorkspace,
+        ids.secondOwnerAuth,
+        Math.floor(Date.now() / 1_000),
+      ),
+    approvalSql,
+    [
+      randomUUID(),
+      bootstrap.installationId,
+      ids.finalOwnerWorkspace,
+      ids.secondOwnerPerson,
+      "owner",
+      randomUUID(),
+      randomUUID(),
+      expiry(),
+    ],
+    "P0001",
+    "Final live owner revocation",
+  );
+
+  requireCondition(
+    canonicalModuleLifecycleJson(await crossWorkspaceState()) ===
+      canonicalModuleLifecycleJson(foreignWorkspaceBefore),
+    "Membership revocation proof mutated the foreign workspace",
+  );
+}
+
 async function proveModuleLifecycleApprovalBoundary(
   admin: Client,
   adminDatabaseUrl: string,
@@ -5719,6 +7345,12 @@ async function main(): Promise<void> {
       ownerPersonId,
     );
     await proveWorkspaceMemoryBankIdentity(admin, bootstrap);
+    await proveWorkspaceModuleProjectionBoundary(
+      admin,
+      runtimeDatabaseUrl,
+      bootstrap,
+      ownerPersonId,
+    );
     await proveModuleLifecycleApprovalBoundary(
       admin,
       adminDatabaseUrl,
@@ -5736,6 +7368,13 @@ async function main(): Promise<void> {
     await proveWorkerBoundary(runtimeDatabaseUrl, bootstrap, ownerPersonId);
     await proveCouncilResolverFrozenEvidenceRead(runtimeDatabaseUrl, bootstrap);
     await proveCouncilBoundary(admin, runtimeDatabaseUrl, bootstrap);
+    await proveWorkspaceMembershipRevocationBoundary(
+      admin,
+      adminDatabaseUrl,
+      runtimeDatabaseUrl,
+      bootstrap,
+      ownerPersonId,
+    );
 
     console.log(
       JSON.stringify(
@@ -5761,6 +7400,12 @@ async function main(): Promise<void> {
             memoryBankExternalIdentityWorkspaceBound: true,
             memoryBankLegacyIdentityPreservedUntilExplicitReconciliation: true,
             memoryBankLegacyIdentityRequiresExplicitRemediation: true,
+            workspaceModuleProjectionEmptyPersonalFailsClosed: true,
+            workspaceModuleProjectionExactTuplesAndDefaultBound: true,
+            workspaceModuleProjectionInvalidStateDenied: true,
+            workspaceModuleProjectionRuntimeMutationDenied: true,
+            workspaceModuleProjectionRlsLiveMembershipBound: true,
+            workspaceModuleProjectionForeignAndRevokedAccessDenied: true,
             contextGatewayBankAuthorityPostgresResolved: true,
             contextGatewayPersonAndWorkerCapabilitiesExplicit: true,
             contextGatewayWorkerCredentialFreshAndLive: true,
@@ -5815,6 +7460,20 @@ async function main(): Promise<void> {
             moduleLifecycleExecutionFinalizationSurvivesAuthorityExpiry: true,
             moduleLifecycleExecutionResponseLossReplayExact: true,
             moduleLifecycleExecutionTablesPrivateAndImmutable: true,
+            membershipRevocationUnsignedAndForgedContextsDenied: true,
+            membershipRevocationLiveOwnerAndRecentAal2Required: true,
+            membershipRevocationTargetAndFinalOwnerBound: true,
+            membershipRevocationWorkPolicyAndGrantBound: true,
+            membershipRevocationApprovalReceiptAndRecordAtomic: true,
+            membershipRevocationHashesCrossLanguageCanonical: true,
+            membershipRevocationTablesPrivateAndImmutable: true,
+            membershipRevocationAuthorityRacesSerialized: true,
+            membershipRevocationAppliedExactlyOnce: true,
+            membershipRevocationReplayExactAndLiveOwnerBound: true,
+            membershipRevocationExactReplaySurvivesExpiry: true,
+            membershipRevocationExternalLedgerConflictDenied: true,
+            membershipRevocationImmediatelyRevokesRuntimeAuthority: true,
+            membershipRevocationCrossWorkspaceMutationDenied: true,
             workerHumanAuthorityDenied: true,
             councilAttemptFenced: true,
             councilStorageDenied: true,

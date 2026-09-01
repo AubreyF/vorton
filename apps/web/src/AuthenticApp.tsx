@@ -12,21 +12,23 @@ import {
   SectionNavigator,
   type SectionNavigationItem,
 } from "./design-system/section-navigator.js";
+import {
+  resolveWorkspaceModuleRoute,
+  resolveWorkspaceModuleSurface,
+  resolveWorkspaceSwitchRoute,
+  supportedWorkspaceModuleDefinition,
+  supportedWorkspaceModuleId,
+  workspaceModuleRouteHash,
+  type ResolvedWorkspaceModule,
+  type ResolvedWorkspaceModuleRoute,
+  type WorkspaceModuleId,
+  type WorkspaceModuleSurfaceResolution,
+} from "./design-system/workspace-module-registry.js";
 import { ExecutiveCouncil } from "./executive-council.js";
 import { useBrowserRuntime, type RuntimeBootstrap } from "./runtime.js";
 import { ToolsView } from "./tools/tools-view.js";
 
-const primarySections = [
-  ["command", "Command Bridge"],
-  ["opportunities", "Opportunities"],
-  ["goals", "Goals"],
-  ["tasks", "Tasks"],
-  ["tools", "Tools"],
-  ["factory", "Factory"],
-  ["admin", "Admin"],
-] as const;
-
-type SectionId = (typeof primarySections)[number][0];
+type SectionId = WorkspaceModuleId;
 type Installation = RuntimeBootstrap["installations"][number];
 type Workspace = Installation["workspaces"][number];
 type WorkItem = Workspace["workItems"][number];
@@ -36,23 +38,6 @@ export const WORKSPACE_SELECTION_STORAGE_PREFIX = "vorton.selected-workspace";
 export function workspaceSelectionStorageKey(installationId: string) {
   return `${WORKSPACE_SELECTION_STORAGE_PREFIX}:${installationId}`;
 }
-
-const secondarySections: Record<SectionId, readonly string[]> = {
-  command: ["Briefing", "Council", "Decisions", "Activity"],
-  opportunities: ["Workbench", "Selected", "Signals", "Pipeline"],
-  goals: ["Active", "Guardrails", "Execution", "Calendar"],
-  tasks: ["Priority", "Blocked", "All open", "History"],
-  tools: ["Catalog", "moonbase-triage"],
-  factory: ["Tickets", "Workers", "Pull requests", "Receipts"],
-  admin: ["People", "Workers", "Policy", "Records", "Conversations", "Sources"],
-};
-
-const legacySectionRoutes: Record<
-  string,
-  { section: SectionId; subsection: string }
-> = {
-  conversations: { section: "admin", subsection: "Conversations" },
-};
 
 export const commandBridgeSections = [
   {
@@ -83,53 +68,66 @@ export const commandBridgeSections = [
 
 export function sectionFromHash(hash: string): SectionId {
   const value = hash.slice(1).split("/")[0] ?? "";
-  const legacyRoute = legacySectionRoutes[value];
-  if (legacyRoute) return legacyRoute.section;
-  return primarySections.some(([id]) => id === value)
-    ? (value as SectionId)
-    : "command";
+  return supportedWorkspaceModuleId(value) ?? "command";
 }
 
 export function subsectionFromHash(section: SectionId, hash: string): string {
   const [requestedSection = "", encodedSubsection] = hash.slice(1).split("/");
-  const legacyRoute = legacySectionRoutes[requestedSection];
-  if (legacyRoute?.section === section) return legacyRoute.subsection;
-  const requested = decodeURIComponent(encodedSubsection ?? "");
-  return secondarySections[section].includes(requested)
+  const definition = supportedWorkspaceModuleDefinition(section);
+  if (
+    definition.legacyRouteIds?.includes(requestedSection) &&
+    section === "admin"
+  ) {
+    return "Conversations";
+  }
+  let requested = "";
+  try {
+    requested = decodeURIComponent(encodedSubsection ?? "");
+  } catch {
+    // A malformed hash is only a navigation hint, never module authority.
+  }
+  return definition.subsections.includes(requested)
     ? requested
-    : secondarySections[section][0]!;
-}
-
-function initialSection(): SectionId {
-  return sectionFromHash(window.location.hash);
-}
-
-function initialSubsection(section: SectionId): string {
-  return subsectionFromHash(section, window.location.hash);
+    : definition.subsections[0]!;
 }
 
 export function AuthenticApp() {
   const runtime = useBrowserRuntime();
   const installation = runtime.bootstrap.installations[0]!;
   const workspaceStorageKey = workspaceSelectionStorageKey(installation.id);
-  const [section, setSection] = useState<SectionId>(initialSection);
-  const [subsection, setSubsection] = useState(() =>
-    initialSubsection(initialSection()),
-  );
+  const [currentHash, setCurrentHash] = useState(readBrowserHash);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(
-    () => localStorage.getItem(workspaceStorageKey),
+    () => readWorkspaceSelectionHint(workspaceStorageKey),
   );
   const workspace = resolveSelectedWorkspace(
     installation.workspaces,
     selectedWorkspaceId,
   )!;
   const workspaceName = workspace.displayName;
+  const workspaceModuleSurface = useMemo(
+    () => resolveWorkspaceModuleSurface(workspace.moduleSurface),
+    [workspace.moduleSurface],
+  );
+  const activeRoute = useMemo(
+    () => resolveWorkspaceModuleRoute(workspaceModuleSurface, currentHash),
+    [currentHash, workspaceModuleSurface],
+  );
+  const workspaceOptions = useMemo(
+    () =>
+      installation.workspaces.map((candidate) => ({
+        id: candidate.id,
+        displayName: candidate.displayName,
+        realm: candidate.realm,
+      })),
+    [installation.workspaces],
+  );
+  const selectedWorkspaceOption = workspaceOptions.find(
+    (candidate) => candidate.id === workspace.id,
+  )!;
 
   useEffect(() => {
     const onHashChange = () => {
-      const nextSection = initialSection();
-      setSection(nextSection);
-      setSubsection(initialSubsection(nextSection));
+      setCurrentHash(readBrowserHash());
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
@@ -142,31 +140,51 @@ export function AuthenticApp() {
   useEffect(() => {
     if (selectedWorkspaceId === workspace.id) return;
     setSelectedWorkspaceId(workspace.id);
-    localStorage.setItem(workspaceStorageKey, workspace.id);
+    writeWorkspaceSelectionHint(workspaceStorageKey, workspace.id);
   }, [selectedWorkspaceId, workspace.id, workspaceStorageKey]);
 
-  function navigate(next: SectionId) {
-    const nextSubsection = secondarySections[next][0]!;
-    window.location.hash = `${next}/${encodeURIComponent(nextSubsection)}`;
-    setSection(next);
-    setSubsection(nextSubsection);
+  useEffect(() => {
+    if (!activeRoute) return;
+    const canonicalHash = workspaceModuleRouteHash(activeRoute);
+    if (canonicalHash !== currentHash) {
+      replaceBrowserHash(canonicalHash);
+      setCurrentHash(canonicalHash);
+    }
+  }, [activeRoute, currentHash, workspace.id]);
+
+  function navigate(next: ResolvedWorkspaceModule) {
+    navigateToRoute({
+      module: next,
+      subsection: next.definition.subsections[0]!,
+    });
   }
 
   function navigateSubsection(next: string) {
-    window.location.hash = `${section}/${encodeURIComponent(next)}`;
-    setSubsection(next);
+    if (!activeRoute?.module.definition.subsections.includes(next)) return;
+    navigateToRoute({ module: activeRoute.module, subsection: next });
   }
 
   function selectWorkspace(workspaceId: string) {
     const next = resolveSelectedWorkspace(installation.workspaces, workspaceId);
     if (!next || next.id !== workspaceId) return;
-    localStorage.setItem(workspaceStorageKey, workspaceId);
+    const nextSurface = resolveWorkspaceModuleSurface(next.moduleSurface);
+    const nextRoute = resolveWorkspaceSwitchRoute(nextSurface, activeRoute);
+    const nextHash = workspaceModuleRouteHash(nextRoute);
+    writeWorkspaceSelectionHint(workspaceStorageKey, workspaceId);
     setSelectedWorkspaceId(workspaceId);
+    replaceBrowserHash(nextHash);
+    setCurrentHash(nextHash);
+  }
+
+  function navigateToRoute(next: ResolvedWorkspaceModuleRoute) {
+    const nextHash = workspaceModuleRouteHash(next);
+    if (typeof window !== "undefined") window.location.hash = nextHash;
+    setCurrentHash(nextHash);
   }
 
   return (
     <div
-      className={`dashboard-shell ${section === "command" || section === "tools" ? "single-level-navigation" : ""}`}
+      className={`dashboard-shell ${activeRoute?.module.definition.singleLevelNavigation || !activeRoute ? "single-level-navigation" : ""}`}
     >
       <BackgroundAtmosphere />
       <a className="skip-link" href="#dashboard-content">
@@ -175,14 +193,19 @@ export function AuthenticApp() {
       <header className="topbar">
         <div className="brand-block">
           <WorkspaceSwitcher
-            workspaces={installation.workspaces}
-            selectedWorkspace={workspace}
+            workspaces={workspaceOptions}
+            selectedWorkspace={selectedWorkspaceOption}
             onSelect={selectWorkspace}
           />
         </div>
         <PrimaryNavigation
           workspaceName={workspaceName}
-          section={section}
+          modules={
+            workspaceModuleSurface.state === "ready"
+              ? workspaceModuleSurface.modules
+              : []
+          }
+          activeModule={activeRoute?.module}
           navigate={navigate}
         />
         <div className="topbar-actions">
@@ -193,10 +216,10 @@ export function AuthenticApp() {
           />
         </div>
       </header>
-      {section !== "command" && section !== "tools" && (
+      {activeRoute && !activeRoute.module.definition.singleLevelNavigation && (
         <SecondaryNavigation
-          section={section}
-          subsection={subsection}
+          module={activeRoute.module}
+          subsection={activeRoute.subsection}
           navigate={navigateSubsection}
         />
       )}
@@ -207,36 +230,131 @@ export function AuthenticApp() {
         className="view-frame"
         tabIndex={-1}
       >
-        {section === "command" ? (
-          <CommandBridgePage
-            vortonInstallationId={installation.id}
-            workspace={workspace}
-            subsection={subsection}
-            navigate={navigateSubsection}
-          />
-        ) : section === "tasks" ? (
-          <WorkModule workspace={workspace} view={subsection} />
-        ) : section === "tools" ? (
-          <ToolsView
-            installationName={workspaceName}
-            view={subsection}
-            navigate={navigateSubsection}
-          />
-        ) : section === "factory" ? (
-          <FactoryModule installationName={workspaceName} view={subsection} />
-        ) : (
-          <ModuleFoundation
-            installationName={workspaceName}
-            section={section}
-            view={subsection}
-          />
-        )}
+        <WorkspaceModuleContent
+          vortonInstallationId={installation.id}
+          workspace={workspace}
+          surface={workspaceModuleSurface}
+          activeRoute={activeRoute}
+          navigateSubsection={navigateSubsection}
+        />
       </main>
     </div>
   );
 }
 
-function FactoryModule({
+function readBrowserHash() {
+  return typeof window === "undefined" ? "" : window.location.hash;
+}
+
+function replaceBrowserHash(hash: string) {
+  if (typeof window === "undefined") return;
+  const route = `${window.location.pathname}${window.location.search}${hash}`;
+  window.history.replaceState(window.history.state, "", route);
+}
+
+function readWorkspaceSelectionHint(key: string) {
+  return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+}
+
+function writeWorkspaceSelectionHint(key: string, workspaceId: string) {
+  if (typeof localStorage !== "undefined")
+    localStorage.setItem(key, workspaceId);
+}
+
+function WorkspaceModuleContent({
+  vortonInstallationId,
+  workspace,
+  surface,
+  activeRoute,
+  navigateSubsection,
+}: {
+  vortonInstallationId: string;
+  workspace: Workspace;
+  surface: WorkspaceModuleSurfaceResolution;
+  activeRoute: ResolvedWorkspaceModuleRoute | null;
+  navigateSubsection(next: string): void;
+}) {
+  const workspaceName = workspace.displayName;
+  if (surface.state === "unconfigured") {
+    return (
+      <WorkspaceSurfaceState
+        workspaceName={workspaceName}
+        title="No modules enabled"
+        detail="This workspace has no enabled modules yet. Choose another workspace or ask an owner to configure its module surface."
+      />
+    );
+  }
+  if (surface.state === "unsupported" || !activeRoute) {
+    return (
+      <WorkspaceSurfaceState
+        workspaceName={workspaceName}
+        title="Workspace surface unavailable"
+        detail="This release cannot safely display the workspace module surface. No module was opened."
+      />
+    );
+  }
+
+  const { component } = activeRoute.module.definition;
+  if (component === "command") {
+    return (
+      <CommandBridgePage
+        vortonInstallationId={vortonInstallationId}
+        workspace={workspace}
+        subsection={activeRoute.subsection}
+        navigate={navigateSubsection}
+      />
+    );
+  }
+  if (component === "tasks") {
+    return <WorkModule workspace={workspace} view={activeRoute.subsection} />;
+  }
+  if (component === "tools") {
+    return (
+      <ToolsView
+        installationName={workspaceName}
+        view={activeRoute.subsection}
+        navigate={navigateSubsection}
+      />
+    );
+  }
+  if (component === "freed-read-only-factory") {
+    return (
+      <FreedReadOnlyFactoryModule
+        installationName={workspaceName}
+        view={activeRoute.subsection}
+      />
+    );
+  }
+  return (
+    <ModuleFoundation
+      installationName={workspaceName}
+      module={activeRoute.module}
+      view={activeRoute.subsection}
+    />
+  );
+}
+
+function WorkspaceSurfaceState({
+  workspaceName,
+  title,
+  detail,
+}: {
+  workspaceName: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <section className="module-foundation">
+      <p className="eyebrow">{workspaceName} / Modules</p>
+      <h1>{title}</h1>
+      <div className="directional-empty-state">
+        <p>{detail}</p>
+      </div>
+    </section>
+  );
+}
+
+function FreedReadOnlyFactoryModule({
   installationName,
   view,
 }: {
@@ -327,31 +445,37 @@ function FactoryModule({
 
 function PrimaryNavigation({
   workspaceName,
-  section,
+  modules,
+  activeModule,
   navigate,
 }: {
   workspaceName: string;
-  section: SectionId;
-  navigate: (section: SectionId) => void;
+  modules: readonly ResolvedWorkspaceModule[];
+  activeModule: ResolvedWorkspaceModule | undefined;
+  navigate: (module: ResolvedWorkspaceModule) => void;
 }) {
   return (
     <HorizontalNavigation
-      activeKey={section}
+      activeKey={activeModule?.definition.id ?? ""}
       label={`${workspaceName} sections`}
       shellClassName="primary-nav-shell"
       navigationClassName="primary-navigation"
       trackClassName="primary-navigation__track"
     >
-      {primarySections.map(([id, label]) => (
+      {modules.map((module) => (
         <button
-          key={id}
+          key={module.definition.id}
           type="button"
-          className={`nav-button ${section === id ? "active" : ""}`}
-          aria-current={section === id ? "page" : undefined}
+          className={`nav-button ${activeModule?.definition.id === module.definition.id ? "active" : ""}`}
+          aria-current={
+            activeModule?.definition.id === module.definition.id
+              ? "page"
+              : undefined
+          }
           aria-controls="dashboard-content"
-          onClick={() => navigate(id)}
+          onClick={() => navigate(module)}
         >
-          {label}
+          {module.label}
         </button>
       ))}
     </HorizontalNavigation>
@@ -359,24 +483,24 @@ function PrimaryNavigation({
 }
 
 function SecondaryNavigation({
-  section,
+  module,
   subsection,
   navigate,
 }: {
-  section: SectionId;
+  module: ResolvedWorkspaceModule;
   subsection: string;
   navigate: (subsection: string) => void;
 }) {
   return (
     <div className="section-nav-bar">
       <HorizontalNavigation
-        activeKey={`${section}:${subsection}`}
-        label={`${section} sections`}
+        activeKey={`${module.definition.id}:${subsection}`}
+        label={`${module.label} sections`}
         shellClassName="secondary-nav-shell"
         navigationClassName="secondary-navigation"
         trackClassName="secondary-navigation__track"
       >
-        {secondarySections[section].map((label) => (
+        {module.definition.subsections.map((label) => (
           <button
             key={label}
             type="button"
@@ -976,28 +1100,27 @@ function CommandLane({
 
 function ModuleFoundation({
   installationName,
-  section,
+  module,
   view,
 }: {
   installationName: string;
-  section: Exclude<SectionId, "command">;
+  module: ResolvedWorkspaceModule;
   view: string;
 }) {
-  const sectionLabel =
-    primarySections.find(([id]) => id === section)?.[1] ?? section;
-  const pageLabel = section === "admin" ? view : sectionLabel;
+  const sectionLabel = module.label;
+  const pageLabel = module.definition.id === "admin" ? view : sectionLabel;
   return (
     <section className="module-foundation">
       <p className="eyebrow">
         {installationName} / {sectionLabel}
-        {section === "admin" ? ` / ${view}` : ""}
+        {module.definition.id === "admin" ? ` / ${view}` : ""}
       </p>
       <h1>{pageLabel}</h1>
       <p className="lede">
-        This {section === "admin" ? "Admin area" : "module"} is being translated
-        into {installationName} from the proven personal interface. The previous
-        generic preview has been removed rather than presented as finished
-        product.
+        This {module.definition.id === "admin" ? "Admin area" : "module"} is
+        being translated into {installationName} from the proven personal
+        interface. The previous generic preview has been removed rather than
+        presented as finished product.
       </p>
       <div className="directional-empty-state">
         <h2>The interface migration is in progress</h2>

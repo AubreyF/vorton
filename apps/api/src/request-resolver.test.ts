@@ -19,7 +19,7 @@ const input = {
 const requester = {
   installationId: input.installationId,
   workspaceId: input.workspaceId,
-  authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5",
+  authUserId: "0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5", // gitleaks:allow
 };
 
 class FakeDatabase {
@@ -90,8 +90,20 @@ describe("database executive request resolver", () => {
           workspace_id: input.workspaceId,
           workspace_slug: "synthetic-workspace",
           workspace_display_name: "Synthetic workspace",
+          workspace_default_module_id: "command",
           workspace_realm: "organizational",
           person_kind: "owner",
+        },
+      ],
+      [
+        {
+          installation_id: input.installationId,
+          workspace_id: input.workspaceId,
+          module_id: "command",
+          contract_version: "v1",
+          label: "Command Bridge",
+          navigation_order: 10,
+          presentation_variant: "standard",
         },
       ],
       [
@@ -150,6 +162,18 @@ describe("database executive request resolver", () => {
             {
               id: input.workspaceId,
               personKind: "owner",
+              moduleSurface: {
+                defaultModuleId: "command",
+                modules: [
+                  {
+                    id: "command",
+                    contractVersion: "v1",
+                    label: "Command Bridge",
+                    navigationOrder: 10,
+                    presentationVariant: "standard",
+                  },
+                ],
+              },
               workItems: [
                 {
                   id: input.workId,
@@ -173,11 +197,61 @@ describe("database executive request resolver", () => {
       ],
     });
     expect(database.statements[0]).toContain("person.auth_user_id = $1");
-    expect(database.statements[1]).toContain("from public.work work");
-    expect(database.statements[2]).toContain("executive.propose");
-    expect(database.statements[2]).toContain(
+    expect(database.statements[1]).toContain(
+      "from public.workspace_module_activations activation",
+    );
+    expect(database.statements[2]).toContain("from public.work work");
+    expect(database.statements[3]).toContain("executive.propose");
+    expect(database.statements[3]).toContain(
       "policy.definition ->> 'protocol' is distinct from $4",
     );
+  });
+
+  it("projects an empty workspace surface without inheriting installation modules", async () => {
+    const database = new FakeDatabase();
+    database.results = [
+      [
+        {
+          installation_id: input.installationId,
+          installation_slug: "vorton",
+          installation_display_name: "Vorton",
+          workspace_id: input.workspaceId,
+          workspace_slug: "aubos",
+          workspace_display_name: "AubOS",
+          workspace_default_module_id: null,
+          workspace_realm: "personal",
+          person_kind: "owner",
+        },
+      ],
+      [],
+      [],
+      [],
+      [],
+    ];
+    const resolver = new DatabaseExecutiveRequestResolver(
+      database as unknown as Database,
+      "openai-responses",
+      "explicit-model",
+    );
+
+    await expect(
+      resolver.resolveBootstrap("0e01b4ef-f1de-4c2b-b79b-eccc61ac5ad5"),
+    ).resolves.toMatchObject({
+      installations: [
+        {
+          displayName: "Vorton",
+          workspaces: [
+            {
+              displayName: "AubOS",
+              realm: "personal",
+              moduleSurface: { defaultModuleId: null, modules: [] },
+              workItems: [],
+              proposalBindings: [],
+            },
+          ],
+        },
+      ],
+    });
   });
 
   for (const condition of [

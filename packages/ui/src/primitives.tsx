@@ -7,8 +7,7 @@ export function Mark({ compact = false }: { compact?: boolean }) {
       aria-label="Vorton"
     >
       <span className="mark__orbit" aria-hidden="true" />
-      <span className="mark__word">AUB</span>
-      {!compact && <span className="mark__os">OS</span>}
+      <span className="mark__word">VORTON</span>
     </span>
   );
 }

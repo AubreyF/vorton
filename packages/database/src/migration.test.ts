@@ -54,6 +54,14 @@ const contextGatewayAuthorityMigrationUrl = new URL(
   "../../../supabase/migrations/20260831000100_context_gateway_authority.sql",
   import.meta.url,
 );
+const workspaceMembershipRevocationAuthorityMigrationUrl = new URL(
+  "../../../supabase/migrations/20260831000200_workspace_membership_revocation_authority.sql",
+  import.meta.url,
+);
+const workspaceModuleProjectionMigrationUrl = new URL(
+  "../../../supabase/migrations/20260831000300_workspace_module_projection.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -705,6 +713,196 @@ describe("Context Gateway authority migration contract", () => {
       "public.retrieval_receipt_results from authenticated",
     );
     expect(sql).not.toMatch(/grant\s+(select|insert|update|delete)\s+on/i);
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+});
+
+describe("workspace membership revocation authority migration contract", () => {
+  it("creates separate immutable approval, no-effect receipt, and execution receipt planes", async () => {
+    const sql = await readFile(
+      workspaceMembershipRevocationAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "create table public.workspace_membership_revocation_approvals",
+    );
+    expect(sql).toContain(
+      "create table public.workspace_membership_revocation_approval_receipts",
+    );
+    expect(sql).toContain(
+      "create table public.workspace_membership_revocation_receipts",
+    );
+    expect(sql).toContain("vorton.workspace-membership-revocation-approval.v1");
+    expect(sql).toContain(
+      "vorton.workspace-membership-revocation-approval-receipt.v1",
+    );
+    expect(sql).toContain("vorton.workspace-membership-revocation-receipt.v1");
+    expect(sql).toContain("vorton_module_lifecycle_hash(");
+    expect(sql).toContain(
+      "Workspace membership revocation authority is append-only",
+    );
+  });
+
+  it("derives exact ready Work, Policy, grant, membership, and AAL2 authority", async () => {
+    const sql = await readFile(
+      workspaceMembershipRevocationAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "create function public.workspace_membership_revocation_work_snapshot(",
+    );
+    expect(sql).toContain('\'YYYY-MM-DD"T"HH24:MI:SS.US"Z"\'');
+    expect(sql).toContain("work_row.state <> 'ready'");
+    expect(sql).toContain(
+      "work_row.custodian_person_id is distinct from actor_person_id_value",
+    );
+    expect(sql).toContain("'workspace.membership.revoke'");
+    expect(sql).toContain("grant_row.principal_kind <> 'person'");
+    expect(sql).toContain("grant_row.mode <> 'modify'");
+    expect(sql).toContain("grant_row.work_id is distinct from target_work_id");
+    expect(sql).toContain("policy_row.content_sha256 <> encode(");
+    expect(sql).toContain("public.vorton_workspace_step_up_context_valid(");
+    expect(sql).toContain("membership.kind = 'owner'");
+    expect(sql).not.toContain("worker_role_assignments");
+  });
+
+  it("forbids self and final-owner revocation and applies one exact ledger effect", async () => {
+    const sql = await readFile(
+      workspaceMembershipRevocationAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain("Self-revocation is forbidden");
+    expect(sql).toContain("The final live workspace owner cannot be revoked");
+    expect(sql).toContain("for update;");
+    expect(sql).toContain(
+      "insert into public.workspace_membership_revocations",
+    );
+    expect(sql).toContain(
+      "insert into public.workspace_membership_revocation_receipts",
+    );
+    expect(sql).toContain("insert into public.records");
+    expect(sql).toContain(
+      "Existing membership revocation lacks exact product receipt",
+    );
+    expect(sql).toContain("approval_consumption_count = 1");
+    expect(sql).not.toMatch(/update\s+public\.work\b/i);
+    expect(sql).not.toContain(
+      "create table public.workspace_membership_revocation_commands",
+    );
+  });
+
+  it("keeps replay same-person, live-member, receipt-exact, and private", async () => {
+    const sql = await readFile(
+      workspaceMembershipRevocationAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "A live workspace member is required to apply or replay revocation",
+    );
+    expect(sql).toContain(
+      "The same live workspace owner must apply or replay revocation",
+    );
+    expect(sql).toContain(
+      "Membership revocation receipt retry conflicts with immutable application",
+    );
+    expect(sql).toContain("'exactReplayReturnsSameReceipt', true");
+    expect(sql).toContain("'additionalRevocationsOnReplay', 0");
+    expect(sql).toContain(
+      "alter table public.workspace_membership_revocation_approvals\n  enable row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.workspace_membership_revocation_approvals",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.create_workspace_membership_revocation_approval",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.apply_workspace_membership_revocation",
+    );
+    expect(sql).not.toMatch(
+      /grant execute on function public\.(create|apply)_workspace_membership_revocation[\s\S]*to aubos_worker/i,
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+  });
+
+  it("serializes membership and grant revocation against authority admission and apply", async () => {
+    const sql = await readFile(
+      workspaceMembershipRevocationAuthorityMigrationUrl,
+      "utf8",
+    );
+
+    expect(
+      sql.match(/for share of person\n\s+for update of membership;/g),
+    ).toHaveLength(4);
+    expect(
+      sql.match(/from public\.capability_grants candidate[\s\S]*?for update;/g),
+    ).toHaveLength(2);
+    expect(
+      sql.match(
+        /perform 1\n\s+from public\.workspace_memberships membership[\s\S]*?membership\.kind = 'owner'[\s\S]*?for update;/g,
+      ),
+    ).toHaveLength(2);
+  });
+});
+
+describe("workspace module projection migration contract", () => {
+  it("stores only explicit supported workspace module tuples", async () => {
+    const sql = await readFile(workspaceModuleProjectionMigrationUrl, "utf8");
+
+    expect(sql).toContain("create table public.workspace_module_activations");
+    expect(sql).toContain(
+      "module_id in (\n        'command', 'opportunities', 'goals', 'tasks', 'tools', 'admin'",
+    );
+    expect(sql).toContain("module_id = 'factory'");
+    expect(sql).toContain("presentation_variant = 'freed-read-only'");
+    expect(sql).toContain("contract_version = 'v1'");
+    expect(sql).toContain(
+      "primary key (installation_id, workspace_id, module_id)",
+    );
+    expect(sql).toContain(
+      "references public.workspace_memberships(\n      installation_id, workspace_id, person_id",
+    );
+    expect(sql).not.toMatch(
+      /insert into public\.workspace_module_activations/i,
+    );
+  });
+
+  it("binds the default to an enabled module and preserves an empty fail-closed state", async () => {
+    const sql = await readFile(workspaceModuleProjectionMigrationUrl, "utf8");
+
+    expect(sql).toContain("add column default_module_id text");
+    expect(sql).toContain("default_module_id is null");
+    expect(sql).toContain("workspaces_default_module_activation_fk");
+    expect(sql).toContain(
+      "references public.workspace_module_activations(\n      installation_id, workspace_id, module_id",
+    );
+    expect(sql).toContain(
+      "Empty means no modules are enabled; no installation or hostname default is inferred.",
+    );
+  });
+
+  it("allows live members to read only and grants no runtime mutation", async () => {
+    const sql = await readFile(workspaceModuleProjectionMigrationUrl, "utf8");
+
+    expect(sql).toContain(
+      "alter table public.workspace_module_activations enable row level security",
+    );
+    expect(sql).toContain(
+      "using (public.is_workspace_member(installation_id, workspace_id))",
+    );
+    expect(sql).toContain(
+      "revoke all on table public.workspace_module_activations",
+    );
+    expect(sql).toContain(
+      "grant select on public.workspace_module_activations to authenticated",
+    );
+    expect(sql).not.toMatch(
+      /grant (insert|update|delete) on public\.workspace_module_activations/i,
+    );
     expect(sql.trimEnd()).toMatch(/commit;$/);
   });
 });

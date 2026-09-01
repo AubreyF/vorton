@@ -40,6 +40,16 @@ export interface RuntimeWorkspace {
   id: string;
   slug: string;
   displayName: string;
+  moduleSurface: {
+    defaultModuleId: string | null;
+    modules: Array<{
+      id: string;
+      contractVersion: string;
+      label: string;
+      navigationOrder: number;
+      presentationVariant: string;
+    }>;
+  };
   realm: "personal" | "organizational";
   personKind: "owner" | "member";
   workItems: Array<{

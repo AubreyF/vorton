@@ -17,6 +17,8 @@ import {
   moduleLifecycleActionConsumeRequestSchema,
   moduleLifecycleActionFinalizeRequestSchema,
   releaseAdoptionApprovalRequestSchema,
+  workspaceMembershipRevocationApplyRequestSchema,
+  workspaceMembershipRevocationApprovalRequestSchema,
   workspaceCreationApprovalRequestSchema,
 } from "@vorton/contracts";
 
@@ -57,6 +59,14 @@ import {
   type DatabaseModuleLifecycleExecution,
 } from "./module-lifecycle-execution.js";
 import {
+  WorkspaceMembershipRevocationConflictError,
+  WorkspaceMembershipRevocationForbiddenError,
+  WorkspaceMembershipRevocationInputError,
+  WorkspaceMembershipRevocationIntegrityError,
+  requireWorkspaceMembershipRevocationRecentAal2,
+  type DatabaseWorkspaceMembershipRevocationAuthority,
+} from "./workspace-membership-revocation.js";
+import {
   ExecutiveRequestInputError,
   ExecutiveRequestResolutionError,
   parseProposalInput,
@@ -79,6 +89,7 @@ export interface ApiServerDependencies {
   installationAuthority: DatabaseInstallationAuthority;
   moduleLifecycleAuthority: DatabaseModuleLifecycleAuthority;
   moduleLifecycleExecution: DatabaseModuleLifecycleExecution;
+  workspaceMembershipRevocationAuthority: DatabaseWorkspaceMembershipRevocationAuthority;
   workerCredentialVerifier: WorkerCredentialVerifier;
   release: string;
   allowedOrigin: string;
@@ -324,6 +335,88 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
           await dependencies.moduleLifecycleAuthority.approve(
             installationId,
             workspaceId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const membershipRevocationApprovalRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/membership-revocation-approvals$/,
+      );
+      if (
+        request.method === "POST" &&
+        membershipRevocationApprovalRoute?.[1] &&
+        membershipRevocationApprovalRoute[2]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireWorkspaceMembershipRevocationRecentAal2(identity);
+        const installationId = membershipRevocationApprovalRoute[1];
+        const workspaceId = membershipRevocationApprovalRoute[2];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Membership revocation path identifiers must be canonical UUIDs",
+          );
+        }
+        const exactRequest =
+          workspaceMembershipRevocationApprovalRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          201,
+          await dependencies.workspaceMembershipRevocationAuthority.approve(
+            installationId,
+            workspaceId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const membershipRevocationApplyRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/workspaces\/([^/]+)\/membership-revocation-approvals\/([^/]+)\/execute$/,
+      );
+      if (
+        request.method === "POST" &&
+        membershipRevocationApplyRoute?.[1] &&
+        membershipRevocationApplyRoute[2] &&
+        membershipRevocationApplyRoute[3]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireWorkspaceMembershipRevocationRecentAal2(identity);
+        const installationId = membershipRevocationApplyRoute[1];
+        const workspaceId = membershipRevocationApplyRoute[2];
+        const approvalId = membershipRevocationApplyRoute[3];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(workspaceId) ||
+          !uuidPattern.test(approvalId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Membership revocation path identifiers must be canonical UUIDs",
+          );
+        }
+        const exactRequest =
+          workspaceMembershipRevocationApplyRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          200,
+          await dependencies.workspaceMembershipRevocationAuthority.apply(
+            installationId,
+            workspaceId,
+            approvalId,
             exactRequest,
             identity,
           ),
@@ -804,6 +897,60 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         return;
       }
       if (error instanceof ModuleLifecycleExecutionIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceMembershipRevocationInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceMembershipRevocationForbiddenError) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceMembershipRevocationConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "workspace_membership_revocation_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof WorkspaceMembershipRevocationIntegrityError) {
         json(
           response,
           500,

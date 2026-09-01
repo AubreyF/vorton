@@ -23,12 +23,30 @@ const previewRuntime: RuntimeContextValue = {
       {
         id: "00000000-0000-4000-8000-000000000002",
         slug: "freed",
-        displayName: "FreedOS",
+        displayName: "Vorton",
         workspaces: [
           {
             id: "00000000-0000-4000-8000-000000000010",
             slug: "freed-os",
             displayName: "FreedOS",
+            moduleSurface: {
+              defaultModuleId: "command",
+              modules: [
+                ["command", "Command Bridge", 10, "standard"],
+                ["opportunities", "Opportunities", 20, "standard"],
+                ["goals", "Goals", 30, "standard"],
+                ["tasks", "Tasks", 40, "standard"],
+                ["tools", "Tools", 50, "standard"],
+                ["factory", "Factory", 60, "freed-read-only"],
+                ["admin", "Admin", 70, "standard"],
+              ].map(([id, label, navigationOrder, presentationVariant]) => ({
+                id: id as string,
+                contractVersion: "v1",
+                label: label as string,
+                navigationOrder: navigationOrder as number,
+                presentationVariant: presentationVariant as string,
+              })),
+            },
             realm: "organizational",
             personKind: "owner",
             workItems: [
@@ -102,8 +120,9 @@ const previewRuntime: RuntimeContextValue = {
           },
           {
             id: "00000000-0000-4000-8000-000000000011",
-            slug: "moonbase",
-            displayName: "Moonbase",
+            slug: "aubos",
+            displayName: "AubOS",
+            moduleSurface: { defaultModuleId: null, modules: [] },
             realm: "personal",
             personKind: "owner",
             workItems: [],
