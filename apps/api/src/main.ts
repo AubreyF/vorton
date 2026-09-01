@@ -7,6 +7,7 @@ import { DatabaseExecutiveCouncilResolver } from "./council-resolver.js";
 import { DatabaseExecutiveLedger } from "./database-ledger.js";
 import { DatabaseWorkerRunRecorder } from "./database-worker-runs.js";
 import { DatabaseInstallationAuthority } from "./installation-authority.js";
+import { DatabaseInstallationCoreSurfaceReconciliation } from "./installation-core-surface-reconciliation.js";
 import { DatabaseModuleLifecycleAuthority } from "./module-lifecycle-authority.js";
 import { DatabaseModuleLifecycleExecution } from "./module-lifecycle-execution.js";
 import { readApiEnvironment } from "./env.js";
@@ -58,6 +59,8 @@ const server = createApiServer({
   workerRuns: new DatabaseWorkerRunRecorder(database),
   councilResolver: new DatabaseExecutiveCouncilResolver(database, worker),
   installationAuthority: new DatabaseInstallationAuthority(database),
+  installationCoreSurfaceReconciliation:
+    new DatabaseInstallationCoreSurfaceReconciliation(database),
   moduleLifecycleAuthority: new DatabaseModuleLifecycleAuthority(database),
   moduleLifecycleExecution: new DatabaseModuleLifecycleExecution(database),
   workspaceMembershipRevocationAuthority:

@@ -9,6 +9,12 @@ import { workspaceCompiledCoreSurfaceRegistrySha256 } from "@vorton/contracts";
 import type { AuthenticatedIdentity } from "./auth.js";
 import { InstallationAuthorityIntegrityError } from "./installation-authority.js";
 import {
+  InstallationCoreSurfaceReconciliationConflictError,
+  InstallationCoreSurfaceReconciliationForbiddenError,
+  InstallationCoreSurfaceReconciliationInputError,
+  InstallationCoreSurfaceReconciliationIntegrityError,
+} from "./installation-core-surface-reconciliation.js";
+import {
   ModuleLifecycleAuthorityConflictError,
   ModuleLifecycleAuthorityForbiddenError,
   ModuleLifecycleAuthorityInputError,
@@ -95,6 +101,13 @@ async function runtime(
   const installationAuthorityCalls: Array<{
     operation: "release" | "workspace";
     installationId: string;
+    request: unknown;
+    identity: AuthenticatedIdentity;
+  }> = [];
+  const installationCoreSurfaceReconciliationCalls: Array<{
+    operation: "plan" | "approve" | "apply";
+    installationId: string;
+    approvalId?: string;
     request: unknown;
     identity: AuthenticatedIdentity;
   }> = [];
@@ -333,6 +346,88 @@ async function runtime(
       },
       approveWorkspace: async () => {
         throw new Error("not configured in this fixture");
+      },
+    } as never,
+    installationCoreSurfaceReconciliation: {
+      plan: async (
+        resolvedInstallationId: string,
+        request: { releaseAdoptionReceiptId: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        installationCoreSurfaceReconciliationCalls.push({
+          operation: "plan",
+          installationId: resolvedInstallationId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          contract: "vorton.installation-core-surface-reconciliation-plan.v1",
+          vortonInstallationId: resolvedInstallationId,
+        };
+      },
+      approve: async (
+        resolvedInstallationId: string,
+        request: { approvalId: string },
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        if (request.approvalId === "66666666-6666-4666-8666-666666666666") {
+          throw new InstallationCoreSurfaceReconciliationInputError(
+            "The installation core-surface reconciliation request is invalid",
+          );
+        }
+        if (request.approvalId === "77777777-7777-4777-8777-777777777777") {
+          throw new InstallationCoreSurfaceReconciliationForbiddenError(
+            "Live installation owner authority with recent AAL2 is required",
+          );
+        }
+        if (request.approvalId === "88888888-8888-4888-8888-888888888888") {
+          throw new InstallationCoreSurfaceReconciliationConflictError(
+            "The request conflicts with immutable installation core-surface authority",
+          );
+        }
+        if (request.approvalId === "99999999-9999-4999-8999-999999999999") {
+          throw new InstallationCoreSurfaceReconciliationIntegrityError(
+            "sensitive malformed installation reconciliation detail",
+          );
+        }
+        installationCoreSurfaceReconciliationCalls.push({
+          operation: "approve",
+          installationId: resolvedInstallationId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          approval: {
+            contract:
+              "vorton.installation-core-surface-reconciliation-approval.v1",
+            approvalId: request.approvalId,
+          },
+          approvalReceipt: {
+            contract:
+              "vorton.installation-core-surface-reconciliation-approval-receipt.v1",
+          },
+        };
+      },
+      apply: async (
+        resolvedInstallationId: string,
+        approvalId: string,
+        request: unknown,
+        resolvedIdentity: AuthenticatedIdentity,
+      ) => {
+        installationCoreSurfaceReconciliationCalls.push({
+          operation: "apply",
+          installationId: resolvedInstallationId,
+          approvalId,
+          request,
+          identity: resolvedIdentity,
+        });
+        return {
+          applicationReceipt: {
+            contract:
+              "vorton.installation-core-surface-reconciliation-receipt.v1",
+          },
+          workspaceReceipts: [],
+        };
       },
     } as never,
     moduleLifecycleAuthority: {
@@ -609,6 +704,7 @@ async function runtime(
     evidence,
     councilCalls,
     installationAuthorityCalls,
+    installationCoreSurfaceReconciliationCalls,
     moduleLifecycleAuthorityCalls,
     moduleLifecycleExecutionCalls,
     workspaceMembershipRevocationCalls,
@@ -711,6 +807,34 @@ function workspaceCoreSurfaceSelectionApproval(
 
 function workspaceCoreSurfaceSelectionApply() {
   return { receiptId: coreSurfaceSelectionReceiptId };
+}
+
+const installationReconciliationReleaseReceiptId =
+  "20202020-2020-4020-8020-202020202020";
+const installationReconciliationApprovalId =
+  "a1212121-2121-4121-8121-212121212121";
+const installationReconciliationReceiptId =
+  "22222222-2222-4222-8222-222222222220";
+
+function installationReconciliationPlanRequest() {
+  return {
+    releaseAdoptionReceiptId: installationReconciliationReleaseReceiptId,
+    releaseAdoptionReceiptSha256: `sha256:${"a".repeat(64)}`,
+  };
+}
+
+function installationReconciliationApproval(
+  approvalId = installationReconciliationApprovalId,
+) {
+  return {
+    approvalId,
+    planHash: `sha256:${"b".repeat(64)}`,
+    expiresAt: "2026-09-01T12:00:00.000Z",
+  };
+}
+
+function installationReconciliationApply() {
+  return { receiptId: installationReconciliationReceiptId };
 }
 
 const lifecycleApprovalId = "55555555-5555-4555-8555-555555555555";
@@ -1445,6 +1569,205 @@ describe("control-plane API", () => {
         method: "POST",
         headers,
         body: JSON.stringify(workspaceCoreSurfaceSelectionApproval(approvalId)),
+      });
+      expect(response.status).toBe(status);
+      const payload = JSON.stringify(await response.json());
+      expect(payload).toContain(code);
+      expect(payload).not.toContain("sensitive malformed");
+    }
+  });
+
+  it("routes installation-scoped core-surface reconciliation plan, approval, and apply requests", async () => {
+    const { baseUrl, installationCoreSurfaceReconciliationCalls } =
+      await runtime();
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const planRequest = installationReconciliationPlanRequest();
+    const planQuery = new URLSearchParams(planRequest);
+    const planResponse = await fetch(
+      `${baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-plan?${planQuery.toString()}`,
+      { headers },
+    );
+    expect(planResponse.status).toBe(200);
+    expect(planResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(planResponse.json()).resolves.toMatchObject({
+      contract: "vorton.installation-core-surface-reconciliation-plan.v1",
+      vortonInstallationId: installationId,
+    });
+
+    const approvalRequest = installationReconciliationApproval();
+    const approvalBase = `${baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-approvals`;
+    const approvalResponse = await fetch(approvalBase, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(approvalRequest),
+    });
+    expect(approvalResponse.status).toBe(201);
+    expect(approvalResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(approvalResponse.json()).resolves.toMatchObject({
+      approval: {
+        contract: "vorton.installation-core-surface-reconciliation-approval.v1",
+        approvalId: installationReconciliationApprovalId,
+      },
+      approvalReceipt: {
+        contract:
+          "vorton.installation-core-surface-reconciliation-approval-receipt.v1",
+      },
+    });
+
+    const applyRequest = installationReconciliationApply();
+    const applyResponse = await fetch(
+      `${approvalBase}/${installationReconciliationApprovalId}/execute`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(applyRequest),
+      },
+    );
+    expect(applyResponse.status).toBe(200);
+    expect(applyResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(applyResponse.json()).resolves.toMatchObject({
+      applicationReceipt: {
+        contract: "vorton.installation-core-surface-reconciliation-receipt.v1",
+      },
+    });
+    expect(installationCoreSurfaceReconciliationCalls).toEqual([
+      {
+        operation: "plan",
+        installationId,
+        request: planRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+      {
+        operation: "approve",
+        installationId,
+        request: approvalRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+      {
+        operation: "apply",
+        installationId,
+        approvalId: installationReconciliationApprovalId,
+        request: applyRequest,
+        identity: {
+          authUserId,
+          aal: "aal2",
+          authTime: expect.any(Number),
+        },
+      },
+    ]);
+  });
+
+  it("rejects stale identity, claimed identity, and noncanonical reconciliation requests", async () => {
+    for (const authTime of [
+      Math.floor(Date.now() / 1_000) - 11 * 60,
+      Math.floor(Date.now() / 1_000) + 60,
+    ]) {
+      const current = await runtime({ authUserId, aal: "aal2", authTime });
+      const request = installationReconciliationPlanRequest();
+      const response = await fetch(
+        `${current.baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-plan?${new URLSearchParams(request).toString()}`,
+        { headers: { authorization: "Bearer verified-by-fixture" } },
+      );
+      expect(response.status).toBe(403);
+      expect(current.installationCoreSurfaceReconciliationCalls).toEqual([]);
+    }
+
+    const current = await runtime();
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      "content-type": "application/json",
+    };
+    const approvalBase = `${current.baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-approvals`;
+    for (const body of [
+      {
+        ...installationReconciliationApproval(),
+        authUserId: crypto.randomUUID(),
+      },
+      { ...installationReconciliationApproval(), unexpected: true },
+      {
+        ...installationReconciliationApproval(),
+        planHash: `sha256:${"A".repeat(64)}`,
+      },
+      { ...installationReconciliationApply(), unexpected: true },
+    ]) {
+      const apply = "receiptId" in body;
+      const response = await fetch(
+        apply
+          ? `${approvalBase}/${installationReconciliationApprovalId}/execute`
+          : approvalBase,
+        { method: "POST", headers, body: JSON.stringify(body) },
+      );
+      expect(response.status).toBe(400);
+    }
+
+    const planRequest = installationReconciliationPlanRequest();
+    const badPlanQueries = [
+      new URLSearchParams({ ...planRequest, unexpected: "true" }),
+      new URLSearchParams([
+        ...Object.entries(planRequest),
+        ["releaseAdoptionReceiptId", planRequest.releaseAdoptionReceiptId],
+      ]),
+    ];
+    for (const query of badPlanQueries) {
+      const response = await fetch(
+        `${current.baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-plan?${query.toString()}`,
+        { headers },
+      );
+      expect(response.status).toBe(400);
+    }
+
+    for (const path of [
+      `/v1/installations/${installationId.toUpperCase()}/core-surface-reconciliation-plan?${new URLSearchParams(planRequest).toString()}`,
+      `/v1/installations/${installationId}/core-surface-reconciliation-approvals/${installationReconciliationApprovalId.toUpperCase()}/execute`,
+    ]) {
+      const apply = path.endsWith("/execute");
+      const response = await fetch(`${current.baseUrl}${path}`, {
+        method: apply ? "POST" : "GET",
+        headers,
+        ...(apply
+          ? { body: JSON.stringify(installationReconciliationApply()) }
+          : {}),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(current.installationCoreSurfaceReconciliationCalls).toEqual([]);
+  });
+
+  it("maps reconciliation authority failures without leaking integrity details", async () => {
+    const { baseUrl } = await runtime();
+    const route = `${baseUrl}/v1/installations/${installationId}/core-surface-reconciliation-approvals`;
+    const headers = {
+      authorization: "Bearer verified-by-fixture",
+      origin: "https://control.vorton.example",
+      "content-type": "application/json",
+    };
+    const cases = [
+      ["66666666-6666-4666-8666-666666666666", 400, "invalid_request"],
+      ["77777777-7777-4777-8777-777777777777", 403, "forbidden"],
+      [
+        "88888888-8888-4888-8888-888888888888",
+        409,
+        "installation_core_surface_reconciliation_conflict",
+      ],
+      ["99999999-9999-4999-8999-999999999999", 500, "internal_error"],
+    ] as const;
+    for (const [approvalId, status, code] of cases) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(installationReconciliationApproval(approvalId)),
       });
       expect(response.status).toBe(status);
       const payload = JSON.stringify(await response.json());

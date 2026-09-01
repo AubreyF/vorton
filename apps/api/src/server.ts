@@ -16,6 +16,9 @@ import {
   moduleLifecycleActionApprovalRequestSchema,
   moduleLifecycleActionConsumeRequestSchema,
   moduleLifecycleActionFinalizeRequestSchema,
+  installationCoreSurfaceReconciliationApplyRequestSchema,
+  installationCoreSurfaceReconciliationApprovalRequestSchema,
+  installationCoreSurfaceReconciliationPlanRequestSchema,
   releaseAdoptionApprovalRequestSchema,
   workspaceCoreSurfaceSelectionApplyRequestSchema,
   workspaceCoreSurfaceSelectionApprovalRequestSchema,
@@ -45,6 +48,14 @@ import {
   InstallationAuthorityIntegrityError,
   type DatabaseInstallationAuthority,
 } from "./installation-authority.js";
+import {
+  InstallationCoreSurfaceReconciliationConflictError,
+  InstallationCoreSurfaceReconciliationForbiddenError,
+  InstallationCoreSurfaceReconciliationInputError,
+  InstallationCoreSurfaceReconciliationIntegrityError,
+  requireInstallationCoreSurfaceReconciliationRecentAal2,
+  type DatabaseInstallationCoreSurfaceReconciliation,
+} from "./installation-core-surface-reconciliation.js";
 import {
   ModuleLifecycleAuthorityConflictError,
   ModuleLifecycleAuthorityForbiddenError,
@@ -97,6 +108,7 @@ export interface ApiServerDependencies {
   workerRuns: DatabaseWorkerRunRecorder;
   councilResolver: DatabaseExecutiveCouncilResolver;
   installationAuthority: DatabaseInstallationAuthority;
+  installationCoreSurfaceReconciliation: DatabaseInstallationCoreSurfaceReconciliation;
   moduleLifecycleAuthority: DatabaseModuleLifecycleAuthority;
   moduleLifecycleExecution: DatabaseModuleLifecycleExecution;
   workspaceMembershipRevocationAuthority: DatabaseWorkspaceMembershipRevocationAuthority;
@@ -304,6 +316,118 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
                 identity,
               );
         send(201, result);
+        return;
+      }
+      const installationReconciliationPlanRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/core-surface-reconciliation-plan$/,
+      );
+      if (
+        request.method === "GET" &&
+        installationReconciliationPlanRoute?.[1]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireInstallationCoreSurfaceReconciliationRecentAal2(identity);
+        const installationId = installationReconciliationPlanRoute[1];
+        if (!uuidPattern.test(installationId)) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface reconciliation installationId must be a canonical UUID",
+          );
+        }
+        const entries = [...url.searchParams.entries()];
+        const query = Object.fromEntries(entries);
+        if (entries.length !== Object.keys(query).length) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface reconciliation plan query parameters must be unique",
+          );
+        }
+        const exactRequest =
+          installationCoreSurfaceReconciliationPlanRequestSchema.parse(query);
+        send(
+          200,
+          await dependencies.installationCoreSurfaceReconciliation.plan(
+            installationId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const installationReconciliationApprovalRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/core-surface-reconciliation-approvals$/,
+      );
+      if (
+        request.method === "POST" &&
+        installationReconciliationApprovalRoute?.[1]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireInstallationCoreSurfaceReconciliationRecentAal2(identity);
+        const installationId = installationReconciliationApprovalRoute[1];
+        if (!uuidPattern.test(installationId)) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface reconciliation installationId must be a canonical UUID",
+          );
+        }
+        const exactRequest =
+          installationCoreSurfaceReconciliationApprovalRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          201,
+          await dependencies.installationCoreSurfaceReconciliation.approve(
+            installationId,
+            exactRequest,
+            identity,
+          ),
+        );
+        return;
+      }
+      const installationReconciliationApplyRoute = url.pathname.match(
+        /^\/v1\/installations\/([^/]+)\/core-surface-reconciliation-approvals\/([^/]+)\/execute$/,
+      );
+      if (
+        request.method === "POST" &&
+        installationReconciliationApplyRoute?.[1] &&
+        installationReconciliationApplyRoute[2]
+      ) {
+        const identity = await dependencies.identityVerifier.verify(
+          request.headers.authorization,
+        );
+        requireInstallationCoreSurfaceReconciliationRecentAal2(identity);
+        const installationId = installationReconciliationApplyRoute[1];
+        const approvalId = installationReconciliationApplyRoute[2];
+        if (
+          !uuidPattern.test(installationId) ||
+          !uuidPattern.test(approvalId)
+        ) {
+          throw new RequestError(
+            400,
+            "invalid_request",
+            "Core-surface reconciliation path identifiers must be canonical UUIDs",
+          );
+        }
+        const exactRequest =
+          installationCoreSurfaceReconciliationApplyRequestSchema.parse(
+            objectBody(await readJson(request)),
+          );
+        send(
+          200,
+          await dependencies.installationCoreSurfaceReconciliation.apply(
+            installationId,
+            approvalId,
+            exactRequest,
+            identity,
+          ),
+        );
         return;
       }
       const moduleLifecycleAuthorityRoute = url.pathname.match(
@@ -882,6 +1006,64 @@ export function createApiServer(dependencies: ApiServerDependencies): Server {
         return;
       }
       if (error instanceof InstallationAuthorityIntegrityError) {
+        json(
+          response,
+          500,
+          {
+            error: {
+              code: "internal_error",
+              message: "The runtime could not complete the request",
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof InstallationCoreSurfaceReconciliationInputError) {
+        json(
+          response,
+          400,
+          { error: { code: "invalid_request", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (
+        error instanceof InstallationCoreSurfaceReconciliationForbiddenError
+      ) {
+        json(
+          response,
+          403,
+          { error: { code: "forbidden", message: error.message } },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (error instanceof InstallationCoreSurfaceReconciliationConflictError) {
+        json(
+          response,
+          409,
+          {
+            error: {
+              code: "installation_core_surface_reconciliation_conflict",
+              message: error.message,
+            },
+          },
+          request.headers.origin === dependencies.allowedOrigin
+            ? dependencies.allowedOrigin
+            : undefined,
+        );
+        return;
+      }
+      if (
+        error instanceof InstallationCoreSurfaceReconciliationIntegrityError
+      ) {
         json(
           response,
           500,

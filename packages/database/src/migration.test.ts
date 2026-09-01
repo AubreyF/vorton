@@ -66,6 +66,10 @@ const workspaceCoreSurfaceSelectionAuthorityMigrationUrl = new URL(
   "../../../supabase/migrations/20260831000400_workspace_core_surface_selection_authority.sql",
   import.meta.url,
 );
+const installationCoreSurfaceReconciliationMigrationUrl = new URL(
+  "../../../supabase/migrations/20260831000500_installation_core_surface_reconciliation.sql",
+  import.meta.url,
+);
 
 describe("kernel migration contract", () => {
   it("enforces RLS on every kernel authority table", async () => {
@@ -1193,5 +1197,48 @@ describe("workspace core-surface selection authority migration contract", () => 
     expect(sql).not.toContain(
       "if not public.vorton_workspace_step_up_context_valid(",
     );
+  });
+
+  it("keeps installation reconciliation exact, receipt-lined, and private", async () => {
+    const sql = await readFile(
+      installationCoreSurfaceReconciliationMigrationUrl,
+      "utf8",
+    );
+
+    expect(sql).toContain(
+      "vorton.installation-core-surface-reconciliation-plan.v1",
+    );
+    expect(sql).toContain(
+      "vorton.installation-core-surface-reconciliation-approval-receipt.v1",
+    );
+    expect(sql).toContain(
+      "vorton.workspace-core-surface-reconciliation-receipt.v1",
+    );
+    expect(sql).toContain("'workspaceAuthorityBorrowed', false");
+    expect(sql).toContain("'workspaceBusinessRowsRead', 0");
+    expect(sql).toContain('"historicalAttributionPreserved": true');
+    expect(sql).toContain("public.vorton_installation_step_up_context_valid(");
+    expect(sql).toContain(
+      "alter table public.installation_core_surface_reconciliation_approvals\n  enable row level security",
+    );
+    expect(sql).toContain(
+      "revoke all on table\n  public.installation_core_surface_reconciliation_approvals",
+    );
+    expect(sql).toContain(
+      "Installation core-surface reconciliation authority is append-only",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.read_installation_core_surface_reconciliation_plan",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.create_installation_core_surface_reconciliation_approval",
+    );
+    expect(sql).toContain(
+      "grant execute on function public.apply_installation_core_surface_reconciliation",
+    );
+    expect(sql).not.toMatch(
+      /grant execute on function public\.(read|create|apply)_installation_core_surface_reconciliation[\s\S]*to aubos_worker/i,
+    );
+    expect(sql.trimEnd()).toMatch(/commit;$/);
   });
 });

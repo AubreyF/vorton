@@ -22,6 +22,13 @@ import {
   hashModuleLifecycleApprovalReceipt,
   hashModuleLifecycleActionCommand,
   hashModuleLifecycleActionReceipt,
+  hashInstallationCoreSurfaceInventory,
+  hashInstallationCoreSurfaceReconciliationApprovalCore,
+  hashInstallationCoreSurfaceReconciliationApprovalReceipt,
+  hashInstallationCoreSurfaceReconciliationPlan,
+  hashInstallationCoreSurfaceReconciliationReceipt,
+  hashInstallationCoreSurfaceTransitionSet,
+  hashWorkspaceCoreSurfaceReconciliationReceipt,
   hashWorkspaceMembershipRevocationApprovalCore,
   hashWorkspaceMembershipRevocationApprovalReceipt,
   hashWorkspaceMembershipRevocationReceipt,
@@ -37,11 +44,17 @@ import {
   parseModuleLifecycleActionCommandCreation,
   parseModuleLifecycleActionCompletion,
   parseModuleLifecycleApprovalCreation,
+  parseInstallationCoreSurfaceReconciliationApplication,
+  parseInstallationCoreSurfaceReconciliationApprovalCreation,
+  parseInstallationCoreSurfaceReconciliationPlan,
   parseWorkspaceMembershipRevocationApprovalCreation,
   parseWorkspaceMembershipRevocationReceipt,
   parseWorkspaceCoreSurfaceSelectionApprovalCreation,
   parseWorkspaceCoreSurfaceSelectionReceipt,
   type ExecutiveWorkerJobRequest,
+  type InstallationCoreSurfaceReconciliationApplication,
+  type InstallationCoreSurfaceReconciliationApprovalCreation,
+  type InstallationCoreSurfaceReconciliationPlan,
   type ModuleLifecycleActionCompletion,
   type ModuleLifecycleApprovalCreation,
   type WorkspaceMembershipRevocationApprovalCreation,
@@ -336,9 +349,9 @@ async function seedLegacyCoreSurfaceBeforeAuthorityMigration(
         navigation_order, presentation_variant, created_by_person_id,
         created_at)
      values
-       ($1, $2, 'command', 'v1', 'Legacy Command', 10, 'standard', $3,
+       ($1, $2, 'command', 'v1', 'Command Bridge', 10, 'standard', $3,
         '2026-08-31T00:00:01.000Z'),
-       ($1, $2, 'factory', 'v1', 'Legacy Factory', 20,
+       ($1, $2, 'factory', 'v1', 'Factory', 20,
         'freed-read-only', $3, '2026-08-31T00:00:02.000Z')`,
     [
       legacyCoreSurfaceInstallationId,
@@ -531,7 +544,12 @@ async function setSignedContext(
             set_config('vorton.workspace_id', $3, true),
             set_config('aubos.subject_id', $4, true),
             set_config('aubos.credential_id', $5, true),
-            set_config('aubos.context_signature', $6, true)`,
+            set_config('aubos.context_signature', $6, true),
+            set_config('vorton.context_kind', $1, true),
+            set_config('vorton.installation_id', $2, true),
+            set_config('vorton.subject_id', $4, true),
+            set_config('vorton.credential_id', $5, true),
+            set_config('vorton.context_signature', $6, true)`,
     [kind, installationId, workspaceId, subjectId, credentialId, signature],
   );
 }
@@ -3994,9 +4012,9 @@ async function proveWorkspaceCoreSurfaceSelectionBoundary(
   );
   await verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(admin);
 
-  // Current presentation attribution belongs to the installation person, not
-  // to mutable workspace membership. Existing revocation-ledger retention is
-  // a separate audit contract, so this fixture deliberately has no revocation.
+  // Presentation attribution belongs to the installation person, not to a
+  // mutable workspace membership. Reconciliation must therefore remain
+  // possible after this synthetic workspace membership is removed.
   await admin.query(
     `delete from public.workspace_memberships
       where installation_id = $1 and workspace_id = $2 and person_id = $3`,
@@ -4029,6 +4047,319 @@ async function proveWorkspaceCoreSurfaceSelectionBoundary(
     "Current core-surface attribution still pinned workspace membership",
   );
   await verifyLegacyCoreSurfaceUnchangedAfterAuthorityMigration(admin);
+
+  const reconciliationReleasePlanHash = `sha256:${"c".repeat(64)}`;
+  const reconciliationRelease = {
+    version: "0.5.0",
+    sourceCommit: "d".repeat(40),
+    manifestSha256: `sha256:${"e".repeat(64)}`,
+    archiveSha256: `sha256:${"f".repeat(64)}`,
+    coreMigrationHead:
+      "20260831000500_installation_core_surface_reconciliation",
+    workspaceIsolationProofSha256: `sha256:${"1".repeat(64)}`,
+    workspaceIsolationProofHash: `sha256:${"2".repeat(64)}`,
+    imageDigests: {
+      "control-plane": `sha256:${"3".repeat(64)}`,
+      web: `sha256:${"4".repeat(64)}`,
+      worker: `sha256:${"5".repeat(64)}`,
+    },
+  };
+  const reconciliationReleaseApprovalId = randomUUID();
+  const reconciliationReleaseReceiptId = randomUUID();
+  const reconciliationAuthTime = Math.floor(Date.now() / 1_000);
+  await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    (client) =>
+      setSignedInstallationStepUpContext(
+        client,
+        legacyCoreSurfaceInstallationId,
+        legacyCoreSurfaceOwnerAuthUserId,
+        reconciliationAuthTime,
+      ),
+    (client) =>
+      client.query(
+        `select public.create_release_adoption_approval(
+          $1, $2, $3, $4::jsonb, clock_timestamp() + interval '1 hour'
+        )`,
+        [
+          reconciliationReleaseApprovalId,
+          legacyCoreSurfaceInstallationId,
+          reconciliationReleasePlanHash,
+          JSON.stringify(reconciliationRelease),
+        ],
+      ),
+  );
+  const adoptedReconciliationRelease = await admin.query<{
+    document: { receiptHash?: string };
+  }>(
+    `select public.apply_release_adoption($1, $2, $3, $4, $5::jsonb)
+              as document`,
+    [
+      legacyCoreSurfaceInstallationId,
+      reconciliationReleaseApprovalId,
+      reconciliationReleaseReceiptId,
+      reconciliationReleasePlanHash,
+      JSON.stringify(reconciliationRelease),
+    ],
+  );
+  const reconciliationReleaseReceiptHash =
+    adoptedReconciliationRelease.rows[0]?.document.receiptHash;
+  requireCondition(
+    reconciliationReleaseReceiptHash,
+    "Synthetic reconciliation release receipt was not created",
+  );
+
+  const signedLegacyInstallationOwner = (client: Client): Promise<void> =>
+    setSignedInstallationStepUpContext(
+      client,
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceOwnerAuthUserId,
+      Math.floor(Date.now() / 1_000),
+    );
+  const readReconciliationPlanSql = `select public.read_installation_core_surface_reconciliation_plan(
+      $1, $2, $3
+    ) as plan`;
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    async () => undefined,
+    readReconciliationPlanSql,
+    [
+      legacyCoreSurfaceInstallationId,
+      reconciliationReleaseReceiptId,
+      reconciliationReleaseReceiptHash,
+    ],
+    "P0001",
+    "Unsigned installation core-surface reconciliation plan read",
+  );
+  const reconciliationPlan = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyInstallationOwner,
+    async (client): Promise<InstallationCoreSurfaceReconciliationPlan> => {
+      const result = await client.query<{ plan: unknown }>(
+        readReconciliationPlanSql,
+        [
+          legacyCoreSurfaceInstallationId,
+          reconciliationReleaseReceiptId,
+          reconciliationReleaseReceiptHash,
+        ],
+      );
+      return parseInstallationCoreSurfaceReconciliationPlan(
+        result.rows[0]?.plan,
+      );
+    },
+  );
+  requireCondition(
+    reconciliationPlan.planHash ===
+      (await hashInstallationCoreSurfaceReconciliationPlan(
+        reconciliationPlan,
+      )) &&
+      reconciliationPlan.inventory.inventorySha256 ===
+        (await hashInstallationCoreSurfaceInventory(
+          reconciliationPlan.inventory,
+        )) &&
+      reconciliationPlan.transitionSetSha256 ===
+        (await hashInstallationCoreSurfaceTransitionSet(
+          reconciliationPlan.transitions,
+        )) &&
+      reconciliationPlan.transitions.length === 1 &&
+      reconciliationPlan.transitions[0]?.workspaceId ===
+        legacyCoreSurfaceWorkspaceId,
+    "PostgreSQL reconciliation plan did not match canonical TypeScript hashes",
+  );
+
+  const reconciliationApprovalId = randomUUID();
+  const reconciliationApprovalExpiry = new Date(
+    Date.now() + 60 * 60 * 1_000,
+  ).toISOString();
+  const reconciliationCreation = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyInstallationOwner,
+    async (
+      client,
+    ): Promise<InstallationCoreSurfaceReconciliationApprovalCreation> => {
+      const result = await client.query<{ creation: unknown }>(
+        `select public.create_installation_core_surface_reconciliation_approval(
+          $1, $2, $3, $4::timestamptz
+        ) as creation`,
+        [
+          reconciliationApprovalId,
+          legacyCoreSurfaceInstallationId,
+          reconciliationPlan.planHash,
+          reconciliationApprovalExpiry,
+        ],
+      );
+      return parseInstallationCoreSurfaceReconciliationApprovalCreation(
+        result.rows[0]?.creation,
+        reconciliationPlan,
+      );
+    },
+  );
+  requireCondition(
+    reconciliationCreation.approvalReceipt.approvalHash ===
+      (await hashInstallationCoreSurfaceReconciliationApprovalCore(
+        reconciliationCreation.approval,
+      )) &&
+      reconciliationCreation.approvalReceipt.receiptHash ===
+        (await hashInstallationCoreSurfaceReconciliationApprovalReceipt(
+          reconciliationCreation.approvalReceipt,
+        )),
+    "PostgreSQL reconciliation approval hashes diverged from TypeScript",
+  );
+
+  const reconciliationApplicationReceiptId = randomUUID();
+  const reconciliationApplication = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyInstallationOwner,
+    async (
+      client,
+    ): Promise<InstallationCoreSurfaceReconciliationApplication> => {
+      const result = await client.query<{ application: unknown }>(
+        `select public.apply_installation_core_surface_reconciliation(
+          $1, $2, $3
+        ) as application`,
+        [
+          legacyCoreSurfaceInstallationId,
+          reconciliationApprovalId,
+          reconciliationApplicationReceiptId,
+        ],
+      );
+      return parseInstallationCoreSurfaceReconciliationApplication(
+        result.rows[0]?.application,
+        reconciliationPlan,
+        reconciliationCreation,
+      );
+    },
+  );
+  requireCondition(
+    reconciliationApplication.applicationReceipt.receiptHash ===
+      (await hashInstallationCoreSurfaceReconciliationReceipt(
+        reconciliationApplication.applicationReceipt,
+      )) &&
+      reconciliationApplication.workspaceReceipts.length === 1 &&
+      reconciliationApplication.workspaceReceipts[0]?.receiptHash ===
+        (await hashWorkspaceCoreSurfaceReconciliationReceipt(
+          reconciliationApplication.workspaceReceipts[0]!,
+        )),
+    "PostgreSQL reconciliation receipt hashes diverged from TypeScript",
+  );
+  const reconciledSurfaceState = await admin.query<{
+    surface: unknown;
+    lineage_id: string | null;
+    lineage_hash: string | null;
+    membership_count: string;
+    preserved_attribution: string;
+  }>(
+    `select public.workspace_core_surface_document($1, $2) as surface,
+            workspace.core_surface_selection_receipt_id::text as lineage_id,
+            workspace.core_surface_selection_receipt_hash as lineage_hash,
+            (select count(*)::text from public.workspace_memberships membership
+              where membership.installation_id = $1
+                and membership.workspace_id = $2) as membership_count,
+            (select count(*)::text
+               from public.workspace_module_activations activation
+              where activation.installation_id = $1
+                and activation.workspace_id = $2
+                and activation.created_by_person_id = $3) as preserved_attribution
+       from public.workspaces workspace
+      where workspace.installation_id = $1 and workspace.id = $2`,
+    [
+      legacyCoreSurfaceInstallationId,
+      legacyCoreSurfaceWorkspaceId,
+      legacyCoreSurfaceOwnerPersonId,
+    ],
+  );
+  const reconciledWorkspaceReceipt =
+    reconciliationApplication.workspaceReceipts[0]!;
+  requireCondition(
+    canonicalModuleLifecycleJson(reconciledSurfaceState.rows[0]?.surface) ===
+      canonicalModuleLifecycleJson(
+        reconciledWorkspaceReceipt.postimageSurface,
+      ) &&
+      reconciledSurfaceState.rows[0]?.lineage_id ===
+        reconciledWorkspaceReceipt.receiptId &&
+      reconciledSurfaceState.rows[0]?.lineage_hash ===
+        reconciledWorkspaceReceipt.receiptHash &&
+      reconciledSurfaceState.rows[0]?.membership_count === "0" &&
+      reconciledSurfaceState.rows[0]?.preserved_attribution === "2",
+    `Reconciliation borrowed workspace authority or lost exact attribution lineage: ${JSON.stringify(
+      reconciledSurfaceState.rows[0],
+    )}`,
+  );
+  const reconciliationReplay = await inRuntimeTransaction(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyInstallationOwner,
+    async (
+      client,
+    ): Promise<InstallationCoreSurfaceReconciliationApplication> => {
+      const result = await client.query<{ application: unknown }>(
+        `select public.apply_installation_core_surface_reconciliation(
+          $1, $2, $3
+        ) as application`,
+        [
+          legacyCoreSurfaceInstallationId,
+          reconciliationApprovalId,
+          reconciliationApplicationReceiptId,
+        ],
+      );
+      return parseInstallationCoreSurfaceReconciliationApplication(
+        result.rows[0]?.application,
+        reconciliationPlan,
+        reconciliationCreation,
+      );
+    },
+  );
+  requireCondition(
+    canonicalModuleLifecycleJson(reconciliationReplay) ===
+      canonicalModuleLifecycleJson(reconciliationApplication),
+    "Exact reconciliation replay did not return immutable receipts",
+  );
+  await expectRuntimeSqlState(
+    runtimeDatabaseUrl,
+    "authenticated",
+    signedLegacyInstallationOwner,
+    `select public.apply_installation_core_surface_reconciliation(
+      $1, $2, $3
+    )`,
+    [legacyCoreSurfaceInstallationId, reconciliationApprovalId, randomUUID()],
+    "P0001",
+    "Conflicting installation core-surface reconciliation replay",
+  );
+  for (const tableName of [
+    "installation_core_surface_reconciliation_approvals",
+    "installation_core_surface_reconciliation_approval_receipts",
+    "installation_core_surface_reconciliation_receipts",
+    "workspace_core_surface_reconciliation_receipts",
+  ]) {
+    await expectRuntimeDenied(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedLegacyInstallationOwner,
+      `select count(*) from public.${tableName}`,
+      [],
+      `Direct authenticated ${tableName} read`,
+    );
+    await expectRuntimeDenied(
+      runtimeDatabaseUrl,
+      "authenticated",
+      signedLegacyInstallationOwner,
+      `insert into public.${tableName} default values`,
+      [],
+      `Direct authenticated ${tableName} write`,
+    );
+    await expectSqlState(
+      admin,
+      `delete from public.${tableName}`,
+      [],
+      "P0001",
+      `Immutable ${tableName} deletion`,
+    );
+  }
 
   for (const [label, setup] of [
     [
@@ -10087,6 +10418,13 @@ async function main(): Promise<void> {
             workspaceCoreSurfaceSelectionAuthorityChangesSerialized: true,
             workspaceCoreSurfaceSelectionCrossWorkspaceMutationDenied: true,
             workspaceCoreSurfaceSelectionRollbackRestoresExactPreimage: true,
+            installationCoreSurfaceReconciliationSignedOwnerBound: true,
+            installationCoreSurfaceReconciliationReleaseReceiptBound: true,
+            installationCoreSurfaceReconciliationHashesCrossLanguageCanonical: true,
+            installationCoreSurfaceReconciliationPreservesAttribution: true,
+            installationCoreSurfaceReconciliationBorrowsNoWorkspaceAuthority: true,
+            installationCoreSurfaceReconciliationExactReplayAndConflictBound: true,
+            installationCoreSurfaceReconciliationTablesPrivateAndImmutable: true,
             contextGatewayBankAuthorityPostgresResolved: true,
             contextGatewayPersonAndWorkerCapabilitiesExplicit: true,
             contextGatewayWorkerCredentialFreshAndLive: true,
