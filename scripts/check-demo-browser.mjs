@@ -40,6 +40,28 @@ try {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("https://**", (route) => route.abort());
+  // A slow history chunk must not paint the Goals panel and then push it down
+  // when the Roundtable arrives. Keep the whole Council body behind Suspense.
+  const slowCouncil = await context.newPage();
+  let releaseHistory;
+  const historyReady = new Promise(resolve => { releaseHistory = resolve; });
+  await slowCouncil.route("**/council-report-*.js", async route => {
+    await historyReady;
+    await route.continue();
+  });
+  try {
+    await slowCouncil.goto(`${origin}/lastresort/council#council-goals`, { waitUntil: "domcontentloaded" });
+    await slowCouncil.getByText("Loading council history", { exact: true }).waitFor();
+    assert.equal(await slowCouncil.locator("#council-goals").count(), 0);
+  } finally {
+    releaseHistory();
+  }
+  await slowCouncil.locator("#council-roundtable").waitFor();
+  await slowCouncil.waitForFunction(() => {
+    const target = document.getElementById("council-goals");
+    return target && target.getBoundingClientRect().top >= 0 && target.getBoundingClientRect().top < innerHeight;
+  });
+  await slowCouncil.close();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${origin}/lastresort?filter=Active`, {

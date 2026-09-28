@@ -692,11 +692,11 @@ function Command({
       />
       {view === "bridge" && <>
         <OperationsOverview state={state}/>
-        <Suspense fallback={<LoadingIndicator label="Loading council briefing"/>}><RoundtableBriefing state={state}/></Suspense>
+        <Suspense fallback={<LoadingIndicator compact label="Loading council briefing"/>}><RoundtableBriefing state={state}/></Suspense>
       </>}
       {view === "council" && (
-        <div ref={councilPage} className="council-page-navigation"><SectionNavigator label="Council page sections" pageWidth="contained" items={councilSections}>
-          <Suspense fallback={<LoadingIndicator label="Loading council history" />}><CouncilHistory state={state} /></Suspense>
+        <div ref={councilPage} className="council-page-navigation"><Suspense fallback={<LoadingIndicator label="Loading council history" />}><SectionNavigator label="Council page sections" pageWidth="contained" items={councilSections}>
+          <CouncilHistory state={state} />
           <section id="council-goals" className="panel council-goals" aria-labelledby="council-goals-heading">
             <header className="record-heading"><h2 id="council-goals-heading">Goals</h2><a href={`/${state.profile.toLowerCase()}/goals`}>All goals ↗</a></header>
             {state.goals.some(goal => !goal.parentId && goal.status === "active") ? <ul>{state.goals.filter(goal => !goal.parentId && goal.status === "active").map(goal => <li key={goal.id}>
@@ -805,7 +805,7 @@ function Command({
               </button>
             </details>
           </section>
-        </SectionNavigator></div>
+        </SectionNavigator></Suspense></div>
       )}
     </>
   );
