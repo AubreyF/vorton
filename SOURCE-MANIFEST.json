@@ -1,7 +1,7 @@
 {
   "contract": "vorton.public-source.v1",
   "version": "0.2.0-preview.3",
-  "sourceDigest": "24e361b343c0a44d6c0f34b8813feeba2d49ea725f116e2fd3feaad9a6fab138",
+  "sourceDigest": "3f4eb51491e40beb700db3ae0b60c52d2c7abb22314dcab315daf3eff5142434",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -13,7 +13,7 @@
     },
     {
       "path": "AGENTS.md",
-      "sha256": "49f47ec7afc1752b610af4f6d87a92e046485f5da68ca2783f340521a4ffc25e"
+      "sha256": "60c3c2a34b38f1625226ff65f60586bf5a657bfbf5225cf07aebf957b380f0ec"
     },
     {
       "path": "CHANGELOG.md",
@@ -25,7 +25,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "00f1a6074b18131c57aa1c57898865fcb878d3a6cf06bf41c903a7eaf40ff7de"
+      "sha256": "ff3c9147fc03a461210032f0e45f6e13add29883505cd8a9b85b96e5fa2b27b2"
     },
     {
       "path": "SECURITY.md",
@@ -50,6 +50,10 @@
     {
       "path": "docs/VERSIONING.md",
       "sha256": "37debe5676872847f8fae7a65d619107040b2029913654d616e8e813a8ce163f"
+    },
+    {
+      "path": "docs/VISION.md",
+      "sha256": "89b34a79ccabe9ffc93531e34362e2eed96148057dee9d0010fbc485f629e136"
     },
     {
       "path": "modules/council/config.mjs",
