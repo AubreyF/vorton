@@ -4,6 +4,14 @@ Vorton is a local workspace for turning Council recommendations into Goals and T
 
 The demo includes three Goals, five Tasks, four fictional staff members, a Council briefing, and a recommendation awaiting your decision. Its people, evidence, incidents, and figures are invented. Accepting a recommendation creates a local planning record; it does not start an agent or perform external work.
 
+## Vision and provenance
+
+Vorton is building toward sovereign superintelligence for humans and AI-native organizations. The longer-term vision connects frontier models, conversations, tools, workers, and source-grounded memory so that people and organizations can think, create, decide, and learn with continuity. Biomimetic memories, a self-improving software factory, ultra-tier subscription multiplexing, and an elegant visual control plane are aspirations, not all delivered features of this local preview.
+
+This repository is Vorton's main development path. [Vorton Cloud](https://github.com/AubreyF/vorton-cloud) is discontinued, with its source and historical architecture preserved for reference. The [vision and source provenance](docs/VISION.md) identifies what carries forward and separates it from Cloud-specific implementation claims.
+
+Factory execution and resource scheduling are separate [Vorteo](https://github.com/AubreyF/vorteo) work. [AubTown](https://github.com/AubreyF/aubtown) remains a separate software-factory platform and Freed pilot. This portable Vorton core does not include either factory runtime.
+
 ## Run locally
 
 Use Node.js 22.13 or newer and npm.
@@ -27,10 +35,10 @@ Opportunities tracks bookings, events, partnerships, and next actions. Finance s
 
 ## Boundaries
 
-Repository work requires no quota verification or weekly allowance floor. Future quota controls belong in the Paseo scheduler.
+Repository work requires no quota verification or weekly allowance floor. Future quota controls belong in the Vorteo scheduler.
 
 This is a one-owner local application. It is not a public multi-user service. Workspace selection scopes application records; it does not create an operating-system sandbox. Keep the local server behind your own access controls and do not expose it directly to the internet.
 
 The portable source candidate contains no private installation adapter, personal records, agent scheduler, or Factory implementation. See [design provenance](web/design/SOURCE.md) for the origin of the shared visual vocabulary.
 
-Vorton is available under the [MIT license](LICENSE). This is an early preview; see [security](SECURITY.md), [versioning](docs/VERSIONING.md), and [release gates](docs/RELEASE.md).
+Vorton is available under the [MIT license](LICENSE). This is an early preview; see [vision and provenance](docs/VISION.md), [security](SECURITY.md), [versioning](docs/VERSIONING.md), and [release gates](docs/RELEASE.md).
