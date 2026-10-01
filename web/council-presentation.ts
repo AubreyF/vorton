@@ -2,6 +2,14 @@ import type { CouncilConfig, Recommendation, State } from "./types";
 
 export type CouncilIdentity = CouncilConfig["identities"][number];
 export type CouncilSession = NonNullable<State["councilSessions"]>[number];
+
+/** Hide legacy persona labels in reading views without rewriting saved evidence. */
+export function councilReadingText(text: string): string {
+  return text
+    .replace(/(^|\n)([ \t]*)(?:\*\*)?Fictional interpretation(?:\*\*)?[.:](?:\*\*)?[ \t]*/gi, "$1$2")
+    .replace(/This is an explicitly fictional interpretation, not the person's advice\.[ \t]*/g, "")
+    .trim();
+}
 export type CouncilVoice = {
   identity: CouncilIdentity;
   submission: string | null;
@@ -71,7 +79,7 @@ export function getSessionVoices(state: State, session: CouncilSession): Council
     const source = saved ? "session" : rationale ? "recommendation" : "missing";
     return {
       identity,
-      submission: saved ?? rationale ?? null,
+      submission: saved || rationale ? councilReadingText(saved ?? rationale!) : null,
       source,
       sourceLabel: source === "session" ? "Session submission" : source === "recommendation" ? "Recommendation rationale" : "No saved submission",
       rosterSource,

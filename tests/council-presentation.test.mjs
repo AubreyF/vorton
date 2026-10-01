@@ -7,7 +7,17 @@ import ts from "typescript";
 // versions allowed by package.json that require a flag for native TypeScript.
 const source = await readFile(new URL("../web/council-presentation.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { getSessionVoices } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`);
+const { getSessionVoices, councilReadingText } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`);
+
+test("reading views omit legacy persona labels without changing substantive text or receipts", () => {
+  assert.equal(councilReadingText("Fictional interpretation. Test the bottleneck.\n\n**Fictional interpretation:** Keep the evidence."), "Test the bottleneck.\n\nKeep the evidence.");
+  assert.equal(councilReadingText("Discuss a fictional interpretation of the evidence."), "Discuss a fictional interpretation of the evidence.");
+  const identities = [member("CEO")];
+  const session = receipt("### CEO\n\nFictional interpretation. Test the bottleneck.", identities);
+  const before = JSON.stringify(session);
+  assert.equal(getSessionVoices(state(identities), session)[0].submission, "Test the bottleneck.");
+  assert.equal(JSON.stringify(session), before);
+});
 
 const member = (id, name = id) => ({ id, name, title: "Fixture advisor", mandate: "This mandate is not a submission.", voice: "", expertise: "", blindSpot: "", challenge: "", fictional: false, inherited: false });
 const council = (identities) => ({ moduleId: "fixture", moduleVersion: 1, profile: "FreedOS", identities, behavior: { focus: "", decisionCriteria: "", maxRecommendations: 10, challengeRounds: 2, reportSections: [] } });

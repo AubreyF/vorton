@@ -69,3 +69,33 @@ test("published proposals remain advisory and the next packet includes their rec
   assert.equal(next.packet.recentSessions.length, 1);
   assert.notEqual(next.evidenceDigest, input.evidenceDigest);
 });
+
+test("five years of completed planning history do not accumulate in daily model context", () => {
+  const make = (count) => ({ profile: "FreedOS", revision: 1,
+    goals: [{ id: "current", status: "active", parentId: "retired-parent" }, { id: "retired-parent", status: "retired" }],
+    tasks: [{ id: "active", status: "doing", goalId: "current" }, ...Array.from({ length: count }, (_, n) => ({ id: `task-${String(n).padStart(6, "0")}`, status: "done", notes: "x".repeat(1000), updatedAt: new Date(Date.UTC(2020, 0, n + 1)).toISOString() }))],
+    recommendations: [{ id: "pending", status: "pending" }, { id: "deferred", status: "deferred" }, ...Array.from({ length: count }, (_, n) => ({ id: `proposal-${n}`, status: "rejected", rationale: "x".repeat(1000) }))],
+    councilSessions: Array.from({ length: count }, (_, n) => ({ id: `session-${n}`, summary: "x".repeat(24000), recommendationIds: [], council: { privateHistoricalRoster: true } })),
+  });
+  const short = councilPacket(make(30)).packet, years = councilPacket(make(1826)).packet;
+  assert.equal(years.tasks.length, 26);
+  assert.equal(years.goals.length, 2, "A current task's goal ancestry remains available");
+  assert.equal(years.priorRecommendations.length, 22);
+  assert.equal(years.recentSessions.length, 3);
+  assert.ok(!Object.hasOwn(years.recentSessions[0], "council"));
+  assert.equal(years.contextScope.tasksOmitted, 1801);
+  assert.equal(years.contextScope.sessionsOmitted, 1823);
+  assert.ok(Buffer.byteLength(JSON.stringify(years)) < Buffer.byteLength(JSON.stringify(short)) + 1000);
+});
+
+test("unresolved review proposals retain old target records outside the recent history window", () => {
+  const state = { profile: "FreedOS", revision: 1,
+    goals: Array.from({ length: 20 }, (_, n) => ({ id: `g${n}`, status: "retired", updatedAt: String(n).padStart(3, "0") })),
+    tasks: Array.from({ length: 40 }, (_, n) => ({ id: `t${n}`, goalId: "g0", status: "done", updatedAt: String(n).padStart(3, "0") })),
+    recommendations: [{ id: "review-goal", targetId: "g1", status: "pending", kind: "goal-review" }, { id: "review-task", targetId: "t0", status: "deferred", kind: "task-review" }],
+  };
+  const packet = councilPacket(state).packet;
+  assert.ok(packet.goals.some(goal => goal.id === "g1"));
+  assert.ok(packet.goals.some(goal => goal.id === "g0"));
+  assert.ok(packet.tasks.some(task => task.id === "t0"));
+});

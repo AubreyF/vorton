@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Show only the active workspace icon in the mobile switcher, falling back to the first letter of its display name. Keep the full name accessible and preserve desktop labels.
+
+- Fill private installation icon symbols in solid white so their interiors contrast with the titanium background; refresh icon URLs for Safari installation.
+
+- Round browser favicon corners, refresh private workspace icon URLs, serve installation manifests as JSON, and provide a high-resolution Apple touch icon. Replace the stale shared A fallback with the neutral Vorton mark.
+
+- Hide repeated page titles on mobile while preserving accessible headings, descriptions and actions. Compact mobile tool cards with icons and status on the left and titles and descriptions on the right.
+
+- Prefix the private AubOS and FreedOS navbar labels with their selected falcon and F silhouettes, inheriting the label color and scale through the shared workspace selector.
+
+- Gate daily Omi Council review on a completed bounded scan, preserving unverified cloud coverage and deferring failures before review admission. Index encrypted archives by opaque day tokens, cache encrypted evidence pages, and bound historical metadata selection so routine reads do not decrypt years of transcripts.
+
+- Add workspace-specific titanium favicons and Safari installation icons to the private AubOS and FreedOS frontend, with separate web-app identities and high-resolution maskable artwork.
+- Preserve legacy Admin page titles and not-found titles when attaching native workspace metadata.
+
+- Keep completed planning history out of the daily Council context beyond explicit recent windows, while preserving all unfinished work and unresolved proposals. Prioritize the current due Council before historical catch-up.
+
+- Allow native Council publication to use explicit, owner-recorded exceptions for unchanged historical evidence references. Keep new references and planning changes under strict validation, and include unavailable evidence in review packets and audit reports.
+
+- Lead Council pages with the timeline, fade its viewport edges, and group goal details into sub-cards with the agent prompt action on the right. Remove repeated persona disclaimers from Council reading surfaces and future review prompts.
+
+- Redesign Omi setup around connection, archive and Council state, with one atomic Save changes action shared with Admin settings. Keep unreviewed transcript versions queued across failed reviews and late arrivals, and acknowledge them only after a durable Council receipt.
+
+- Reorganize Admin into a shared directory with independent settings, integrations, Omi, data exports, activity and decision pages. Keep native review and evidence destinations separate instead of appending unrelated panels below Review.
+
+- Explain where to generate a restricted Omi Developer key directly in Admin, including one-time secret display and replacement instructions.
+
+- Add workspace-scoped Omi administrative setup, encrypted credential and transcript storage, bounded direct API retrieval, historical backfill and manual replay. Keep model processing in the existing Paseo workflow and make unverified source coverage explicit.
+
+- Reset Omi scan offsets and evidence receipts when deleting local history, and surface historical retrieval failures in Council evidence.
+
+- Preserve productive Omi backfill progress across multiple weeks instead of restarting it on a weekly timer.
+
 - Add guarded recovery for an unpublished Factory attempt whose approved base advanced. Preserve its claim, scheduler run, custody history and original workspace while preparing a separately approved base revision. Incomplete metadata transactions block controller startup.
 
 - Automatically queue missing Council dates from activation onward, oldest first, with labeled current-evidence catch-up reports. Drain bounded batches on each heartbeat while preserving receipt deduplication, profile isolation, cooldowns, and retry limits.

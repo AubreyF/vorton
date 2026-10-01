@@ -194,3 +194,25 @@ button, select, input, summary { touch-action: manipulation; }
 .view-frame { width: min(1480px, 100%); margin: 0 auto; padding: 34px clamp(18px, 4vw, 64px) 72px; }
 .view-frame:focus-visible { outline-offset: -3px; }
 .installation-switcher > summary > svg { display: block; flex: 0 0 14px; width: 14px; height: 14px; }
+
+/* Mobile navigation already names the page. Keep its heading for assistive
+   technology without hiding descriptions, actions, or record-specific titles. */
+@media (max-width: 720px) {
+  .view-frame :is(.page-heading, .admin-heading, .goal-index-title, .tasks-hero, .tool-page-heading, .daily-command-header, .intro-row) h1,
+  .view-frame .mobile-page-title {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0 !important;
+  }
+  .view-frame .page-heading:has(> h1:only-child) {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+  }
+}

@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { emptyPlan, financeSummary, money } from "./finance-model";
 import "./business-pages.css";
+import { AdminSave } from "./admin-save";
 
 type Actions = {
   state: State;
@@ -65,6 +66,7 @@ function EditForm({
   onSave,
   onCancel,
   children,
+  admin = false,
 }: {
   title: string;
   busy: boolean;
@@ -72,6 +74,7 @@ function EditForm({
   onSave: (data: FormData) => Promise<void>;
   onCancel?: () => void;
   children: ReactNode;
+  admin?: boolean;
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,7 +89,7 @@ function EditForm({
       <h2>{title}</h2>
       <fieldset disabled={busy}>
         {children}
-        <div className="business-actions">
+        {admin ? <AdminSave busy={busy}/> : <div className="business-actions">
           <button type="submit" className="primary">
             {busy ? "Saving…" : "Save"}
           </button>
@@ -95,7 +98,7 @@ function EditForm({
               Cancel
             </button>
           )}
-        </div>
+        </div>}
       </fieldset>
       {error && <p role="alert">{error}</p>}
     </form>
@@ -562,6 +565,7 @@ export function WorkspacePreferences({ state, busy, error, act }: Actions) {
   return (
     <EditForm
       title="Workspace settings"
+      admin
       busy={busy}
       error={error}
       onSave={async (data) => {
@@ -581,14 +585,13 @@ export function WorkspacePreferences({ state, busy, error, act }: Actions) {
         required
         maxLength={120}
       />
-      <label>
-        Workspace purpose
+      <label htmlFor="workspace-purpose">Workspace purpose</label>
         <textarea
+          id="workspace-purpose"
           name="purpose"
           defaultValue={state.settings?.purpose ?? ""}
           maxLength={1000}
         />
-      </label>
       <p className="quiet">
         Purpose appears on Organization. Appearance and zoom are shared across
         workspaces in the upper-left menu.

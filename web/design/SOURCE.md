@@ -1,5 +1,11 @@
 # Design source
 
+The shared header and installation selector accept an optional presentation-only brand symbol. Private workspace adapters supply their own silhouettes; private artwork is not embedded in this portable design layer. Symbols inherit the wordmark's color and font-relative size, with no independent theme setting.
+
+Omi refinement, September 30, 2026: `web/omi-admin.tsx` uses the existing panel, form, type and color tokens. Its status row, two-column preference rows and maintenance disclosures are original compositions of those components. `web/admin-save.tsx` supplies one shared submit footer for editable Admin pages; no separate theme or toolbar was introduced.
+
+Admin redesign, September 29, 2026: `web/admin-page.tsx` and its stylesheet reuse the shared Tools directory's card/navigation pattern and existing shell tokens. The compact inline symbols are original SVG controls. Native adapters contribute organization-specific evidence links; the shared directory contains no private organization logic or records.
+
 The owner authorized reuse of the reviewed visual vocabulary for portable Vorton and The Last Resort under the repository's MIT license. These individually selected design files contain interface tokens and components, not personal records or private installation logic. Their source hashes are recorded below.
 
 - `web/design/themes.css`: source `dashboard/web/app/themes.css`, SHA-256 `ee5368013004c1e84011eaa8e06289fb8a521a18bb9c82f5430e0ae9d0aed978`.

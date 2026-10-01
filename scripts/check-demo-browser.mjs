@@ -94,12 +94,25 @@ try {
         200,
       );
       assert.equal(await page.getByRole("alert").count(), 0);
-      if (section === "council")
+      if (section === "council") {
         assert.equal(
           await page.getByText("No saved submission", { exact: true }).count(),
           0,
           "Every fictional Council voice has a saved contribution",
         );
+        assert.equal(await page.locator(".page-heading").count(), 0, "Council starts with its timeline");
+        assert.equal(await page.locator(".timeline-rail").evaluate(el => getComputedStyle(el).maskImage.includes("linear-gradient")), true);
+        assert.ok(await page.locator(".council-goal-details > section").count() >= 2);
+        const goalHeading = page.locator(".council-goal-heading").first();
+        if (width > 640) {
+          const title = await goalHeading.locator("h3").boundingBox();
+          const action = await goalHeading.locator("button").boundingBox();
+          assert.ok(action.x > title.x && Math.abs(action.y - title.y) < 30, "Goal prompt sits at the right of its title");
+        }
+        await page.locator(".timeline-rail").focus();
+        assert.equal(await page.locator(".timeline-rail").evaluate(el => getComputedStyle(el).maskImage), "none", "Keyboard focus remains visible at the edges");
+        await page.locator(".timeline-rail").evaluate(el => el.blur());
+      }
       assert.equal(
         await page.evaluate(
           () => document.documentElement.scrollWidth > innerWidth + 1,
@@ -117,9 +130,16 @@ try {
       const box = svg.getBoundingClientRect(), trigger = svg.parentElement.getBoundingClientRect();
       return {width:box.width,height:box.height,offset:box.y+box.height/2-trigger.y-trigger.height/2};
     });
-    assert.equal(arrow.width,14);
-    assert.equal(arrow.height,14);
-    assert.ok(Math.abs(arrow.offset)<1, 'Selector arrow stays centered');
+    if (width > 720) {
+      assert.equal(arrow.width,14);
+      assert.equal(arrow.height,14);
+      assert.ok(Math.abs(arrow.offset)<1, 'Selector arrow stays centered');
+    } else {
+      assert.equal(arrow.width,0, 'Mobile icon-only switcher hides its arrow');
+      const trigger = page.locator('.installation-switcher > summary');
+      assert.equal((await trigger.boundingBox()).width,44);
+      assert.ok(await trigger.getAttribute('aria-label'), 'Icon-only switcher retains an accessible name');
+    }
     await page.getByLabel("Installed Vorton version").waitFor();
     assert.match(
       await page.getByLabel("Installed Vorton version").innerText(),
@@ -298,12 +318,13 @@ try {
   await page.reload({waitUntil:'networkidle'});
   assert.equal(await page.getByLabel('Occupancy (%)').inputValue(),'50');
   await page.getByText('$6,300.00',{exact:true}).waitFor();
-  await page.goto(`${origin}/lastresort/admin`,{waitUntil:'networkidle'});
+  await page.goto(`${origin}/lastresort/admin/settings`,{waitUntil:'networkidle'});
   const preferences=page.getByRole('form',{name:'Workspace settings'});
   await preferences.getByLabel('Default task and opportunity owner').fill('Penny Perihelion');
   await preferences.getByLabel('Workspace purpose').fill('Keep the towels and the accounts finite.');
-  await preferences.getByRole('button',{name:'Save',exact:true}).click();
+  await preferences.getByRole('button',{name:'Save changes',exact:true}).click();
   await preferences.getByText('Workspace settings saved.').waitFor();
+  await page.goto(`${origin}/lastresort/admin/activity`,{waitUntil:'networkidle'});
   await page.getByText('Updated workspace preferences',{exact:true}).waitFor();
   const exported=await (await page.request.get(`${origin}/api/lastresort/export`)).json();
   assert.equal(exported.opportunities.length,4);assert.equal(exported.ledger.length,5);

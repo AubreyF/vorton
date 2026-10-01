@@ -9,6 +9,8 @@ import { councilPacket, publishCouncil } from "./council.mjs";
 import { reviewPacket, importRecommendations } from "./review.mjs";
 import { installedVersion } from "./version.mjs";
 import { pipeAssetResponse } from "./asset-delivery.mjs";
+import { integrationHandler } from "./integration-http.mjs";
+import { councilStateView } from "./council-state-view.mjs";
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -17,7 +19,7 @@ const mime = {
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
 };
-const publicState = ({ requests, ...state }) => state;
+const publicState = ({ requests, ...state }, options) => councilStateView(state, options);
 
 /** Portable local host. Only explicitly configured profiles are reachable. */
 export function createCoreServer({
@@ -28,6 +30,7 @@ export function createCoreServer({
   enabledProfiles = ["LastResort"],
   defaultPath = "/lastresort/bridge",
   sessionToken,
+  omi,
 }) {
   check(
     Array.isArray(enabledProfiles) &&
@@ -65,6 +68,7 @@ export function createCoreServer({
     allowed.add(origin);
   }
   const hosts = new Set([...allowed].map((v) => new URL(v).host));
+  const integrations = integrationHandler({ root, profiles: enabledProfiles, token, allowed, omi });
   const json = (res, status, value) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -90,6 +94,7 @@ export function createCoreServer({
         403,
       );
       const url = new URL(req.url, `http://${req.headers.host}`);
+      if (await integrations(req, res, url)) return;
       if (req.method === "GET" && url.pathname === "/api/health")
         return json(res, 200, { service: "vorton-local", status: "ready" });
       if (req.method === "GET" && url.pathname === "/api/version")
@@ -122,7 +127,7 @@ export function createCoreServer({
               "Content-Disposition",
               `attachment; filename="${profile}-goals-tasks.json"`,
             );
-          return json(res, 200, publicState(state));
+          return json(res, 200, publicState(state, { fullHistory: operation === "export", sessionId: url.searchParams.get("councilSession") }));
         }
         check(
           req.method === "POST" && operation === "command",

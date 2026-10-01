@@ -1,0 +1,18 @@
+/* Shared Tools-style directory, using the reviewed shell's theme tokens. */
+.vorton-workspace .workspace-admin { width: min(100%, 1180px); margin-inline: auto; display: grid; gap: 36px; min-width: 0; }
+.vorton-workspace .admin-heading { display: grid; gap: 8px; max-width: 70ch; }
+.vorton-workspace .admin-heading p { margin: 0; }
+.vorton-workspace .admin-eyebrow { color: var(--aub-accent); font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
+.vorton-workspace .admin-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
+.vorton-workspace a.admin-card { display: grid; grid-template-rows: auto auto 1fr auto; gap: 14px; padding: 26px; min-width: 0; min-height: 236px; border: 1px solid var(--aub-border); border-radius: var(--aub-card-radius); background: var(--aub-card); box-shadow: var(--aub-card-shadow); text-decoration: none; color: var(--aub-text); }
+.vorton-workspace a.admin-card:hover { border-color: var(--aub-accent); background: var(--aub-accent-soft); }
+.vorton-workspace .admin-card h3 { font-family: var(--aub-font-display); font-size: 1.5rem; margin: 0; }
+.vorton-workspace .admin-card p { font-size: .9rem; line-height: 1.5; margin: 0; }
+.vorton-workspace .admin-icon, .vorton-workspace .admin-open { color: var(--aub-accent); }
+.vorton-workspace .admin-open { font-size: .8rem; font-weight: 600; }
+.vorton-workspace .admin-breadcrumb { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 12px; height: auto; min-height: 32px; font-size: .9rem; }
+.vorton-workspace .admin-content { display: grid; gap: 24px; min-width: 0; }
+.vorton-workspace .admin-content > .panel { width: 100%; margin: 0; min-width: 0; }
+.vorton-workspace .admin-download { display: inline-block; padding: 12px 0; font-weight: 600; }
+@media (max-width: 960px) { .vorton-workspace .admin-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 600px) { .vorton-workspace .admin-grid { grid-template-columns: minmax(0,1fr); } .vorton-workspace a.admin-card { min-height: 210px; padding: 22px; } }
