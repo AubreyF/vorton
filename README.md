@@ -10,7 +10,7 @@ Vorton is building toward sovereign superintelligence for humans and AI-native o
 
 This repository is Vorton's main development path. [Vorton Cloud](https://github.com/AubreyF/vorton-cloud) is discontinued, with its source and historical architecture preserved for reference. The [vision and source provenance](docs/VISION.md) identifies what carries forward and separates it from Cloud-specific implementation claims.
 
-Factory execution and resource scheduling are separate [Vorteo](https://github.com/AubreyF/vorteo) work. [AubTown](https://github.com/AubreyF/aubtown) remains a separate software-factory platform and Freed pilot. This portable Vorton core does not include either factory runtime.
+[Vorton Factory](docs/VISION.md#vorton-factory) is the intended home for governed software production. Factory execution and resource scheduling remain separate work in [Vorteo](https://github.com/AubreyF/vorteo), while [AubTown](https://github.com/AubreyF/aubtown) is being deprecated. This portable Vorton core does not include a factory runtime.
 
 ## Run locally
 

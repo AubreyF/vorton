@@ -9,8 +9,14 @@ That vision belongs to Vorton. This local repository is its active implementatio
 - **Continuity with sources:** Preserve evidence, connect ideas, and carry reviewed learnings forward. Advanced memory and consolidation are future work; the current preview records goal, task, and recommendation history.
 - **Governed action:** Recommendations inform a person. External effects require explicit authority, review, and evidence of what happened.
 - **Shared control plane:** The portable source uses reviewed AubOS design vocabulary and workspace-scoped records. Last Resort is a fictional demonstration. Private AubOS and FreedOS adapters are outside this repository's portable source candidate.
-- **Software factory:** The ambition to complete bounded software work with evidence remains. Factory execution and resource scheduling are currently separate [Vorteo](https://github.com/AubreyF/vorteo) work. [AubTown](https://github.com/AubreyF/aubtown) is a separate factory platform and pilot for Freed. Neither is implemented by this local core.
+- **Software factory:** The ambition to complete bounded software work with evidence remains. See [Vorton Factory](#vorton-factory) for its intended home and current boundary.
 - **Portability:** One owner can host this application on a machine they control. Cloud tenancy, remote fleets, independently released modules, and multi-owner access are not prerequisites for the preview.
+
+## Vorton Factory
+
+Vorton Factory is the intended home for governed software production within Vorton. It should connect goals and tasks to bounded execution, preserve source and authority, and show evidence before a person approves consequential actions.
+
+This is a direction, not a delivered factory runtime in the portable Vorton core. [AubTown](https://github.com/AubreyF/aubtown) remains a separate Freed factory pilot while it is being deprecated. Agent control and resource scheduling are separate [Vorteo](https://github.com/AubreyF/vorteo) work. Moving AubTown behavior into Vorton requires a reviewed integration contract and explicit migration; the repositories do not currently provide one.
 
 ## Historical sources
 

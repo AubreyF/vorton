@@ -1,7 +1,7 @@
 {
   "contract": "vorton.public-source.v1",
   "version": "0.2.0-preview.3",
-  "sourceDigest": "3f4eb51491e40beb700db3ae0b60c52d2c7abb22314dcab315daf3eff5142434",
+  "sourceDigest": "dd43df5305359de991245a7c4797e3089a8cbfbaab5f3f8eaeedc1ac08bf8095",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -25,7 +25,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "ff3c9147fc03a461210032f0e45f6e13add29883505cd8a9b85b96e5fa2b27b2"
+      "sha256": "17d08faa9f5b62268318936da2f74a8df2642147eb573f5a17367fa9482ded90"
     },
     {
       "path": "SECURITY.md",
@@ -53,7 +53,7 @@
     },
     {
       "path": "docs/VISION.md",
-      "sha256": "89b34a79ccabe9ffc93531e34362e2eed96148057dee9d0010fbc485f629e136"
+      "sha256": "8a3742391771f9c28f6e4da8114f52f05e1cfcd068b834e647238ce7818cb6cd"
     },
     {
       "path": "modules/council/config.mjs",
