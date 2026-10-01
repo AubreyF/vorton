@@ -1,7 +1,7 @@
 {
   "contract": "vorton.public-source.v1",
-  "version": "0.2.0-preview.3",
-  "sourceDigest": "dd43df5305359de991245a7c4797e3089a8cbfbaab5f3f8eaeedc1ac08bf8095",
+  "version": "0.2.0-preview.5",
+  "sourceDigest": "181a547f8306b3708bda488c514f75219d40e35146167001cbfba463b5f3b5f5",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "5b3f35de43f2d86c3927157e0e8afaeee240607b83ecd82a39811286d5c627bc"
+      "sha256": "a460abcb0bc2897984315c75424c44713abca9bbaa1b55eca58c7cc7d016d375"
     },
     {
       "path": "LICENSE",
@@ -61,15 +61,15 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "0aa3fcdb9e66bd9e16ea010051bdd3418a148421654ae90c99315b1bce29a29d"
+      "sha256": "984121c6430f6f7f9f87a8711799fa02076c556ba5ea3f6a651829fba93d6234"
     },
     {
       "path": "package.json",
-      "sha256": "be31e74195d8e6feb1f022f56d72db3ac2600541be3cf65bd86ae5cf4190fc6b"
+      "sha256": "0df0144b561ab358613071211d24d09fa17d0b8cbc3c71cfcb9f0f50eecb5463"
     },
     {
       "path": "scripts/check-demo-browser.mjs",
-      "sha256": "45e3b1473b0a6a8a504b96c4a8883f90ec76ecf9becad118de77ec1c77386e85"
+      "sha256": "82cf09936b5d3d09cb891ce83c1d5d227fb71fc076ec0c338ed8f48c69a52aef"
     },
     {
       "path": "scripts/check-version.mjs",
@@ -173,7 +173,7 @@
     },
     {
       "path": "web/council-briefing.tsx",
-      "sha256": "44d7cecb294ba952a945b40d2ab0890fb2e7b2e3c4c8ae04a94593fb612d8b88"
+      "sha256": "88b2742d66af4bcdc44ada4ecfff26386b48f3f30b5b423276bf2f452d4f5285"
     },
     {
       "path": "web/council-calendar.tsx",
@@ -577,7 +577,7 @@
     },
     {
       "path": "web/workspace.tsx",
-      "sha256": "2deda11b2b204d31bcad890f0fd430266c0486545389eb7de72f5959fcd82926"
+      "sha256": "b135f9b7c96a73f8ad27a8513c7794cb9dcd9f6691a15363c0c75336d55e59d6"
     }
   ],
   "gitHistory": "not included; separately unverified",

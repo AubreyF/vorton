@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Add guarded recovery for an unpublished Factory attempt whose approved base advanced. Preserve its claim, scheduler run, custody history and original workspace while preparing a separately approved base revision. Incomplete metadata transactions block controller startup.
+
+- Automatically queue missing Council dates from activation onward, oldest first, with labeled current-evidence catch-up reports. Drain bounded batches on each heartbeat while preserving receipt deduplication, profile isolation, cooldowns, and retry limits.
+
+## 0.2.0-preview.5, September 28, 2026
+
+- Patch the dependency trees used by local validation and production builds. Keep the existing Vinext integration and pin its image parser to a patched compatible release.
+- Use compact loading indicators for embedded Bridge cards so loading a Council briefing or vocabulary card does not reserve a full viewport.
+- Reveal the Council body after its lazy history loads, preventing Goals and Review from jumping down when the Roundtable arrives. Preserve section links and the Roundtable layout.
+
+## 0.2.0-preview.4, September 19, 2026
+
+- Update the installed React runtime and server decoder to 19.2.8 to fix CVE-2026-44907 before the private production rollout. Keep application releases independent of governed evidence refreshes.
+
 ## 0.2.0-preview.3, September 19, 2026
 
 - Preserve restoration of older backups when additive business fields are absent, and initialize new preference histories consistently.

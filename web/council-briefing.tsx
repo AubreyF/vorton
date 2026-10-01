@@ -36,7 +36,7 @@ export function CouncilBriefing({ profile }: { profile: Profile }) {
   // A profile switch must never briefly show the previous workspace's records.
   const current = result?.profile === profile ? result : null;
   return <div className="vorton-workspace council-briefing">
-    {!current ? <LoadingIndicator label="Loading council briefing" detail={`Reading ${profile}'s latest saved session`} />
+    {!current ? <LoadingIndicator compact label="Loading council briefing" detail={`Reading ${profile}'s latest saved session`} />
       : current.error ? <section className="panel" role="alert">
         <h2>Council briefing unavailable</h2>
         <p>{current.error}</p>
