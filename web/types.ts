@@ -84,6 +84,7 @@ export type State = {
     basedOnRevision: number;
     evidenceDigest: string;
     summary: string;
+    summaryDeferred?: boolean;
     recommendationIds: string[];
     council?: CouncilConfig;
     options?: {title:string;status:string;rationale:string;evidence:string}[];

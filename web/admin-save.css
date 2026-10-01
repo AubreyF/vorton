@@ -1,0 +1,4 @@
+.vorton-workspace .admin-save { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 24px; }
+.vorton-workspace .admin-save > span { color: var(--aub-text-mid); font-size: .85rem; }
+.vorton-workspace .admin-save button { flex-shrink: 0; min-width: 140px; }
+@media (max-width: 600px) { .vorton-workspace .admin-save { align-items: stretch; flex-direction: column; gap: 12px; } }

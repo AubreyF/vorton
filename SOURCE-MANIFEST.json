@@ -1,7 +1,7 @@
 {
   "contract": "vorton.public-source.v1",
-  "version": "0.2.0-preview.3",
-  "sourceDigest": "dd43df5305359de991245a7c4797e3089a8cbfbaab5f3f8eaeedc1ac08bf8095",
+  "version": "0.2.0-preview.5",
+  "sourceDigest": "8cdc8fb7eaa9b82e51b6d663acfb7c6293d8155ac8559838bfa8756934b9a5d4",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -17,7 +17,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "5b3f35de43f2d86c3927157e0e8afaeee240607b83ecd82a39811286d5c627bc"
+      "sha256": "004be653670ae0fbe5f08f7676905bd2e522d49638a946d9bfa72628d5825fbc"
     },
     {
       "path": "LICENSE",
@@ -40,6 +40,14 @@
       "sha256": "de1e0245e29395e143e050f0831c71c2a60e28be95b1ce31d2bde8c9247f859a"
     },
     {
+      "path": "docs/ADMIN.md",
+      "sha256": "24a4cc14b3de4a937a40215db439c614dbd24e48f849d012c1c2104d33cbb82a"
+    },
+    {
+      "path": "docs/OMI.md",
+      "sha256": "9f8cab8adc4bcbc817f15ecd7c0305a4acb0a283eef4b230da7df9cac653fb56"
+    },
+    {
       "path": "docs/RELEASE.md",
       "sha256": "7a0321af7360e4bf7e66fb1cc0f024556548f102e077c798bff97e9a02734fbb"
     },
@@ -57,19 +65,27 @@
     },
     {
       "path": "modules/council/config.mjs",
-      "sha256": "3e12422741bb626e9818bdae178a9dc1968153cf5ab41c3ef5bf9665bff7fd97"
+      "sha256": "c6aef26de5c0fab66a312ec1d5971a27a680d9cce5a7d52203e55baa4b922983"
     },
     {
       "path": "package-lock.json",
-      "sha256": "0aa3fcdb9e66bd9e16ea010051bdd3418a148421654ae90c99315b1bce29a29d"
+      "sha256": "984121c6430f6f7f9f87a8711799fa02076c556ba5ea3f6a651829fba93d6234"
     },
     {
       "path": "package.json",
-      "sha256": "be31e74195d8e6feb1f022f56d72db3ac2600541be3cf65bd86ae5cf4190fc6b"
+      "sha256": "0df0144b561ab358613071211d24d09fa17d0b8cbc3c71cfcb9f0f50eecb5463"
+    },
+    {
+      "path": "scripts/check-admin-browser.mjs",
+      "sha256": "6434a8926b721716cb4c311ef1a90011386b8ab33a6baaa3644d30eeb9ba011a"
     },
     {
       "path": "scripts/check-demo-browser.mjs",
-      "sha256": "45e3b1473b0a6a8a504b96c4a8883f90ec76ecf9becad118de77ec1c77386e85"
+      "sha256": "d78b853190de3d8fb84ba9ce38c8bc56be7ca5649f68fca692852c3adf83ca3a"
+    },
+    {
+      "path": "scripts/check-omi-browser.mjs",
+      "sha256": "3ff9147bacc487992961f5881ab214ed01c1c1714c3c8cc6ab6c730b52e7b96d"
     },
     {
       "path": "scripts/check-version.mjs",
@@ -84,20 +100,52 @@
       "sha256": "4595ad6d428c4515ef213661a8a4417204651b7de04f610e18da766d0ace1700"
     },
     {
+      "path": "scripts/omi.mjs",
+      "sha256": "00e51b06338c6d325fb3c98b4f29444f3f9be1e3e50bbcf7d71cf5679ba8c820"
+    },
+    {
       "path": "server/asset-delivery.mjs",
       "sha256": "01fb2af0a38a23abc75b76b1353735941bc6f6ba30e243b264aabba9339da2b6"
     },
     {
       "path": "server/core-http.mjs",
-      "sha256": "eae139af504b61146c74302f42b143974d3c7f4fb47e3567647e27d7197a7bec"
+      "sha256": "7e78c43c1ccd0618e18ceddfcbd119d6f9fe4c34355547ab6256b07cb3a82d99"
+    },
+    {
+      "path": "server/council-nightly.mjs",
+      "sha256": "fe611478c41d293f72095464077ec947191bb1031a82347c6c7765aea8a30f34"
+    },
+    {
+      "path": "server/council-state-view.mjs",
+      "sha256": "a8de5b2c317bf7c4ce5cb0c37aa66e7c7ee2912f27c4da24b7d2462ebc5fcc88"
     },
     {
       "path": "server/council.mjs",
-      "sha256": "d8781c365fcbeac023d0aa6f0e05d3b55d6ee93a836e8ade0e80845001b87a57"
+      "sha256": "cf290406857f4f7b94e0ef5e30fb75887792a13f7e03da6c97cdc5ccf4438151"
+    },
+    {
+      "path": "server/integration-http.mjs",
+      "sha256": "9034bef5b8336f1fdb8694d64dd7f1f1c44c10fb1d1d4570d6591d876867289d"
+    },
+    {
+      "path": "server/integration-vault.mjs",
+      "sha256": "b0d6a8fe1aef8e026d593d2c99c204aa2ee36f7e7c6fa9cbe500f9c9aa584635"
+    },
+    {
+      "path": "server/omi-client.mjs",
+      "sha256": "2e69e8d12121385d550aa028ea01a26b215c169aa4b5b24b843bd4eb3597747c"
+    },
+    {
+      "path": "server/omi-integration.mjs",
+      "sha256": "86d2073b52376012a07db8646bd65d9ff3108906ba62048b62a5b2b39f365730"
+    },
+    {
+      "path": "server/omi-workflow.mjs",
+      "sha256": "7d85e4224981de5bf7abfb0764bec94aadb888ad65c415fdeb0b44149111facc"
     },
     {
       "path": "server/review.mjs",
-      "sha256": "5094813d27b90f66ad6388714c66002c48a9181bb34fceb4419ff46c475eb704"
+      "sha256": "064c587778436beb3d4122aa0dedc877ad0ad7276106fea6ca4b611e862a9349"
     },
     {
       "path": "server/store.mjs",
@@ -124,12 +172,20 @@
       "sha256": "331388616defd9a5a748da48a8608bcf5ecbb13329c267a10bc9cda6a28b4ba4"
     },
     {
+      "path": "tests/council-nightly.test.mjs",
+      "sha256": "3c3d0683afb5410eaa9b6390f29043ea5cc537ed9f964f232643c7c43273bc59"
+    },
+    {
       "path": "tests/council-presentation.test.mjs",
-      "sha256": "ffe1882dc4d1d0c8379ac08e2b43748bb3c4ec66268a2d23c44f3de830e89f9b"
+      "sha256": "d261d8baa0cf178c1c6cce07cc86bc3282de51a0454947d73d4fa760d775df64"
+    },
+    {
+      "path": "tests/council-state-view.test.mjs",
+      "sha256": "234e375acaf388e0b04cf80732f7ea65658f4ad2ec91176f8262b0de8f484c32"
     },
     {
       "path": "tests/council.test.mjs",
-      "sha256": "761d758dfc95e43792ef34893279b58585bb252ecc7aa145ec0bdb5ab672c6c9"
+      "sha256": "fc09e80f6c1908de2c3c527826b70ccc6ca87f731de88c7d7395bce04cce858f"
     },
     {
       "path": "tests/demo.test.mjs",
@@ -140,8 +196,28 @@
       "sha256": "7a33d9f8efcf4241a64b98475fe952b8d65269ac12c7eb260bd23720eb3d1dd4"
     },
     {
+      "path": "tests/integration-vault.test.mjs",
+      "sha256": "8982986199afd4a1807ceabdc559236c6581cac5c5b06310d0e7dade6f0c45d0"
+    },
+    {
       "path": "tests/load-progress.test.mjs",
       "sha256": "f444b38f72c176354e6a4538dc05f96c976c59acb0b6fca09a77479071670748"
+    },
+    {
+      "path": "tests/omi-cli.test.mjs",
+      "sha256": "da6511368e8eb8146c1d1486e0dbfd230d7b0ecb40773f9d9bb30d8e1ecf13f2"
+    },
+    {
+      "path": "tests/omi-client.test.mjs",
+      "sha256": "cac0107e96dc9ca62f76f9da7f079896b4eec84db304c68d50f33dd8b874814d"
+    },
+    {
+      "path": "tests/omi-integration.test.mjs",
+      "sha256": "23af91f4700b1c6a00a4acc648f1d6f723591a2e18d3ad1cf5bd7c9532a9ac49"
+    },
+    {
+      "path": "tests/omi-scale.test.mjs",
+      "sha256": "6b9d91577be684392460b09feea276b03180e542a35900e56c99fcb55fdb4ebc"
     },
     {
       "path": "tests/review.test.mjs",
@@ -160,12 +236,28 @@
       "sha256": "d5f74b8dbc0d569f8dfa5f496275fc6417c13e4c674fcb74f60a6e4b95439718"
     },
     {
+      "path": "web/admin-page.css",
+      "sha256": "431386bf60f4e10ed336e8a631063a408bde5493365d7a97f1469281395bc3bc"
+    },
+    {
+      "path": "web/admin-page.tsx",
+      "sha256": "66c06bb063f07fe38a2dbf09dfd8275a0e5256e09bed2ed0fccb1d25ad4970b0"
+    },
+    {
+      "path": "web/admin-save.css",
+      "sha256": "1e3fac85157cb0432224c144a330f9e70d02b1afa65516b228e146f51ac9c042"
+    },
+    {
+      "path": "web/admin-save.tsx",
+      "sha256": "082e266e2ec65e3266bace27cf97461d23db3fb6e106fdc04e8e6280abf1cc4a"
+    },
+    {
       "path": "web/business-pages.css",
       "sha256": "f1fcded7b32bdb59b34a022f96671b37f0cbf1772b701447268719fef7ccfa6c"
     },
     {
       "path": "web/business-pages.tsx",
-      "sha256": "0522fdff81814b393c015e4a3463b9f9fd256a9fff03f26e506a18965147c044"
+      "sha256": "9c1d3560eede4f16d49621af881bcd306ff8766e3f3377483700079d9656347d"
     },
     {
       "path": "web/council-avatar.tsx",
@@ -173,7 +265,7 @@
     },
     {
       "path": "web/council-briefing.tsx",
-      "sha256": "44d7cecb294ba952a945b40d2ab0890fb2e7b2e3c4c8ae04a94593fb612d8b88"
+      "sha256": "88b2742d66af4bcdc44ada4ecfff26386b48f3f30b5b423276bf2f452d4f5285"
     },
     {
       "path": "web/council-calendar.tsx",
@@ -189,11 +281,11 @@
     },
     {
       "path": "web/council-presentation.ts",
-      "sha256": "8ef085340decbabd1f8db9b0648db385c526d7f39e6960a1fb1f01dce23a144e"
+      "sha256": "c016565983011a08e0444336d5f9f1d702b9901aca7287d1f5601148d4137268"
     },
     {
       "path": "web/council-report.tsx",
-      "sha256": "73ac53f155451a200078a4e0dc846dba1aa9f2e8c01767744422e7c919795d11"
+      "sha256": "b446e516c3144760f213b4365305d83dbd89309a526f5a5774a95e85b60a8c62"
     },
     {
       "path": "web/council-timeline.tsx",
@@ -201,11 +293,11 @@
     },
     {
       "path": "web/council-views.css",
-      "sha256": "db8c6ffa3aef5d2f4f79cb593cbee326705b15f63874162c2c2165d067848e47"
+      "sha256": "17fca9b47491a3af6ebf7a01203a16373eae8a4b8330d4160932327f751461f7"
     },
     {
       "path": "web/council-views.tsx",
-      "sha256": "2af013788d44965fbc655b359ba51c1f4256409236b86e1f70aa80c0f6b3dd14"
+      "sha256": "c62d8a40105c5dc44a72d6db771d6bf8ce47a7b72970c511151c096b73186be1"
     },
     {
       "path": "web/demo-shell.css",
@@ -213,7 +305,7 @@
     },
     {
       "path": "web/design/SOURCE.md",
-      "sha256": "15c9317a41980f452d9e7dd307dbcd238d5468dd1ace6ec9b34137510c3816db"
+      "sha256": "eafb882d8cd0098aa031c0d52545f663ea420227e6ebe45ba25033c708026453"
     },
     {
       "path": "web/design/ThemePreviewButton.tsx",
@@ -225,7 +317,7 @@
     },
     {
       "path": "web/design/application-header.tsx",
-      "sha256": "16f42c372b647104c1e7d7c914acd1c8348a3e59677a243fdddf6499854c7093"
+      "sha256": "6f56691f54f78119dd3ff87106db343a9df17a9ae98e7d7b34d59e91160937c5"
     },
     {
       "path": "web/design/background-atmosphere.tsx",
@@ -465,11 +557,11 @@
     },
     {
       "path": "web/design/installation-switcher.module.css",
-      "sha256": "7d3e333b879ee773741395889f4a99d2e0ff57d5422318d712df3a78757bc635"
+      "sha256": "e18b056c2fdfb9d6e0f20cd187f11ac99241dbf5f66a4fd72cda598f65933320"
     },
     {
       "path": "web/design/installation-switcher.tsx",
-      "sha256": "f64a015c753201b0cb4bad0ea3503054f32c0e5aa892428b74bac4d556e0df8b"
+      "sha256": "05c94bd156dd17408db93a31286d22fa6eca410c63122fb4f69e3c1c902ed8f5"
     },
     {
       "path": "web/design/interface-zoom-client.ts",
@@ -509,7 +601,7 @@
     },
     {
       "path": "web/design/workspace-shell.css",
-      "sha256": "975ca815e80156507770aac1442bafad7984a60fcdaa6335324055ee68668ada"
+      "sha256": "18bddd21283dc98665d7d1effc9eb7a0cf3fd0b2e5e1f5d06f01d236939bcabf"
     },
     {
       "path": "web/finance-model.ts",
@@ -537,7 +629,15 @@
     },
     {
       "path": "web/main.tsx",
-      "sha256": "18e7008373736490e58a9759b554897700d12e13a44d409baecbb8908df67383"
+      "sha256": "b52d55eb2b9c474a9e0495310d3673a2394a0de82341732449301c1fc71f0575"
+    },
+    {
+      "path": "web/omi-admin.css",
+      "sha256": "03097bf9340e7335722f23d4d19cb36a26b110b43bf29a3e990f3bed1eac2a31"
+    },
+    {
+      "path": "web/omi-admin.tsx",
+      "sha256": "35bc83b6b0f07ff140c025feab25811768e20aae498135b8063aadca68b05fc8"
     },
     {
       "path": "web/tools/hotel-calculations.ts",
@@ -557,7 +657,7 @@
     },
     {
       "path": "web/types.ts",
-      "sha256": "cc7db56aff5863e410931981bde428a0af1f84cce48e0c025389dbba4b704e14"
+      "sha256": "d722d0b51104761e0ff88aa264c6289abb465d062cb87afb7ad53175f3b0b8e3"
     },
     {
       "path": "web/vite-env.d.ts",
@@ -577,9 +677,9 @@
     },
     {
       "path": "web/workspace.tsx",
-      "sha256": "2deda11b2b204d31bcad890f0fd430266c0486545389eb7de72f5959fcd82926"
+      "sha256": "46a7ef1f252f0616a99b7924e972ffe0710f4151600ed48db9b4a8a694575c65"
     }
   ],
-  "gitHistory": "not included; separately unverified",
-  "publicationApproved": false
+  "gitHistory": "Included in repository and scanned for this candidate",
+  "publicationApproved": true
 }

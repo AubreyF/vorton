@@ -4,6 +4,7 @@ import { CouncilAvatar } from "./council-avatar";
 import { getSessionVoices, type CouncilVoice } from "./council-presentation";
 import "./council-views.css";
 import { SessionTimeline } from "./council-timeline";
+import { LoadingIndicator } from "./loading-indicator";
 
 type Session = NonNullable<State["councilSessions"]>[number];
 type OpenSubmission = { voice: CouncilVoice; anchor: HTMLButtonElement; closing?: boolean };
@@ -224,7 +225,29 @@ export function CouncilExperience({ state, renderEvidence }: { state: State; ren
   const [opened, setOpened] = useState<OpenSubmission | null>(null);
   const [hashSessionId, setHashSessionId] = useState("");
   const lastHash = useRef<string | null>(null);
-  const selected = sessions.find(s=>s.id === selectedId) ?? sessions.at(-1);
+  const listed = sessions.find(s=>s.id === selectedId) ?? sessions.at(-1);
+  const [hydrated, setHydrated] = useState<{profile:string; session:Session} | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const selected = listed?.summaryDeferred && hydrated?.profile === state.profile && hydrated.session.id === listed.id ? hydrated.session : listed;
+  useEffect(() => {
+    setHistoryError("");
+    if (!listed?.summaryDeferred) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/${state.profile.toLowerCase()}/state?councilSession=${encodeURIComponent(listed.id)}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("The saved Council report could not be loaded.");
+        const result = await response.json() as State;
+        const session = result.councilSessions?.find(s => s.id === listed.id);
+        if (result.profile !== state.profile || !session || session.summaryDeferred) throw new Error("The saved Council report is unavailable in this workspace.");
+        if (!controller.signal.aborted) setHydrated({ profile: state.profile, session });
+      } catch (error) {
+        if (!controller.signal.aborted) setHistoryError((error as Error).message);
+      }
+    })();
+    return () => controller.abort();
+  }, [state.profile, listed?.id, listed?.summaryDeferred, historyRetry]);
   const voices = selected ? getSessionVoices(state, selected) : [];
   useEffect(()=> {
     const chooseHash = () => {
@@ -249,7 +272,7 @@ export function CouncilExperience({ state, renderEvidence }: { state: State; ren
       lastHash.current = `#session-${id}`;
       history.replaceState(null,"",`${location.pathname}${location.search}${lastHash.current}`);
     }}/></div>
-    {selected ? <>
+    {selected?.summaryDeferred ? <section id="council-roundtable" aria-label="Saved Council report">{historyError ? <><p role="alert">{historyError}</p><button onClick={() => setHistoryRetry(value => value + 1)}>Retry report</button></> : <LoadingIndicator label="Loading saved Council report"/>}</section> : selected ? <>
       <div className="council-view-stage" id="council-roundtable" key={`stage-${selected.id}`}>
         <div id={`session-${selected.id}`}><Roundtable voices={voices} session={selected} onOpen={next=>setOpened(current=>next ?? (current ? {...current,closing:true} : null))} expandedId={opened?.voice.identity.id}/></div>
       </div>

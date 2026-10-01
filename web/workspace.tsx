@@ -4,6 +4,7 @@ import {Opportunities,Finance,WorkspacePreferences} from './business-pages';
 import { OperationsOverview, OrganizationOverview } from "./workspace-overview";
 import { CouncilDecisions } from "./council-decisions";
 import { LoadingIndicator } from "./loading-indicator";
+import { AdminPage, type AdminDestination } from "./admin-page";
 // Selected reviewed component; provenance is recorded in design/SOURCE.md.
 import { SectionNavigator } from "./design/section-navigator";
 
@@ -84,9 +85,13 @@ export function WorkspaceApp({
   renderFactory,
   renderTools,
   showDecisionHistory = false,
+  adminSection = "",
+  adminDestinations = [],
 }: {
   profile: Profile;
   page: string;
+  adminSection?: string;
+  adminDestinations?: AdminDestination[];
   renderPlanning?: (controls: PlanningControls) => ReactNode;
   renderGoalPrompt?: (goal: Goal, state: State) => ReactNode;
   renderRecommendationPrompt?: (recommendation: Recommendation) => ReactNode;
@@ -248,7 +253,7 @@ export function WorkspaceApp({
               )}
             {page === "tools" && (renderTools ? renderTools({draftTask:draft=>setEditor({kind:'task',draft})}) : !embedded && <Heading title="Tools" description="No tools are available for this installation yet." />)}
             {page === "factory" && renderFactory?.()}
-            {page === "admin" && <Admin state={state} embedded={embedded} showDecisionHistory={showDecisionHistory} preferences={!embedded&&state.settings?<WorkspacePreferences state={state} busy={busy} error={error} act={command}/>:undefined} />}
+            {page === "admin" && <AdminPage state={state} section={adminSection} destinations={adminDestinations} token={token} preferences={state.settings ? <WorkspacePreferences state={state} busy={busy} error={error} act={command}/> : undefined} activity={<Activity state={state}/>} decisions={showDecisionHistory ? <Decisions state={state}/> : undefined}/>}
           </>
         )}
       </section>
@@ -674,34 +679,37 @@ function Command({
   }
   return (
     <>
-      <Heading
+      {view !== "council" && <Heading
         title={
-          view === "council"
-            ? "Executive Council"
-            : view === "recommendations"
+          view === "recommendations"
               ? "Recommendations"
               : "Bridge"
         }
         description={
-          view === "council"
-            ? "Decisions, evidence, and the next useful move."
-            : view === "recommendations"
+          view === "recommendations"
               ? "Turn council judgment into accepted work."
               : "The objective, the work, and what needs your attention."
         }
-      />
+      />}
       {view === "bridge" && <>
         <OperationsOverview state={state}/>
-        <Suspense fallback={<LoadingIndicator label="Loading council briefing"/>}><RoundtableBriefing state={state}/></Suspense>
+        <Suspense fallback={<LoadingIndicator compact label="Loading council briefing"/>}><RoundtableBriefing state={state}/></Suspense>
       </>}
       {view === "council" && (
-        <div ref={councilPage} className="council-page-navigation"><SectionNavigator label="Council page sections" pageWidth="contained" items={councilSections}>
-          <Suspense fallback={<LoadingIndicator label="Loading council history" />}><CouncilHistory state={state} /></Suspense>
+        <div ref={councilPage} className="council-page-navigation"><Suspense fallback={<LoadingIndicator label="Loading council history" />}><SectionNavigator label="Council page sections" pageWidth="contained" items={councilSections}>
+          <CouncilHistory state={state} />
           <section id="council-goals" className="panel council-goals" aria-labelledby="council-goals-heading">
             <header className="record-heading"><h2 id="council-goals-heading">Goals</h2><a href={`/${state.profile.toLowerCase()}/goals`}>All goals ↗</a></header>
-            {state.goals.some(goal => !goal.parentId && goal.status === "active") ? <ul>{state.goals.filter(goal => !goal.parentId && goal.status === "active").map(goal => <li key={goal.id}>
-              <h3><a href={`/${state.profile.toLowerCase()}/goals#goal-${goal.id}`}>{goal.title}</a></h3><p>{goal.intent}</p>
-              {renderGoalPrompt ? renderGoalPrompt(goal, state) : <CopyPrompt profile={state.profile} kind="goal" entity={goal}/>}
+            {state.goals.some(goal => !goal.parentId && goal.status === "active") ? <ul>{state.goals.filter(goal => !goal.parentId && goal.status === "active").map(goal => <li className="council-goal-card" key={goal.id}>
+              <header className="council-goal-heading">
+                <div><h3><a href={`/${state.profile.toLowerCase()}/goals#goal-${goal.id}`}>{goal.title}</a></h3><p className="quiet">{[goal.owner, goal.horizon].filter(Boolean).join(" · ")}</p></div>
+                <div className="council-goal-prompt">{renderGoalPrompt ? renderGoalPrompt(goal, state) : <CopyPrompt profile={state.profile} kind="goal" entity={goal}/>}</div>
+              </header>
+              <div className="council-goal-details">
+                <section><h4>Intent</h4><p>{goal.intent || "No intent recorded."}</p></section>
+                <section><h4>Success criteria</h4><p>{goal.successCriteria || "No success criteria recorded."}</p></section>
+                {goal.evidence && <section className="council-goal-evidence"><h4>Current evidence</h4><p>{goal.evidence}</p></section>}
+              </div>
             </li>)}</ul> : <p>No active top-level goals are recorded.</p>}
           </section>
           <CouncilDecisions state={state} busy={busy} act={act} edit={edit} renderRecommendationPrompt={renderRecommendationPrompt}/>
@@ -805,7 +813,7 @@ function Command({
               </button>
             </details>
           </section>
-        </SectionNavigator></div>
+        </SectionNavigator></Suspense></div>
       )}
     </>
   );
@@ -875,56 +883,6 @@ function Activity({ state }: { state: State }) {
     </ol>
   ) : (
     <p>No changes have been recorded yet.</p>
-  );
-}
-function Admin({
-  state,
-  embedded = false,
-  showDecisionHistory = false,
-  preferences,
-}: {
-  state: State;
-  embedded?: boolean;
-  showDecisionHistory?: boolean;
-  preferences?: ReactNode;
-}) {
-  return (
-    <>
-      {!embedded && (
-        <Heading
-          title="Admin & Activity"
-          description="Workspace preferences, exports, and the paper trail."
-        />
-      )}
-      {showDecisionHistory && <Decisions state={state} />}
-      {preferences}
-      <a className="panel tool-tile" href={requestPath(state.profile, "export")}>
-        <h2>Export records</h2>
-        <p>{state.settings ? "Download this workspace's planning records, opportunities, ledger, saved forecast, settings, and history." : "Download this workspace's goals, tasks, recommendations, and history."}</p>
-      </a>
-      <section className="panel">
-        <h2>Workspace record</h2>
-        <dl className="facts">
-          <dt>Installation</dt>
-          <dd>{state.profile}</dd>
-          <dt>Record revision</dt>
-          <dd>{state.revision}</dd>
-          <dt>Existing authoritative records</dt>
-          <dd>
-            {state.canonical
-              ? "Goals and tasks read and write the original registers. Evidence and history are preserved."
-              : "This installation's own planning records."}
-          </dd>
-        </dl>
-        <p>
-          Exports contain private records. Keep them outside source control.
-        </p>
-      </section>
-      <section id="activity" className="panel">
-        <h2>Activity</h2><p className="quiet">Latest 50 changes. Full history is included in the export.</p>
-        <Activity state={state} />
-      </section>
-    </>
   );
 }
 function Editor({

@@ -17,7 +17,9 @@
 .vorton-workspace .calendar-weekday { text-align: center; font-size: .65rem; color: var(--aub-text-dim); padding-bottom: 6px; }
 .vorton-workspace .calendar-notice { font-size: .7rem; line-height: 1.5; margin: 12px 0 0; color: var(--aub-text-mid); }
 .vorton-workspace .timeline-heading h2 { margin: 5px 0 0; font-size: 1.5rem; }
-.vorton-workspace .timeline-rail { position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 18px 0 12px; max-width: none; }
+.vorton-workspace .timeline-rail { position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 18px 0 12px; max-width: none; mask-image: linear-gradient(to right, transparent, black clamp(24px, 5vw, 88px), black calc(100% - clamp(24px, 5vw, 88px)), transparent); }
+/* Keep keyboard focus fully visible while browsing the faded edges. */
+.vorton-workspace .timeline-rail:focus-within { mask-image: none; }
 .vorton-workspace .timeline-rail ol { display: flex; align-items: start; list-style: none; margin: 0; padding: 0; min-width: 100%; width: max-content; }
 /* Explicit widths keep WebKit's intrinsic row width equal to its scroll content. */
 .vorton-workspace .timeline-rail li { position: relative; width: 150px; flex: 0 0 auto; }
@@ -68,6 +70,25 @@
 .vorton-workspace .council-goals { scroll-margin-top: 110px; }
 .vorton-workspace .council-goals ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 24px; }
 .vorton-workspace .council-goals h3 { margin: 0 0 8px; }
+.vorton-workspace .council-goal-card { min-width: 0; padding: 22px; border: 1px solid var(--aub-border); border-radius: var(--aub-card-radius, 16px); }
+.vorton-workspace .council-goal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.vorton-workspace .council-goal-heading > div { min-width: 0; }
+.vorton-workspace .council-goal-heading p { margin: 0; }
+.vorton-workspace .council-goal-prompt { margin-left: auto; flex: 0 0 auto; max-width: 48%; }
+.vorton-workspace .council-goal-prompt button { color: var(--aub-accent); background: var(--aub-accent-soft); border-color: transparent; border-radius: var(--aub-control-radius); }
+.vorton-workspace .council-goal-prompt button:hover { border-color: var(--aub-accent); }
+.vorton-workspace .council-goal-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.vorton-workspace .council-goal-details > section { padding: 16px 18px; border-radius: var(--aub-control-radius); background: var(--aub-card-header); overflow-wrap: anywhere; }
+.vorton-workspace .council-goal-details h4 { margin: 0 0 8px; color: var(--aub-text-mid); font-size: .8rem; }
+.vorton-workspace .council-goal-details p { margin: 0; white-space: pre-line; }
+.vorton-workspace .council-goal-evidence { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  .vorton-workspace .council-goal-card { padding: 16px; }
+  .vorton-workspace .council-goal-heading { flex-wrap: wrap; gap: 12px; }
+  .vorton-workspace .council-goal-prompt { max-width: 100%; }
+  .vorton-workspace .council-goal-details { grid-template-columns: minmax(0,1fr); }
+}
+@media (forced-colors: active) { .vorton-workspace .timeline-rail { mask-image: none; } }
 @media (max-width: 1180px) {
   .vorton-workspace .council-page-navigation .section-navigator-layout { display: block; }
   .vorton-workspace .council-page-navigation .section-navigator-content { width: 100%; margin: 0; }
