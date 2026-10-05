@@ -4,7 +4,7 @@ Elegant visual control plane for AI operating systems and software factories. In
 
 Run it on your own machine. Give your organization a place to plan, review advice, track work, and build its own tools. Vorton is open source and building toward sovereign superintelligence for humans and AI-native organizations.
 
-<!-- Animated demo: insert the GitHub attachment here, above the feature sections. -->
+<img width="900" height="676" alt="vorton-demo-github" src="https://github.com/user-attachments/assets/4683394d-693c-44c4-80d9-10c0a64c58dd" />
 
 ## Goals, Tasks, and Councils
 
@@ -29,13 +29,10 @@ Have your agents build new apps using the [workspace tool pattern](docs/TOOLS.md
 
 Track bookings, events, partnerships, and next actions. Record income and expenses in a USD ledger and explore a room-economics forecast with saved assumptions. Pipeline estimates stay separate from recorded income. Admin & Activity includes workspace preferences, record exports, and recent changes.
 
-## The Last Resort
+## Demo Experience
 
-The flagship demo is a hotel at the edge of the universe. Checkout is at eleven. Causality is subject to availability.
-
-Four fictional staff members are trying to reopen the east wing in the correct century, serve a breakfast with a beginning and an end, and sell the view without promising the meaning of life. Explore their Goals, Tasks, Council briefing, opportunities, and finances. Try Hilbert’s Overbooking Desk and the Breakfast Causality Lab, then turn a calculation into a Task.
-
-All demo people, evidence, incidents, and figures are invented. You can explore the full local demo without an API key, provider account, hosted database, or running model.
+Vorton's included demo org is "The Last Resort" - a hotel at the edge of the universe.
+It's ready to play with out of the box. Clone it as the basis for your own custom Vorton organizations. Aubrey personally runs an "AubOS" org to supercharge his personal life, and other experimental orgs for projects and codebases he contributes to. 
 
 ## Vorton and Vorteo
 
