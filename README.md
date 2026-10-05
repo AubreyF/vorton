@@ -15,7 +15,7 @@ Run it on your own machine. Give your organization a place to plan, review advic
 
 Accepted recommendations create or update local Goals and Tasks. Open the resulting record to inspect what changed. In this preview, acceptance saves a planning record; agent execution requires future integration.
 
-## A workspace your agents can customize
+## A Workspace your Agents can Customize
 
 Build on shared UX primitives for navigation, typography, themes, menus, and workspace tools. Six appearances and adjustable zoom come included. Appearance settings follow you between workspaces.
 
