@@ -1,7 +1,7 @@
 {
   "contract": "vorton.public-source.v1",
   "version": "0.2.0-preview.5",
-  "sourceDigest": "8cdc8fb7eaa9b82e51b6d663acfb7c6293d8155ac8559838bfa8756934b9a5d4",
+  "sourceDigest": "308b2203202be60c77c05ed6c2f7b009d28dcef1803bf1c965ce6e5b0f46ee97",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -25,7 +25,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "17d08faa9f5b62268318936da2f74a8df2642147eb573f5a17367fa9482ded90"
+      "sha256": "7b470d7b0bf34793d7c17e7823bd288b8f856f354c00e5c973152dbabdc1e902"
     },
     {
       "path": "SECURITY.md",

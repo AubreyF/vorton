@@ -1,44 +1,90 @@
 # Vorton
 
-Vorton is a local workspace for turning Council recommendations into Goals and Tasks you can inspect, accept, and track. The flagship demonstration is **The Last Resort**, a hotel at the edge of the universe. Checkout is at eleven. Causality is subject to availability.
+Elegant visual control plane for AI operating systems and software factories. Includes Goals, Tasks, Councils, an App Store, and clean, themeable UX primitives for your agents to customize.
 
-The demo includes three Goals, five Tasks, four fictional staff members, a Council briefing, and a recommendation awaiting your decision. Its people, evidence, incidents, and figures are invented. Accepting a recommendation creates a local planning record; it does not start an agent or perform external work.
+Run it on your own machine. Give your organization a place to plan, review advice, track work, and build its own tools. Vorton is open source and building toward sovereign superintelligence for humans and AI-native organizations.
 
-## Vision and provenance
+<!-- Animated demo: insert the GitHub attachment here, above the feature sections. -->
 
-Vorton is building toward sovereign superintelligence for humans and AI-native organizations. The longer-term vision connects frontier models, conversations, tools, workers, and source-grounded memory so that people and organizations can think, create, decide, and learn with continuity. Biomimetic memories, a self-improving software factory, ultra-tier subscription multiplexing, and an elegant visual control plane are aspirations, not all delivered features of this local preview.
+## Goals, Tasks, and Councils
 
-This repository is Vorton's main development path. [Vorton Cloud](https://github.com/AubreyF/vorton-cloud) is discontinued, with its source and historical architecture preserved for reference. The [vision and source provenance](docs/VISION.md) identifies what carries forward and separates it from Cloud-specific implementation claims.
+- **Bridge.** See active goals, blocked work, next steps, and pending decisions.
+- **Goals and Tasks.** Set owners, priorities, milestones, and success criteria. Keep the evidence with the work.
+- **Councils.** Review briefings and recommendations with evidence, confidence, and tradeoffs. Accept, edit, defer, or reject proposals. Keep unresolved decisions and past decisions across sessions.
+- **Organization.** See your Council roster and each person's responsibilities.
 
-[Vorton Factory](docs/VISION.md#vorton-factory) is the intended home for governed software production. Factory execution and resource scheduling remain separate work in [Vorteo](https://github.com/AubreyF/vorteo), while [AubTown](https://github.com/AubreyF/aubtown) is being deprecated. This portable Vorton core does not include a factory runtime.
+Accepted recommendations create or update local Goals and Tasks. Open the resulting record to inspect what changed. In this preview, acceptance saves a planning record; agent execution requires future integration.
 
-## Run locally
+## A workspace your agents can customize
 
-Use Node.js 22.13 or newer and npm.
+Build on shared UX primitives for navigation, typography, themes, menus, and workspace tools. Six appearances and adjustable zoom come included. Appearance settings follow you between workspaces.
+
+### App Store
+
+The App Store holds tools built for your organization. It currently appears as **Tools** in the interface. The included apps calculate a scenario, show its assumptions, and draft an editable Task.
+
+Have your agents build new apps using the [workspace tool pattern](docs/TOOLS.md). Reuse the shared shell and theme tokens so each app fits the rest of the interface.
+
+## Opportunities and Finance
+
+Track bookings, events, partnerships, and next actions. Record income and expenses in a USD ledger and explore a room-economics forecast with saved assumptions. Pipeline estimates stay separate from recorded income. Admin & Activity includes workspace preferences, record exports, and recent changes.
+
+## The Last Resort
+
+The flagship demo is a hotel at the edge of the universe. Checkout is at eleven. Causality is subject to availability.
+
+Four fictional staff members are trying to reopen the east wing in the correct century, serve a breakfast with a beginning and an end, and sell the view without promising the meaning of life. Explore their Goals, Tasks, Council briefing, opportunities, and finances. Try Hilbert’s Overbooking Desk and the Breakfast Causality Lab, then turn a calculation into a Task.
+
+All demo people, evidence, incidents, and figures are invented. You can explore the full local demo without an API key, provider account, hosted database, or running model.
+
+## Vorton and Vorteo
+
+[Vorteo](https://github.com/AubreyF/vorteo) extends Paseo with multiple provider accounts, reusable profiles, task goals, message queues, and private cross-device access. It is the companion project for agent control and resource scheduling.
+
+[Vorton Factory](docs/VISION.md#vorton-factory) is the intended home for governed software production: connecting goals to bounded agent work and bringing the results back for review. Factory execution, deeper agent integration, and advanced memory remain under development. The portable Vorton preview does not yet include a Factory runtime.
+
+This repository is Vorton's active development path. [Vorton Cloud](https://github.com/AubreyF/vorton-cloud) preserves the discontinued cloud implementation. [AubTown](https://github.com/AubreyF/aubtown), a separate software factory pilot, is being deprecated. See [vision and provenance](docs/VISION.md) for the longer-term direction and the relationship between these projects.
+
+## Install
+
+### Manual
+
+Install Git, Node.js 22.13 or newer, and npm. Clone, build, seed The Last Resort, and start Vorton:
 
 ```sh
+git clone https://github.com/AubreyF/vorton.git
+cd vorton
 npm ci
 npm run check
 npm run demo:seed
 npm run demo
 ```
 
-Open `http://127.0.0.1:47840/lastresort/bridge`. The server listens on loopback. Set `VORTON_DEMO_PORT` to use a different unreserved port. No API key, hosted database, account connection, or model runtime is needed.
+Open [The Last Resort](http://127.0.0.1:47840/lastresort/bridge). Set `VORTON_DEMO_PORT` to use a different unreserved port.
 
-The seed command creates fictional records in `.runtime/last-resort`. It refuses to overwrite existing work. New stores otherwise start empty. The source fixtures are checked in; runtime mutations, exports, caches, and screenshots are not.
+The seed command creates fictional records in `.runtime/last-resort` and refuses to overwrite existing work. New stores otherwise start empty. Runtime records, exports, caches, and personal installation data stay outside Git.
 
-Use Bridge for active goals, blocked work, next steps, and pending decisions. Organization shows the Council roster and each person's current responsibilities. Goals and Tasks open the underlying records. The shared upper-left menu contains six appearances, interface zoom, and the installed Vorton version at its bottom. Appearance and zoom follow you between workspaces on the same origin.
+### Agent instructions
 
-Tools includes Hilbert’s Overbooking Desk and Breakfast Causality Lab. Both calculate a scenario and can open an editable Task containing the result and assumptions. See [Building workspace tools](docs/TOOLS.md) for the reusable pattern.
+Your task is to give the user a working Vorton interface.
 
-Opportunities tracks bookings, events, partnerships, and next actions. Finance separates a USD ledger from a room-economics forecast. Admin & Activity saves workspace preferences, exports records, and shows recent changes. Fresh demo stores include three opportunities and four ledger entries; existing stores keep their data and start these collections empty. Seeding never overwrites an installation. Forecasts use your saved assumptions and exclude pipeline estimates from recorded income.
+1. Read `AGENTS.md` in the checkout. For an existing installation, read `.runtime/LOCAL-OPERATIONS.md` when present and preserve its services and records.
+2. Check Git, Node.js, and npm. Clone this repository into a new directory, or use the user's existing checkout without discarding changes. Run `npm ci` and `npm run check`. Diagnose failures before continuing.
+3. For a fresh demo, run `npm run demo:seed`. If the store already contains work, preserve it and skip seeding. Never delete state to make the seed command pass.
+4. Run `npm run demo` in a persistent session. If the default port is occupied, choose an available unreserved port with `VORTON_DEMO_PORT`. Keep the server on loopback.
+5. Open `/lastresort/bridge` at the running server's address. Verify that the interface loads and navigation works. A running process alone does not establish success.
+6. Give the user the clickable address and explain how to stop and restart the server. Keep the handoff short. If browser access is outside your environment, request that specific check and state what remains unverified.
 
-## Boundaries
+Provider authentication is unnecessary for this demo. Configure remote access only when the user requests it, following the [security guide](SECURITY.md).
 
-Repository work requires no quota verification or weekly allowance floor. Future quota controls belong in the Vorteo scheduler.
+## Status and development
 
-This is a one-owner local application. It is not a public multi-user service. Workspace selection scopes application records; it does not create an operating-system sandbox. Keep the local server behind your own access controls and do not expose it directly to the internet.
+Vorton is an early, one-owner local preview. The server listens on loopback; keep remote access behind your own access controls. Workspace selection scopes application records and does not provide an operating-system sandbox. Review the [security guide](SECURITY.md) before changing how you host it.
 
-The portable source candidate contains no private installation adapter, personal records, agent scheduler, or Factory implementation. See [design provenance](web/design/SOURCE.md) for the origin of the shared visual vocabulary.
+- [Build workspace tools](docs/TOOLS.md)
+- [Vision and source provenance](docs/VISION.md)
+- [Shared design provenance](web/design/SOURCE.md)
+- [Versioning](docs/VERSIONING.md)
+- [Release gates](docs/RELEASE.md)
 
-Vorton is available under the [MIT license](LICENSE). This is an early preview; see [vision and provenance](docs/VISION.md), [security](SECURITY.md), [versioning](docs/VERSIONING.md), and [release gates](docs/RELEASE.md).
+Vorton is available under the [MIT license](LICENSE).
