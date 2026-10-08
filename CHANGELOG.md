@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update the locked source-map-js dependency to 1.2.2 to address GHSA-68fv-2mgg-jv7q.
+
 - Add an opt-in portable recovery controller with explicit adapter preconditions, persisted retry cooldown, maintenance checks, and no installation-specific transport or scheduler.
 
 - Show only the active workspace icon in the mobile switcher, falling back to the first letter of its display name. Keep the full name accessible and preserve desktop labels.
