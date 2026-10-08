@@ -102,6 +102,24 @@
 .vorton-workspace .council-evidence .panel { box-shadow: none; margin: 0 0 20px; }
 
 
+/* Bridge reuses the Council Orrery and CEO portrait from the approved preview. */
+.vorton-workspace .bridge-briefing-columns { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 32px; align-items: center; margin-top: 20px; }
+.vorton-workspace .bridge-council-emblem { position: relative; height: 220px; isolation: isolate; }
+.vorton-workspace .bridge-council-emblem .council-table { position: absolute; left: 50%; top: 50%; width: min(240px, 67%); height: 150px; margin: 0; transform: translate(-50%, -50%); }
+.vorton-workspace .bridge-ceo { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px; max-width: 100%; text-align: center; }
+.vorton-workspace .bridge-ceo strong { font: 500 1rem var(--aub-font-display); overflow-wrap: anywhere; }
+.vorton-workspace .bridge-briefing-box { position: relative; min-width: 0; padding: 26px 30px; border: 1px solid var(--aub-border); border-radius: 16px; background: var(--aub-card-solid); }
+.vorton-workspace .bridge-briefing-box::before { content: ""; position: absolute; width: 16px; height: 16px; left: -9px; top: calc(50% - 8px); transform: rotate(45deg); background: var(--aub-card-solid); border-left: 1px solid var(--aub-border); border-bottom: 1px solid var(--aub-border); }
+.vorton-workspace .bridge-briefing-box h3 { font: 500 1.55rem var(--aub-font-display); margin: 6px 0 16px; overflow-wrap: anywhere; }
+.vorton-workspace .bridge-briefing-copy { color: var(--aub-text-mid); font-size: 1rem; line-height: 1.65; overflow-wrap: anywhere; }
+.vorton-workspace .bridge-briefing-copy p { margin: 0 0 14px; white-space: pre-line; }
+.vorton-workspace .bridge-briefing-copy p:last-child { margin-bottom: 0; }
+@media (max-width: 720px) {
+  .vorton-workspace .bridge-briefing-columns { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .vorton-workspace .bridge-briefing-box { padding: 22px; }
+  .vorton-workspace .bridge-briefing-box::before { left: calc(50% - 8px); top: -9px; border: 0; border-top: 1px solid var(--aub-border); border-left: 1px solid var(--aub-border); }
+}
+
 /* Roundtable: real text bubbles sit around an elliptical council table. */
 .vorton-workspace .roundtable-layout { position: relative; height: var(--table-height); border: 0; background: transparent; overflow: hidden; }
 .vorton-workspace .council-table { position: absolute; left: var(--table-center-x); top: var(--table-center-y); width: var(--council-table-width); height: var(--council-table-height); transform: translate(-50%,-50%); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border: 1px solid var(--aub-accent); border-radius: 50%; background: radial-gradient(ellipse at center, var(--aub-card-solid) 16%, transparent 65%), radial-gradient(ellipse at 30% 25%, var(--aub-accent-soft), transparent 65%), var(--aub-card-solid); box-shadow: 0 0 65px var(--aub-accent-soft); }

@@ -287,11 +287,22 @@ export function CouncilExperience({ state, renderEvidence }: { state: State; ren
 /** Latest saved briefing, shared by both Bridge implementations. */
 export function RoundtableBriefing({state}: {state: State}) {
   const session = [...(state.councilSessions ?? [])].sort((a,b)=>a.publishedAt.localeCompare(b.publishedAt)).at(-1);
-  const [opened,setOpened] = useState<OpenSubmission | null>(null);
+  const headingId = useId();
   if (!session) return <section className="council-bridge-briefing"><h2>Latest council briefing</h2><p>No briefing has been published yet.</p><a href={`/${state.profile.toLowerCase()}/council`}>Open Council</a></section>;
+  // Resolve the stable role from this session's saved roster, not its display name.
+  const ceo = getSessionVoices(state,session).find(voice=>voice.identity.id === "CEO");
   return <section className="council-experience council-bridge-briefing" aria-label="Latest council briefing">
     <div className="council-session-brief"><div><span className="council-kicker">Latest council briefing</span><h2>{fullDate(session.publishedAt)}</h2></div><a href={`/${state.profile.toLowerCase()}/council#session-${session.id}`}>Open Council ↗</a></div>
-    <Roundtable voices={getSessionVoices(state,session)} session={session} onOpen={next=>setOpened(current=>next ?? (current ? {...current,closing:true} : null))} expandedId={opened?.voice.identity.id}/>
-    {opened && <SubmissionDetail key={opened.voice.identity.id} opened={opened} state={state} onClose={()=>setOpened(null)}/>}
+    <div className="bridge-briefing-columns">
+      <div className="bridge-council-emblem">
+        <div className="council-table" aria-hidden="true"><svg className="council-orbits" viewBox="-100 -100 200 200" preserveAspectRatio="none" fill="none" stroke="currentColor"><ellipse rx="94" ry="94" vectorEffect="non-scaling-stroke"/><ellipse rx="124" ry="72" transform="rotate(28)" vectorEffect="non-scaling-stroke"/><ellipse rx="124" ry="72" transform="rotate(-28)" vectorEffect="non-scaling-stroke"/></svg></div>
+        {ceo && <div className="bridge-ceo" style={accent(0)}><span className="seat-portrait"><CouncilAvatar identity={ceo.identity} size={64}/></span><strong>{ceo.identity.name}</strong></div>}
+      </div>
+      <article className="bridge-briefing-box" aria-labelledby={headingId}>
+        <span className="council-kicker">{ceo?.sourceLabel ?? "No saved submission"}</span>
+        <h3 id={headingId}>{ceo?.identity.name ?? "CEO"}’s briefing</h3>
+        <div className="bridge-briefing-copy">{ceo?.submission ? ceo.submission.split(/\n\s*\n/).map((paragraph,index)=><p key={index}>{plain(paragraph)}</p>) : <p>No CEO submission was recorded for this session.</p>}</div>
+      </article>
+    </div>
   </section>;
 }

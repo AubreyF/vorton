@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace the Bridge's full Council embed with the compact CEO orbital portrait and an always-visible briefing beside it. Stack the columns on phones and preserve the full Council link.
+
 - Update the locked source-map-js dependency to 1.2.2 to address GHSA-68fv-2mgg-jv7q.
 
 - Add an opt-in portable recovery controller with explicit adapter preconditions, persisted retry cooldown, maintenance checks, and no installation-specific transport or scheduler.
