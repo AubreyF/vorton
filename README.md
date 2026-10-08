@@ -83,5 +83,6 @@ Vorton is an early, one-owner local preview. The server listens on loopback; kee
 - [Shared design provenance](web/design/SOURCE.md)
 - [Versioning](docs/VERSIONING.md)
 - [Release gates](docs/RELEASE.md)
+- [Recovery adapter contract](docs/RECOVERY.md)
 
 Vorton is available under the [MIT license](LICENSE).

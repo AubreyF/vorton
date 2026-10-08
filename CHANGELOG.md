@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an opt-in portable recovery controller with explicit adapter preconditions, persisted retry cooldown, maintenance checks, and no installation-specific transport or scheduler.
+
 - Show only the active workspace icon in the mobile switcher, falling back to the first letter of its display name. Keep the full name accessible and preserve desktop labels.
 
 - Fill private installation icon symbols in solid white so their interiors contrast with the titanium background; refresh icon URLs for Safari installation.
