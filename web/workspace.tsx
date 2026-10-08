@@ -1,6 +1,8 @@
 "use client";
 import "./workspace.css";
 import {Opportunities,Finance,WorkspacePreferences} from './business-pages';
+import { Forge, IdeaEditor, OrganizationInputs, RecordLabels, CouncilOrigin } from './forge';
+import { recommendationResultKind } from './types';
 import { OperationsOverview, OrganizationOverview } from "./workspace-overview";
 import { CouncilDecisions } from "./council-decisions";
 import { LoadingIndicator } from "./loading-indicator";
@@ -39,6 +41,7 @@ const councilSections = [
 ];
 
 const pages = [
+  {id:'forge',label:'Forge'},
   {id:'opportunities',label:'Opportunities'},
   {id:'finance',label:'Finance'},
   { id: "guestbook", label: "Organization" },
@@ -86,11 +89,13 @@ export function WorkspaceApp({
   renderTools,
   showDecisionHistory = false,
   adminSection = "",
+  forgeView = "",
   adminDestinations = [],
 }: {
   profile: Profile;
   page: string;
   adminSection?: string;
+  forgeView?: string;
   adminDestinations?: AdminDestination[];
   renderPlanning?: (controls: PlanningControls) => ReactNode;
   renderGoalPrompt?: (goal: Goal, state: State) => ReactNode;
@@ -104,6 +109,7 @@ export function WorkspaceApp({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState("");
+  const [ideaRecommendation, setIdeaRecommendation] = useState<Recommendation | null>(null);
   const [loadSteps, setLoadSteps] = useState(0);
   const [loadDetail, setLoadDetail] = useState("Connecting to your workspace");
   const loadGeneration = useRef(0);
@@ -144,7 +150,7 @@ export function WorkspaceApp({
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    if (!state || !['goals', 'tasks'].includes(page)) return;
+    if (!state || !['goals', 'tasks', 'forge'].includes(page)) return;
     // Records arrive after the browser's initial fragment navigation.
     const target = document.getElementById(location.hash.slice(1));
     target?.scrollIntoView({block: 'center'});
@@ -218,6 +224,7 @@ export function WorkspaceApp({
           })
         ) : (
           <>
+            {page === "forge" && <Forge state={state} view={forgeView} busy={busy} error={error} act={command} goals={filtered=><Goals state={filtered} open={entity=>setEditor({kind:"goal",entity})} add={()=>setEditor({kind:"goal"})}/>} tasks={filtered=><Tasks state={filtered} open={entity=>setEditor({kind:"task",entity})} add={()=>setEditor({kind:"task"})}/>} draftTask={draft=>setEditor({kind:"task",draft})}/>}
             {page === 'opportunities' && <Opportunities state={state} busy={busy} error={error} act={command} draftTask={draft=>setEditor({kind:'task',draft})}/>}
             {page === 'finance' && <Finance state={state} busy={busy} error={error} act={command}/>}
             {page === "guestbook" && <OrganizationOverview state={state}/>}
@@ -243,20 +250,22 @@ export function WorkspaceApp({
                   act={command}
                   renderRecommendationPrompt={renderRecommendationPrompt}
                   renderGoalPrompt={renderGoalPrompt}
-                  edit={(r) =>
+                  edit={(r) => ["idea", "idea-review"].includes(r.kind) ? setIdeaRecommendation(r) :
                     setEditor({
-                      kind: r.kind.startsWith("goal") ? "goal" : "task",
+                      kind: r.kind.startsWith("goal") || r.kind === "idea-graduate" ? "goal" : "task",
                       recommendation: r,
                     })
                   }
                 />
               )}
-            {page === "tools" && (renderTools ? renderTools({draftTask:draft=>setEditor({kind:'task',draft})}) : !embedded && <Heading title="Tools" description="No tools are available for this installation yet." />)}
+            {page === "tools" && (renderTools ? renderTools({draftTask:draft=>setEditor({kind:'task',draft})}) : !embedded && <Heading title="Tools" description="Tools available in this workspace." />)}
+            {page === "tools" && renderFactory && <p><a href={`/${profile.toLowerCase()}/factory`}>Open Factory</a></p>}
             {page === "factory" && renderFactory?.()}
             {page === "admin" && <AdminPage state={state} section={adminSection} destinations={adminDestinations} token={token} preferences={state.settings ? <WorkspacePreferences state={state} busy={busy} error={error} act={command}/> : undefined} activity={<Activity state={state}/>} decisions={showDecisionHistory ? <Decisions state={state}/> : undefined}/>}
           </>
         )}
       </section>
+      {ideaRecommendation && state && <IdeaEditor state={state} recommendation={ideaRecommendation} busy={busy} error={error} close={()=>setIdeaRecommendation(null)} save={async fields=>{if(await command("recommendation.resolve",{id:ideaRecommendation.id,decision:"accepted",fields}))setIdeaRecommendation(null);}}/>}
       {editor && state && (
         <div className="vorton-workspace">
           <Editor
@@ -372,7 +381,7 @@ function Goals({
   add: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("active");
+  const [status, setStatus] = useState(location.hash.startsWith("#goal-") ? "all" : "active");
   const goals = state.goals
     .filter(
       (g) =>
@@ -450,6 +459,12 @@ function Goals({
               <p className="prose">
                 {g.intent || "Intent has not been recorded."}
               </p>
+              <RecordLabels record={g}/>
+              <CouncilOrigin state={state} id={g.id}/>
+              <p><strong>Next milestone:</strong> {g.milestones.find(m=>!m.done)?.title || "No unfinished milestone"}</p>
+              {g.reviewOn && <p>Next review: {g.reviewOn}</p>}
+              {(g.ideaIds??[]).map(id=><p key={id}><a href={`/${state.profile.toLowerCase()}/forge/ideas#idea-${id}`}>{state.ideas?.find(i=>i.id===id)?.title ?? "Source idea"}</a></p>)}
+              <details><summary>Success, progress and evidence</summary>
               <div className="goal-columns">
                 <div>
                   <h3>Success looks like</h3>
@@ -473,6 +488,7 @@ function Goals({
                 </div>
                 <div>
                   <h3>Progress</h3>
+                  <p className="quiet">Owner estimate. Task completion does not establish the outcome.</p>
                   <div className="progress-label">
                     <span>{g.progress}%</span>
                     <span>
@@ -495,6 +511,7 @@ function Goals({
                   )}
                 </div>
               </div>
+              </details>
               <div className="record-footer">
                 <span>
                   Version {g.version} · Updated {formatDate(g.updatedAt)}
@@ -520,7 +537,7 @@ function Tasks({
   open: (t: Task) => void;
   add: () => void;
 }) {
-  const [filter, setFilter] = useState("open");
+  const [filter, setFilter] = useState(location.hash.startsWith("#task-") ? "all" : "open");
   const tasks = state.tasks.filter(
     (t) =>
       filter === "all" ||
@@ -581,6 +598,9 @@ function Tasks({
                   {t.dueOn && ` · Due ${t.dueOn}`}
                 </p>
                 {t.notes && <p className="prose">{t.notes}</p>}
+                <RecordLabels record={t}/>
+                <CouncilOrigin state={state} id={t.id}/>
+                {(t.ideaIds??[]).map(id=><p key={id}><a href={`/${state.profile.toLowerCase()}/forge/ideas#idea-${id}`}>{state.ideas?.find(i=>i.id===id)?.title ?? "Source idea"}</a></p>)}
                 {!["done", "cancelled"].includes(t.status) && (
                   <CopyPrompt profile={state.profile} kind="task" entity={t} />
                 )}
@@ -852,9 +872,9 @@ function Decisions({ state }: { state: State }) {
               </div>
               {r.resultId && (
                 <a
-                  href={`/${state.profile.toLowerCase()}/${r.kind.startsWith("goal") ? "goals" : "tasks"}`}
+                  href={`/${state.profile.toLowerCase()}/forge/${recommendationResultKind(r.kind)}s#${recommendationResultKind(r.kind)}-${r.resultId}`}
                 >
-                  Open resulting {r.kind.startsWith("goal") ? "goal" : "task"}
+                  Open resulting {recommendationResultKind(r.kind)}
                 </a>
               )}
             </article>
@@ -925,6 +945,9 @@ function Editor({
       owner: string("owner"),
       priority: string("priority"),
       status: string("status"),
+      projects: string("projects").split(",").map(v=>v.trim()).filter(Boolean),
+      tags: string("tags").split(",").map(v=>v.trim()).filter(Boolean),
+      ideaIds: value.ideaIds ?? [],
     };
     const fields =
       kind === "goal"
@@ -1044,6 +1067,7 @@ function Editor({
             </select>
           </label>
         </div>
+        <OrganizationInputs value={value} state={state}/>
         {kind === "goal" ? (
           <>
             <label>

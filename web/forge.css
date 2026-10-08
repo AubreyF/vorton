@@ -1,0 +1,94 @@
+.forge {
+  display: grid;
+  gap: 1.5rem;
+}
+.forge .page-heading {
+  margin: 0;
+}
+.forge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1rem;
+}
+.forge-grid > * {
+  min-width: 0;
+}
+.forge-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.forge-card h3,
+.forge-card p {
+  margin: 0;
+}
+.forge-card .actions {
+  margin-top: auto;
+  flex-wrap: wrap;
+}
+.forge-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.forge-labels:empty {
+  display: none;
+}
+.forge-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.forge-assessments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  margin: 0.3rem 0;
+}
+.forge-assessments dt {
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+.forge-assessments dd {
+  margin: 0.2rem 0 0;
+  text-transform: capitalize;
+}
+.forge-capture {
+  display: grid;
+  gap: 0.5rem;
+}
+.forge-capture > div {
+  display: flex;
+  gap: 0.7rem;
+}
+.forge-capture input {
+  flex: 1;
+  min-width: 0;
+}
+.forge-filters {
+  align-items: end;
+}
+.forge-overview {
+  display: grid;
+  gap: 2rem;
+}
+.forge-group {
+  text-transform: capitalize;
+  font-size: 1.1rem;
+}
+.forge pre,
+dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  .forge-capture > div {
+    flex-direction: column;
+  }
+  .forge .filters {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}

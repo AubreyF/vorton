@@ -8,10 +8,11 @@ export function WorkspaceNavigation({profile,page,links,level='primary',controls
   function updateOverflow(){const nav=navigation.current;if(nav)setOverflow({left:nav.scrollLeft>2,right:nav.scrollWidth-nav.clientWidth-nav.scrollLeft>2});}
   useEffect(()=>{
     const nav=navigation.current;if(!nav)return;
-    nav.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({block:'nearest',inline:'center'});
     // Font and viewport changes can push the active section outside the rail.
-    const revealActive=()=>{nav.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({block:'nearest',inline:'center'});updateOverflow();};
-    const observer=new ResizeObserver(revealActive);observer.observe(nav);if(nav.firstElementChild)observer.observe(nav.firstElementChild);updateOverflow();return()=>observer.disconnect();
+    // Scroll only the rail. An inline secondary nav must not move the whole
+    // document underneath the fixed application header.
+    const revealActive=()=>{const active=nav.querySelector<HTMLElement>('[aria-current="page"]');if(active){const item=active.getBoundingClientRect(),rail=nav.getBoundingClientRect();if(item.left<rail.left||item.right>rail.right)nav.scrollLeft+=item.left-rail.left-(rail.width-item.width)/2;}updateOverflow();};
+    const observer=new ResizeObserver(revealActive);observer.observe(nav);if(nav.firstElementChild)observer.observe(nav.firstElementChild);revealActive();return()=>observer.disconnect();
   },[page,profile]);
   function scroll(direction:number){const nav=navigation.current;if(!nav)return;nav.scrollBy({left:direction*Math.max(120,nav.clientWidth*.7),behavior:'auto'});nav.focus({preventScroll:true});}
   return <div className={`view-nav-shell ${level}-nav-shell`}>

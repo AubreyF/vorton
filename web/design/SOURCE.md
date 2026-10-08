@@ -1,5 +1,7 @@
 # Design source
 
+Forge, October 7, 2026: `web/forge.tsx` reuses the shared workspace navigation, goal panels, form controls and dialog styling. `web/forge.css` composes those elements into responsive cards and a capture bar using inherited theme tokens. Workspace adapters supply routes and records without separate appearance controls.
+
 The shared header and installation selector accept an optional presentation-only brand symbol. Private workspace adapters supply their own silhouettes; private artwork is not embedded in this portable design layer. Symbols inherit the wordmark's color and font-relative size, with no independent theme setting.
 
 Omi refinement, September 30, 2026: `web/omi-admin.tsx` uses the existing panel, form, type and color tokens. Its status row, two-column preference rows and maintenance disclosures are original compositions of those components. `web/admin-save.tsx` supplies one shared submit footer for editable Admin pages; no separate theme or toolbar was introduced.

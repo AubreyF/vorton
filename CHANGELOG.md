@@ -6,6 +6,10 @@
 
 - Add an opt-in portable recovery controller with explicit adapter preconditions, persisted retry cooldown, maintenance checks, and no installation-specific transport or scheduler.
 
+- Combine Tasks, Goals, and Ideas in Forge with quick capture, shared project and tag filters, readiness, and optional value, complexity, effort, upkeep, confidence, and personal pull assessments.
+- Retain legacy opportunity records and history. Graduate ideas explicitly into new or existing goals, link experiments to ideas, and require owner acceptance of Council proposals to create, refine, or graduate ideas.
+- Use Bridge, Council, Forge, Finance, Tools, and Admin in the shared navigation. Redirect old planning links into Forge and place Organization under Admin.
+
 - Show only the active workspace icon in the mobile switcher, falling back to the first letter of its display name. Keep the full name accessible and preserve desktop labels.
 
 - Fill private installation icon symbols in solid white so their interiors contrast with the titanium background; refresh icon URLs for Safari installation.

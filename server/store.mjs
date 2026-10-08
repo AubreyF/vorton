@@ -48,8 +48,38 @@ function fields(value, allowed) {
     "Unexpected field",
   );
 }
+export function labelsInput(value = []) {
+  check(Array.isArray(value) && value.length <= 30, "Use at most 30 labels");
+  return [...new Set(value.map(v => text(v, "label", 80)))];
+}
+const organizationFields = ["projects", "tags", "ideaIds"];
+const organized = input => ({projects: labelsInput(input.projects), tags: labelsInput(input.tags), ideaIds: labelsInput(input.ideaIds)});
+export const ideaFields = ["title", "description", "owner", "status", "projects", "tags", "value", "complexity", "effort", "upkeep", "confidence", "pull", "startCondition", "experiment", "reviewOn", "evidence", "goalIds"];
+export function ideaInput(input) {
+  fields(input, ideaFields);
+  const band = key => choose(input[key] ?? "unknown", ["unknown", "low", "medium", "high"], key);
+  return {
+    title: text(input.title, "title", 180), description: text(input.description ?? "", "description", 8000, false),
+    owner: text(input.owner ?? "Owner", "owner", 120),
+    status: choose(input.status ?? "inbox", ["inbox", "exploring", "ready", "parked", "graduated", "archived"], "idea status"),
+    projects: labelsInput(input.projects), tags: labelsInput(input.tags),
+    value: band("value"), complexity: band("complexity"), effort: band("effort"), upkeep: band("upkeep"), confidence: band("confidence"), pull: band("pull"),
+    startCondition: text(input.startCondition ?? "", "start condition", 4000, false),
+    experiment: text(input.experiment ?? "", "smallest useful test", 4000, false),
+    reviewOn: deadline(input.reviewOn), evidence: text(input.evidence ?? "", "evidence", 12000, false),
+    goalIds: labelsInput(input.goalIds),
+  };
+}
+export function legacyIdea(row) {
+  return {...ideaInput({title: row.title, owner: row.owner, description: row.notes ?? "",
+    status: ({new:"inbox",qualified:"exploring",proposed:"ready",won:"graduated",lost:"archived"})[row.status] ?? "inbox",
+    experiment: row.nextAction ?? "", reviewOn: row.followUpOn ?? "", goalIds: row.goalId ? [row.goalId] : []}),
+    id: row.id, version: row.version, createdAt: row.createdAt, updatedAt: row.updatedAt, history: row.history ?? [],
+    original: row.notes || row.title, legacy: row};
+}
 export function goalInput(input) {
   fields(input, [
+    ...organizationFields,
     "title",
     "intent",
     "successCriteria",
@@ -74,6 +104,7 @@ export function goalInput(input) {
     "Invalid milestones",
   );
   return {
+    ...organized(input),
     title: text(input.title, "title", 180),
     intent: text(input.intent ?? "", "intent", 4000, false),
     successCriteria: text(
@@ -124,6 +155,7 @@ export function financePlanInput(input) {
 }
 export function taskInput(input) {
   fields(input, [
+    ...organizationFields,
     "title",
     "notes",
     "goalId",
@@ -133,6 +165,7 @@ export function taskInput(input) {
     "priority",
   ]);
   return {
+    ...organized(input),
     title: text(input.title, "title", 180),
     notes: text(input.notes ?? "", "notes", 8000, false),
     goalId: text(input.goalId ?? "", "goal", 80, false),
@@ -164,10 +197,10 @@ export function recommendationInput(input, allowedRoles = roles) {
   ]);
   const kind = choose(
     input.kind,
-    ["goal", "task", "goal-review", "task-review"],
+    ["goal", "task", "goal-review", "task-review", "idea", "idea-review", "idea-graduate"],
     "recommendation kind",
   );
-  const isReview = kind.endsWith("-review");
+  const isReview = kind.endsWith("-review") || kind === "idea-graduate";
   if (isReview)
     check(
       Number.isInteger(input.targetVersion) && input.targetVersion > 0,
@@ -186,7 +219,7 @@ export function recommendationInput(input, allowedRoles = roles) {
       "confidence",
     ),
     evidence: text(input.evidence ?? "", "evidence", 12000, false),
-    proposal: kind.startsWith("goal")
+    proposal: kind === "idea" || kind === "idea-review" ? ideaInput(input.proposal) : kind.startsWith("goal") || kind === "idea-graduate"
       ? goalInput(input.proposal)
       : taskInput(input.proposal),
   };
@@ -198,6 +231,7 @@ function initial(profile) {
     revision: 0,
     goals: [],
     tasks: [],
+    ideas: [],
     opportunities: [],
     ledger: [],
     settings: {defaultOwner:'Owner',purpose:''},
@@ -225,6 +259,9 @@ export function validateState(s, profile) {
     s[key] ??= [];
     check(Array.isArray(s[key]), 'Business records are invalid', 503);
   }
+  s.ideas ??= s.opportunities.map(legacyIdea);
+  check(Array.isArray(s.ideas), "Ideas are invalid", 503);
+  for (const row of s.opportunities) if (!s.ideas.some(i => i.id === row.id)) s.ideas.push(legacyIdea(row));
   s.settings ??= {defaultOwner:'Owner',purpose:''};
   return s;
 }
@@ -354,6 +391,8 @@ export class Store {
   }
 }
 function relations(state, data, kind, id = "") {
+  for (const ideaId of data.ideaIds ?? []) check(state.ideas?.some(i => i.id === ideaId), "Linked idea does not belong to this installation");
+  for (const linked of data.goalIds ?? []) check(state.goals.some(g => g.id === linked), "Linked goal does not belong to this installation");
   const goalId = kind === "goal" ? data.parentId : data.goalId;
   if (!goalId) return;
   check(
@@ -371,12 +410,13 @@ function relations(state, data, kind, id = "") {
   }
 }
 function saveEntity(state, kind, data, id, origin = null) {
-  const collection = state[{goal:'goals',task:'tasks',opportunity:'opportunities',entry:'ledger'}[kind]];
+  const collection = state[{goal:'goals',task:'tasks',idea:'ideas',opportunity:'opportunities',entry:'ledger'}[kind]];
   const existing = id ? collection.find((g) => g.id === id) : null;
   if (id) check(existing, "Item not found in this installation", 404);
   relations(state, data, kind, id);
   const entry = {
     ...data,
+    ...(kind === "idea" ? {original: existing?.original ?? (data.description || data.title), ...(existing?.legacy ? {legacy: existing.legacy} : {})} : {}),
     id: id || randomUUID(),
     version: (existing?.version ?? 0) + 1,
     createdAt: existing?.createdAt ?? timestamp(),
@@ -403,11 +443,25 @@ function saveEntity(state, kind, data, id, origin = null) {
   else collection.push(entry);
   return entry;
 }
+function saveIdea(state, data, id, origin = null) {
+  const prior = id ? state.ideas.find(i => i.id === id) : null;
+  check(data.status !== "graduated" || prior?.status === "graduated", "Use Graduate to goal to commit an idea");
+  check(prior?.status !== "graduated" || data.status === "graduated", "Graduated ideas retain their goal and commitment history");
+  check(data.status !== "graduated" || JSON.stringify(data.goalIds) === JSON.stringify(prior.goalIds), "Graduation links must be preserved");
+  return saveEntity(state, "idea", data, id, origin);
+}
 export function applyCommand(state, command) {
   const { action, payload = {} } = command;
+  state.ideas ??= (state.opportunities ?? []).map(legacyIdea);
+  if (["idea.create", "idea.update"].includes(action)) {
+    return saveIdea(state, ideaInput(payload.fields), action.endsWith("update") ? text(payload.id, "idea ID", 80) : "");
+  }
+  if (action === "idea.graduate") return graduateIdea(state, payload);
   if (['opportunity.create','opportunity.update','entry.create','entry.update'].includes(action)) {
     const kind=action.split('.')[0];
-    return saveEntity(state,kind,kind==='opportunity'?opportunityInput(payload.fields):entryInput(payload.fields),action.endsWith('update')?text(payload.id,'Record ID',80):'');
+    const saved = saveEntity(state,kind,kind==='opportunity'?opportunityInput(payload.fields):entryInput(payload.fields),action.endsWith('update')?text(payload.id,'Record ID',80):'');
+    if (kind === 'opportunity' && !state.ideas.some(i => i.id === saved.id)) state.ideas.push(legacyIdea(saved));
+    return saved;
   }
   if (action === 'settings.update') {
     fields(payload,['defaultOwner','purpose']);
@@ -441,12 +495,12 @@ export function applyCommand(state, command) {
     relations(
       state,
       data.proposal,
-      data.kind.startsWith("goal") ? "goal" : "task",
+      data.kind === "idea-graduate" || data.kind.startsWith("goal") ? "goal" : data.kind.startsWith("idea") ? "idea" : "task",
       data.targetId,
     );
-    if (data.kind.endsWith("-review")) {
+    if (data.kind.endsWith("-review") || data.kind === "idea-graduate") {
       const target = (
-        data.kind.startsWith("goal") ? state.goals : state.tasks
+        data.kind.startsWith("idea") ? state.ideas : data.kind.startsWith("goal") ? state.goals : state.tasks
       ).find((i) => i.id === data.targetId);
       check(
         target && target.version === data.targetVersion,
@@ -473,8 +527,12 @@ export function applyCommand(state, command) {
     );
     choose(payload.decision, ["accepted", "rejected", "deferred"], "decision");
     if (payload.decision === "accepted") {
-      const kind = item.kind.startsWith("goal") ? "goal" : "task";
-      const collection = kind === "goal" ? state.goals : state.tasks;
+      if (item.kind === "idea-graduate") {
+        const saved = graduateIdea(state, {id: item.targetId, targetVersion: item.targetVersion, fields: payload.fields ?? item.proposal}, item.id);
+        item.resultId = saved.id;
+      } else {
+      const kind = item.kind.startsWith("idea") ? "idea" : item.kind.startsWith("goal") ? "goal" : "task";
+      const collection = kind === "idea" ? state.ideas : kind === "goal" ? state.goals : state.tasks;
       if (item.kind.endsWith("-review"))
         check(
           collection.find((t) => t.id === item.targetId)?.version ===
@@ -483,17 +541,13 @@ export function applyCommand(state, command) {
           409,
         );
       const data =
-        kind === "goal"
+        kind === "idea" ? ideaInput(payload.fields ?? item.proposal) : kind === "goal"
           ? goalInput(payload.fields ?? item.proposal)
           : taskInput(payload.fields ?? item.proposal);
-      const saved = saveEntity(
-        state,
-        kind,
-        data,
-        item.kind.endsWith("-review") ? item.targetId : "",
-        item.id,
-      );
+      const targetId = item.kind.endsWith("-review") ? item.targetId : "";
+      const saved = kind === "idea" ? saveIdea(state, data, targetId, item.id) : saveEntity(state, kind, data, targetId, item.id);
       item.resultId = saved.id;
+      }
     }
     item.status = payload.decision;
     item.resolvedAt = timestamp();
@@ -501,4 +555,26 @@ export function applyCommand(state, command) {
     return item;
   }
   throw new Fault(400, "Unknown command");
+}
+
+function graduateIdea(state, payload, origin = null) {
+  const idea = state.ideas.find(i => i.id === payload.id);
+  check(idea && idea.version === payload.targetVersion, "Idea changed or is outside this installation. Refresh before graduating.", 409);
+  check(idea.status !== "graduated", "Idea has already graduated", 409);
+  check(idea.status !== "archived", "Restore the archived idea before graduating", 409);
+  let goal;
+  if (payload.goalId) {
+    goal = state.goals.find(g => g.id === payload.goalId);
+    check(goal, "Linked goal does not belong to this installation");
+    const {id, version, createdAt, updatedAt, history, origin: priorOrigin, ...data} = goal;
+    goal = saveEntity(state, "goal", goalInput({...data, ideaIds: [...new Set([...(goal.ideaIds ?? []), idea.id])]}), goal.id);
+  } else {
+    const data = goalInput({...payload.fields, projects: payload.fields?.projects ?? idea.projects, tags: payload.fields?.tags ?? idea.tags,
+      ideaIds: [...new Set([...(payload.fields?.ideaIds ?? []), idea.id])]});
+    check(data.successCriteria.trim(), "Define success before graduating an idea");
+    goal = saveEntity(state, "goal", data, "", origin);
+  }
+  const data = Object.fromEntries(ideaFields.map(key => [key, idea[key]]));
+  saveEntity(state, "idea", ideaInput({...data, status: "graduated", goalIds: [...new Set([...idea.goalIds, goal.id])]}), idea.id, origin);
+  return goal;
 }

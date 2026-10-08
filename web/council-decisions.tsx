@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from "react";
 import type { State, Recommendation, TaskFields } from "./types";
+import { recommendationResultKind } from "./types";
 import "./council-decisions.css";
 
 const pretty = (value: string) => value.replaceAll(".", " ").replaceAll("-", " ");
@@ -47,6 +48,8 @@ export function CouncilDecisions({ state, busy, act, edit, renderRecommendationP
     {!groups[tab].length && <p className="decision-queue-empty">{tab === "pending" ? "No pending decisions. Deferred proposals and past decisions remain in their own tabs." : tab === "deferred" ? "No deferred proposals." : "No decisions recorded yet."}</p>}
     {groups[tab].map(r=> {
       const origin = state.councilSessions?.find(session=>session.recommendationIds.includes(r.id));
+      const target = r.kind.startsWith("idea") ? state.ideas?.find(i=>i.id===r.targetId) : r.kind.startsWith("goal") ? state.goals.find(g=>g.id===r.targetId) : state.tasks.find(t=>t.id===r.targetId);
+      const changes = r.kind.endsWith("-review") && target ? Object.entries(r.proposal).filter(([key,value])=>JSON.stringify(value)!==JSON.stringify((target as unknown as Record<string,unknown>)[key])) : [];
       const competing = Boolean(r.targetId && ["pending","deferred"].includes(r.status) && state.recommendations.some(other=>other.id !== r.id && other.targetId === r.targetId && ["pending","deferred"].includes(other.status)));
       return (<article
                   className="panel recommendation decision-queue-card"
@@ -65,6 +68,8 @@ export function CouncilDecisions({ state, busy, act, edit, renderRecommendationP
                   <p className="decision-origin">{origin ? <a href={`#session-${origin.id}`}>Council session · {formatDate(origin.publishedAt)}</a> : <span>Imported outside a session · {formatDate(r.createdAt)}</span>}</p>
                   <p className="prose">{r.rationale}</p>
                   <details className="decision-support"><summary>Evidence and proposed record</summary>
+                  {changes.length>0&&<div style={{overflowX:"auto"}}><table><caption>Proposed changes</caption><thead><tr><th>Property</th><th>Current</th><th>Proposed</th></tr></thead><tbody>{changes.map(([key,value])=><tr key={key}><th>{key}</th><td>{JSON.stringify((target as unknown as Record<string,unknown>)[key])??"Not set"}</td><td>{JSON.stringify(value)}</td></tr>)}</tbody></table></div>}
+                  {r.kind === "idea-graduate" && target && <p>Graduate idea: <a href={`/${state.profile.toLowerCase()}/forge/ideas#idea-${target.id}`}>{target.title}</a></p>}
                   <div className="goal-columns">
                     <div>
                       <h4>Tradeoffs</h4>
@@ -83,8 +88,8 @@ export function CouncilDecisions({ state, busy, act, edit, renderRecommendationP
                       <dt>Owner</dt>
                       <dd>{r.proposal.owner}</dd>
                       <dt>Priority</dt>
-                      <dd>{pretty(r.proposal.priority)}</dd>
-                      {"notes" in r.proposal ? (
+                      <dd>{"priority" in r.proposal ? pretty(r.proposal.priority) : "Not applicable"}</dd>
+                      {"description" in r.proposal ? <><dt>Description</dt><dd>{r.proposal.description}</dd><dt>Readiness</dt><dd>{r.proposal.status}</dd><dt>Value / complexity / confidence</dt><dd>{r.proposal.value} / {r.proposal.complexity} / {r.proposal.confidence}</dd><dt>Start when</dt><dd>{r.proposal.startCondition || "Not set"}</dd><dt>Smallest useful test</dt><dd>{r.proposal.experiment || "Not set"}</dd><dt>Projects / tags</dt><dd>{[...r.proposal.projects,...r.proposal.tags].join(", ") || "None"}</dd></> : "notes" in r.proposal ? (
                         <>
                           <dt>Due</dt>
                           <dd>{r.proposal.dueOn || "Not set"}</dd>
@@ -154,7 +159,7 @@ export function CouncilDecisions({ state, busy, act, edit, renderRecommendationP
                       Reject
                     </button>
                   </div>}
-                  {r.resultId && <a className="decision-result" href={`/${state.profile.toLowerCase()}/${r.kind.startsWith("goal") ? "goals" : "tasks"}#${r.kind.startsWith("goal") ? "goal" : "task"}-${r.resultId}`}>Open resulting {r.kind.startsWith("goal") ? "goal" : "task"}</a>}
+                  {r.resultId && (()=>{const kind=recommendationResultKind(r.kind);return <a className="decision-result" href={`/${state.profile.toLowerCase()}/forge/${kind}s#${kind}-${r.resultId}`}>Open resulting {kind}</a>;})()}
                   {r.ownerNote && <p className="quiet">{r.ownerNote}</p>}
                 </article>);
     })}

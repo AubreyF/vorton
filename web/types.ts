@@ -8,7 +8,8 @@ export type CouncilConfig = {
   identities: { id: string; name: string; title: string; mandate: string; voice: string; expertise: string; blindSpot: string; challenge: string; fictional: boolean; inherited: boolean }[];
   behavior: { focus: string; decisionCriteria: string; maxRecommendations: number; challengeRounds: number; reportSections: string[] };
 };
-export type GoalFields = {
+export type OrganizationFields = { projects?: string[]; tags?: string[]; ideaIds?: string[] };
+export type GoalFields = OrganizationFields & {
   title: string;
   intent: string;
   successCriteria: string;
@@ -22,7 +23,7 @@ export type GoalFields = {
   progress: number;
   status: string;
 };
-export type TaskFields = {
+export type TaskFields = OrganizationFields & {
   title: string;
   notes: string;
   goalId: string;
@@ -42,25 +43,36 @@ export type Goal = GoalFields & EntityMeta;
 export type Task = TaskFields & EntityMeta;
 export type OpportunityFields = {title:string;owner:string;contact:string;kind:'booking'|'event'|'partnership';status:'new'|'qualified'|'proposed'|'won'|'lost';valueCents:number;nextAction:string;followUpOn:string;notes:string;goalId:string};
 export type Opportunity = OpportunityFields & EntityMeta;
+export type IdeaFields = {
+  title: string; description: string; owner: string;
+  status: "inbox" | "exploring" | "ready" | "parked" | "graduated" | "archived";
+  projects: string[]; tags: string[]; goalIds: string[];
+  value: string; complexity: string; effort: string; upkeep: string; confidence: string; pull: string;
+  startCondition: string; experiment: string; reviewOn: string; evidence: string;
+};
+export type Idea = IdeaFields & EntityMeta & {original?: string; legacy?: Record<string, unknown>; sourceVersion?: number; sourceChanged?: boolean};
 export type LedgerFields = {title:string;kind:'income'|'expense';amountCents:number;date:string;category:string;notes:string};
 export type LedgerEntry = LedgerFields & EntityMeta;
 export type FinancePlan = {openingCashCents:number;rooms:number;days:number;occupancy:number;rateCents:number;variableCents:number;fixedCents:number};
 export type Recommendation = {
   id: string;
   role: Role;
-  kind: "goal" | "task" | "goal-review" | "task-review";
+  kind: "goal" | "task" | "goal-review" | "task-review" | "idea" | "idea-review" | "idea-graduate";
   targetId: string;
   targetVersion: number | null;
   rationale: string;
   tradeoffs: string;
   confidence: string;
   evidence: string;
-  proposal: GoalFields | TaskFields;
+  proposal: GoalFields | TaskFields | IdeaFields;
   status: string;
   ownerNote?: string;
   resultId?: string;
   createdAt: string;
 };
+export function recommendationResultKind(kind: Recommendation["kind"]): "idea" | "goal" | "task" {
+  return kind === "idea" || kind === "idea-review" ? "idea" : kind === "idea-graduate" || kind.startsWith("goal") ? "goal" : "task";
+}
 export type State = {
   council?: CouncilConfig;
   canonical?: {
@@ -72,6 +84,7 @@ export type State = {
   revision: number;
   goals: Goal[];
   tasks: Task[];
+  ideas?: Idea[];
   opportunities?: Opportunity[];
   ledger?: LedgerEntry[];
   financePlan?: FinancePlan;

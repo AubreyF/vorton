@@ -7,6 +7,7 @@ import {
   goalInput,
   taskInput,
   opportunityInput,
+  legacyIdea,
   entryInput,
   financePlanInput,
   atomicJson,
@@ -182,6 +183,8 @@ export async function seedDemo(root = demoRoot) {
         ['wedding',{title:'Two Moons, One Wedding',owner:'Solstice Bell',contact:'The Bellweather party',kind:'booking',status:'proposed',valueCents:480000,nextAction:'Send a twelve-room proposal with one breakfast per guest',followUpOn:'2032-04-05',goalId:'finite-breakfast',notes:'The couple requests a sunset ceremony. Confirm which moon is responsible.'}],
         ['pillows',{title:'Portal-side pillow partnership',owner:'Penny Perihelion',contact:'Soft Landing Cooperative',kind:'partnership',status:'new',valueCents:160000,nextAction:'Compare the pillow trial price with the laundry budget',followUpOn:'2032-04-07',notes:'Supplier claims the pillows remember every dream. Request a washable sample.'}],
       ]) s.opportunities.push(entity(id,opportunityInput(fields)));
+      // Seed admitted ideas before computing the Council evidence digest.
+      s.ideas = s.opportunities.map(legacyIdea);
       s.financePlan=financePlanInput({openingCashCents:2000000,rooms:12,days:30,occupancy:35,rateCents:18000,variableCents:4500,fixedCents:1800000});
       for (const [id,fields] of [
         ['deposits',{title:'Opening weekend deposits',kind:'income',amountCents:300000,date:'2032-04-01',category:'Bookings',notes:'Three reservations. All guests currently exist.'}],

@@ -1,11 +1,12 @@
 import React, { lazy, Suspense, useEffect, type ReactNode } from "react";
 import type { State } from "./types";
 import { LoadingIndicator } from "./loading-indicator";
+import { OrganizationOverview } from "./workspace-overview";
 import "./admin-page.css";
 
 const OmiAdmin = lazy(() => import("./omi-admin").then(module => ({ default: module.OmiAdmin })));
 export type AdminDestination = { id: string; title: string; description: string; href: string };
-export const adminSections = ["settings", "integrations", "integrations/omi", "exports", "activity", "decisions"];
+export const adminSections = ["settings", "organization", "integrations", "integrations/omi", "exports", "activity", "decisions"];
 
 function AdminIcon({ kind }: { kind: string }) {
   const shapes: Record<string, ReactNode> = {
@@ -29,6 +30,7 @@ export function AdminPage({ state, section = "", token, preferences, activity, d
     if (!section && (legacy === "activity" || (legacy === "decisions" && decisions))) location.replace(`${base}/${legacy}`);
   }, [base, section, Boolean(decisions)]);
   const entries: AdminDestination[] = [
+    { id: "organization", title: "Organization", description: "People, responsibilities and workspace purpose.", href: `${base}/organization` },
     { id: "settings", title: "Workspace settings", description: "Purpose, defaults and the records behind this organization.", href: `${base}/settings` },
     { id: "integrations", title: "Integrations", description: "Connect Omi and manage access to this workspace's services.", href: `${base}/integrations` },
     { id: "exports", title: "Data & exports", description: "Download your workspace records and understand what each export contains.", href: `${base}/exports` },
@@ -45,15 +47,16 @@ export function AdminPage({ state, section = "", token, preferences, activity, d
   if (section && (!adminSections.includes(section) || !selected)) return <div className="workspace-admin"><h1>Admin page not found</h1><a href={base}>Back to Admin</a></div>;
   return <div className="workspace-admin">
     {section && <nav className="admin-breadcrumb" aria-label="Breadcrumb"><a href={base}>Admin</a><span aria-hidden="true">/</span>{omi && <><a href={`${base}/integrations`}>Integrations</a><span aria-hidden="true">/</span></>}<span aria-current="page">{title}</span></nav>}
-    <header className="admin-heading"><p className="admin-eyebrow">{state.profile === "LastResort" ? "The Last Resort" : state.profile}</p><h1>{title}</h1><p>{section ? (omi ? "Connection, conversation history and daily Council intelligence." : selected?.description) : "Manage your workspace, connected services and records."}</p></header>
+    {section !== "organization" && <header className="admin-heading"><p className="admin-eyebrow">{state.profile === "LastResort" ? "The Last Resort" : state.profile}</p><h1>{title}</h1><p>{section ? (omi ? "Connection, conversation history and daily Council intelligence." : selected?.description) : "Manage your workspace, connected services and records."}</p></header>}
     {!section ? <>
       <section aria-labelledby="admin-workspace-heading"><h2 id="admin-workspace-heading">Workspace</h2>{tiles(entries)}</section>
       {destinations.length > 0 && <section aria-labelledby="admin-evidence-heading"><h2 id="admin-evidence-heading">Review & evidence</h2><p>Inspect the sources and review practices specific to this organization.</p>{tiles(destinations)}</section>}
     </> : <div className="admin-content">
+      {section === "organization" && <OrganizationOverview state={state}/>}
       {section === "settings" && <>{preferences ?? <section className="panel"><h2>Workspace settings</h2><p>This organization's settings are maintained in its authoritative workspace records.</p></section>}<section className="panel"><h2>Workspace record</h2><dl className="facts"><dt>Organization</dt><dd>{state.profile}</dd><dt>Record revision</dt><dd>{state.revision}</dd><dt>Record source</dt><dd>{state.canonical ? "The original governed registers. Evidence and history are preserved." : "This organization's own saved records."}</dd></dl><p className="quiet">Appearance, fonts and zoom are shared across organizations through the workspace menu.</p></section></>}
       {section === "integrations" && tiles([{ id: "integrations", title: "Omi", description: "Connect conversation history to your daily Council. Manage your Developer key and retained transcripts.", href: `${base}/integrations/omi` }])}
       {omi && <Suspense fallback={<LoadingIndicator label="Loading Omi settings"/>}><OmiAdmin key={state.profile} profile={state.profile} token={token}/></Suspense>}
-      {section === "exports" && <section className="panel"><h2>Export workspace records</h2><p>{state.settings ? "Includes planning records, opportunities, ledger, saved forecast, settings and history." : "Includes goals, tasks, recommendations and history."}</p><p>Omi credentials and retained transcripts are not included in this planning export.</p><a className="admin-download" href={`/api/${state.profile.toLowerCase()}/export`} download>Download workspace records</a><p className="quiet">Exports contain private information. Store them securely outside source control.</p></section>}
+      {section === "exports" && <section className="panel"><h2>Export workspace records</h2><p>{state.settings ? "Includes Forge records, retained opportunity sources, ledger, saved forecast, settings and history." : "Includes ideas, goals, tasks, recommendations and history."}</p><p>Omi credentials and retained transcripts are not included in this planning export.</p><a className="admin-download" href={`/api/${state.profile.toLowerCase()}/export`} download>Download workspace records</a><p className="quiet">Exports contain private information. Store them securely outside source control.</p></section>}
       {section === "activity" && <section className="panel"><h2>Recent activity</h2><p className="quiet">Latest 50 changes. Full history is included in your workspace export.</p>{activity}</section>}
       {section === "decisions" && decisions}
     </div>}
